@@ -1,0 +1,7 @@
+name: fastgs_baseline
+scorer: fastgs_photometric
+training_args:
+  densification_interval: 500
+  optimizer_type: default
+  test_iterations: [30000]
+  grad_abs_thresh: 0.0012

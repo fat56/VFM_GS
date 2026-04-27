@@ -1,100 +1,81 @@
-<div align="center">
-<h1>FastGS: Training 3D Gaussian Splatting in 100 Seconds</h1> 
+# VFM_GS
 
-[🌐 Homepage](https://fastgs.github.io/) | [📄 Paper](https://arxiv.org/abs/2511.04283) ｜[🤗 Pre-trained model](https://huggingface.co/Goodsleepeverday/fastgs)
+VFM_GS 是基于 FastGS 重组出的实验型 3D Gaussian Splatting 工作区。当前代码仍保留 FastGS baseline 的训练语义，但项目结构已经改成适合长期模型迭代的形态：源码在 `src/vfm_gs`，实验配置在 `configs`，方案、记录和复盘在 `docs`。
 
-</div>
+这个仓库的目标不是再复制一份原生 FastGS，而是把 FastGS 变成可切换 scorer、可做消融、可追踪实验结果的研究工程底座。VFM 拓扑打分器的第一版方案见 [docs/experiments/0001_vfm_topology_scorer/proposal.md](docs/experiments/0001_vfm_topology_scorer/proposal.md)。
 
-<p align="center">
-    <img src="assets/teaser_fastgs.png" width="800px"/>
-</p>
+## Project Layout
 
-## 🚀 What Makes FastGS Special?
-
-FastGS is a **general acceleration framework** that supercharges 3D Gaussian Splatting training while maintaining Comparable rendering quality. Our method stands out with:
-
-- **⚡ Blazing Fast Training**: Achieve SOTA results within **100 seconds**. **3.32× faster** than DashGaussian on Mip-NeRF 360 dataset. **15.45× acceleration** vs vanilla 3DGS on Deep Blending.
-- **⚡ High fidelity**: Comparable rendering quality with SOTA methods
-- **🎯 Easy Integration**: Seamlessly integrates with various backbones (Vanilla 3DGS, Scaffold-GS, Mip-splatting, etc.)
-- **🛠️ Multi-Task Ready**: Proven effective across dynamic scenes, surface reconstruction, sparse-view, large-scale, and SLAM tasks
-- **💡 Memory-Efficient**: Low GPU Memory requirements make it accessible for various hardware setups
-- **🔧 Easy Deployment**: Simple post-training tool for feedforward 3DGS that works out-of-the-box
-
-## 📢 Latest Updates
-### 🔥 **[2025.11.16]** Code Released - Get Started Now! 🚀
-### 🔥 **[2025.11.17]** Pre-trained model Released 🤗!
-### 📄 **[2025.11.26]** The supplementary material has been released [here](https://arxiv.org/abs/2511.04283)!
-### 🔧 **[2025.11.27]** The tutorial has been released — see the [Wiki](https://github.com/fastgs/FastGS/wiki)!
-### 🔥 **[2025.11.29]** The dynamic scene reconstruction code [Fast-D3DGS](https://github.com/fastgs/FastGS/tree/fast-d3dgs) has been released!
-### 🔥 **[2025.12.03]** The sparse-view reconstruction code [Fast-DropGaussian](https://github.com/fastgs/FastGS/tree/fast-dropgaussian) has been released!
-
-### 🎯 Coming Soon
-- **[2025.12.31]** 🎯 **Multi-Task Expansion**:
-  - Dynamic scenes Reconstruction: [Deformable-3D-Gaussians](https://github.com/ingra14m/Deformable-3D-Gaussians)
-  - Autonomus Driving scene: [street_gaussians](https://github.com/zju3dv/street_gaussians)
-  - Surface reconstruction: [PGSR](https://github.com/zju3dv/PGSR)
-  - Sparse-view Reconstruction: [DropGaussian](https://github.com/DCVL-3D/DropGaussian_release)
-  - Large-scale Reconstruction: [OctreeGS](https://github.com/city-super/Octree-GS/tree/main)
-  - SLAM: [Photo-SLAM](https://github.com/HuajianUP/Photo-SLAM)
-- **[2025.12.31]** 🔌 **Backbone Enhancing**: popular 3DGS variants ([Vanilla 3DGS](https://github.com/graphdeco-inria/gaussian-splatting), [Scaffold-GS](https://github.com/city-super/Scaffold-GS), [Mip-splatting](https://github.com/autonomousvision/mip-splatting), [Taming-3DGS](https://github.com/humansensinglab/taming-3dgs))
-
-
-## 🏗️ Training Framework
-
-Our training pipeline leverages **PyTorch** and optimized **CUDA extensions** to efficiently produce high-quality trained models in record time.
-
-### 💻 Hardware Requirements
-
-- **GPU**: CUDA-ready GPU with Compute Capability 7.0+
-- **Memory**: 24 GB VRAM (for paper-quality results; we recommend NVIDIA RTX4090)
-
-### 📦 Software Requirements
-
-- **Conda** (recommended for streamlined setup)
-- **C++ Compiler** compatible with PyTorch extensions
-- **CUDA SDK 11** (or compatible version)
-- **⚠️ Important**: Ensure C++ Compiler and CUDA SDK versions are compatible
-
-### ⚠️ CUDA Version Reference
-
-Our testing environment uses the following CUDA configuration:
-
-| Component                             | Version          |
-|---------------------------------------|------------------|
-| Conda environment CUDA version        | 11.6             |
-| Ubuntu system `nvidia-smi` CUDA       | 12.2             |
-| `nvcc -V` compiler version            | 11.8 (v11.8.89)  |
-
-> **Note**: The Conda CUDA and system CUDA versions may differ. The compiler version (`nvcc`) is what matters for PyTorch extensions compilation (diff-gaussian-rasterization_fastgs).
-
-
-## 🚀 Quick Start
-
-### 📥 Clone the Repository
-
-```bash
-git clone https://github.com/fastgs/FastGS.git --recursive
-cd FastGS
+```text
+.
+├── configs/                 # 训练变体和实验配置
+├── docs/                    # 实验方案、结果、复盘和架构决策
+├── scripts/                 # 批量训练、评测和 smoke test
+├── src/vfm_gs/              # Python package
+│   ├── cli/                 # train/render/metrics/convert/full-eval 入口
+│   ├── config/              # legacy argparse + YAML 配置加载
+│   ├── scorers/             # scorer registry
+│   ├── gaussian_renderer/   # FastGS renderer wrapper
+│   ├── scene/
+│   ├── utils/
+│   └── lpips_pytorch/
+├── submodules/              # CUDA extensions, 保持原 FastGS 路径
+├── pyproject.toml
+└── environment.yml          # 旧 conda 环境参考，不再作为主包管理入口
 ```
 
-### ⚙️ Environment Setup
+## Environment With uv
 
-We provide a streamlined setup using Conda:
+包管理统一使用 `uv`。`environment.yml` 只保留为 FastGS 原 CUDA/PyTorch 组合的参考，日常安装不要再走 `conda env create`。
 
-```shell
-# Windows only
-SET DISTUTILS_USE_SDK=1
-
-# Create and activate environment
-conda env create --file environment.yml
-conda activate fastgs
-```
-
-### 📂 Dataset Organization
-
-Organize your datasets in the following structure:
+系统侧仍需要可用的 NVIDIA 驱动、CUDA 编译工具链和 C++ 编译器。FastGS CUDA 扩展会在安装 `submodules/` 时本地编译，`nvcc -V` 与 PyTorch CUDA wheel 的版本需要匹配。
 
 ```bash
+# Install uv if the machine does not have it yet.
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Create and activate a project-local virtual environment.
+uv venv .venv --python 3.10
+source .venv/bin/activate
+
+# Install PyTorch CUDA 11.6 wheels used by the original FastGS environment.
+uv pip install \
+  torch==1.12.1+cu116 \
+  torchvision==0.13.1+cu116 \
+  torchaudio==0.12.1 \
+  --extra-index-url https://download.pytorch.org/whl/cu116
+
+# Install the project package and Python dependencies declared in pyproject.toml.
+uv pip install -e .
+
+# Build local CUDA extensions.
+uv pip install \
+  submodules/diff-gaussian-rasterization_fastgs \
+  submodules/simple-knn \
+  submodules/fused-ssim
+```
+
+Windows 需要先准备 MSVC/CUDA 编译环境；如果使用 PowerShell，多条命令用 `;` 分隔。
+
+## Quick Checks
+
+不需要数据集即可做入口检查：
+
+```bash
+uv run --active python -m compileall src/vfm_gs
+uv run --active python -m vfm_gs.cli.train --help
+uv run --active python -m vfm_gs.cli.render --help
+uv run --active python -m vfm_gs.cli.metrics --help
+bash scripts/smoke_test.sh
+```
+
+`scripts/smoke_test.sh` 会优先使用环境变量 `PYTHON`，否则回退到 `python3`。如果已经激活 `.venv`，直接运行即可。
+
+## Dataset Layout
+
+数据集默认放在 `datasets/`，该目录已被 `.gitignore` 忽略。
+
+```text
 datasets/
 ├── mipnerf360/
 │   ├── bicycle/
@@ -108,165 +89,102 @@ datasets/
     └── ...
 ```
 
-The MipNeRF360 scenes are hosted by the paper authors [here](https://jonbarron.info/mipnerf360/). You can find our SfM data sets for Tanks&Temples and Deep Blending [here](https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/datasets/input/tandt_db.zip). 
+Mip-NeRF 360 数据集来自原作者页面。Tanks&Temples 与 Deep Blending 可使用 3DGS/FastGS 常用的 COLMAP 格式数据。
 
-## 🎯 Training & Evaluation
+## Train / Render / Metrics
 
-### ⚡ FastGS (Standard)
-
-Train the base model with optimal speed and quality balance:
+推荐使用 `uv run --active` 调用包入口，确保命令运行在当前 `.venv` 中。
 
 ```bash
-bash train_base.sh
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/bicycle_baseline \
+  --eval
+
+uv run --active python -m vfm_gs.cli.render \
+  -m output/bicycle_baseline \
+  --skip_train
+
+uv run --active python -m vfm_gs.cli.metrics \
+  -m output/bicycle_baseline
 ```
 
-### 🎨 FastGS-Big (High Quality)
-
-For enhanced quality with slightly longer training time:
+安装 editable 包后也可以直接使用 console scripts：
 
 ```bash
-bash train_big.sh
-```
-<details>
-<summary><span style="font-weight: bold;">📋 Advanced: Command Line Arguments for train.py</span></summary>
-
-  #### --loss_thresh
-  Threshold of the loss map; a lower value generally results in more Gaussians being retained.
-  #### --grad_abs_thresh 
-  Absolute gradient (same as Abs-GS) threshold for split.
-  #### --grad_thresh
-  Gradient(same as vanilla 3DGS) threshold for clone.
-  #### --highfeature_lr
-  Learning rate for high-order SH coefficients (features_rest).
-  #### --lowfeature_lr
-  Learning rate for low-order SH coefficients (features_dc).
-  #### --dense
-  Percentage of scene extent (0--1) a point must exceed to be forcibly densified.
-  #### --mult 
-  Multiplier for the compact box to control the tile number of each splat
-  #### --source_path / -s
-  Path to the source directory containing a COLMAP or Synthetic NeRF data set.
-  #### --model_path / -m 
-  Path where the trained model should be stored (```output/<random>``` by default).
-  #### --images / -i
-  Alternative subdirectory for COLMAP images (```images``` by default).
-  #### --eval
-  Add this flag to use a MipNeRF360-style training/test split for evaluation.
-  #### --resolution / -r
-  Specifies resolution of the loaded images before training. If provided ```1, 2, 4``` or ```8```, uses original, 1/2, 1/4 or 1/8 resolution, respectively. For all other values, rescales the width to the given number while maintaining image aspect. **If not set and input image width exceeds 1.6K pixels, inputs are automatically rescaled to this target.**
-  #### --data_device
-  Specifies where to put the source image data, ```cuda``` by default, recommended to use ```cpu``` if training on large/high-resolution dataset, will reduce VRAM consumption, but slightly slow down training. Thanks to [HrsPythonix](https://github.com/HrsPythonix).
-  #### --white_background / -w
-  Add this flag to use white background instead of black (default), e.g., for evaluation of NeRF Synthetic dataset.
-  #### --sh_degree
-  Order of spherical harmonics to be used (no larger than 3). ```3``` by default.
-  #### --convert_SHs_python
-  Flag to make pipeline compute forward and backward of SHs with PyTorch instead of ours.
-  #### --convert_cov3D_python
-  Flag to make pipeline compute forward and backward of the 3D covariance with PyTorch instead of ours.
-  #### --debug
-  Enables debug mode if you experience erros. If the rasterizer fails, a ```dump``` file is created that you may forward to us in an issue so we can take a look.
-  #### --debug_from
-  Debugging is **slow**. You may specify an iteration (starting from 0) after which the above debugging becomes active.
-  #### --iterations
-  Number of total iterations to train for, ```30_000``` by default.
-  #### --ip
-  IP to start GUI server on, ```127.0.0.1``` by default.
-  #### --port 
-  Port to use for GUI server, ```6009``` by default.
-  #### --test_iterations
-  Space-separated iterations at which the training script computes L1 and PSNR over test set, ```7000 30000``` by default.
-  #### --save_iterations
-  Space-separated iterations at which the training script saves the Gaussian model, ```7000 30000 <iterations>``` by default.
-  #### --checkpoint_iterations
-  Space-separated iterations at which to store a checkpoint for continuing later, saved in the model directory.
-  #### --start_checkpoint
-  Path to a saved checkpoint to continue training from.
-  #### --quiet 
-  Flag to omit any text written to standard out pipe. 
-  #### --feature_lr
-  Spherical harmonics features learning rate, ```0.0025``` by default.
-  #### --opacity_lr
-  Opacity learning rate, ```0.05``` by default.
-  #### --scaling_lr
-  Scaling learning rate, ```0.005``` by default.
-  #### --rotation_lr
-  Rotation learning rate, ```0.001``` by default.
-  #### --position_lr_max_steps
-  Number of steps (from 0) where position learning rate goes from ```initial``` to ```final```. ```30_000``` by default.
-  #### --position_lr_init
-  Initial 3D position learning rate, ```0.00016``` by default.
-  #### --position_lr_final
-  Final 3D position learning rate, ```0.0000016``` by default.
-  #### --position_lr_delay_mult
-  Position learning rate multiplier (cf. Plenoxels), ```0.01``` by default. 
-  #### --densify_from_iter
-  Iteration where densification starts, ```500``` by default. 
-  #### --densify_until_iter
-  Iteration where densification stops, ```15_000``` by default.
-  #### --densify_grad_threshold
-  Limit that decides if points should be densified based on 2D position gradient, ```0.0002``` by default.
-  #### --densification_interval
-  How frequently to densify, ```100``` (every 100 iterations) by default.
-  #### --opacity_reset_interval
-  How frequently to reset opacity, ```3_000``` by default. 
-  #### --lambda_dssim
-  Influence of SSIM on total loss from 0 to 1, ```0.2``` by default. 
-  #### --percent_dense
-  Percentage of scene extent (0--1) a point must exceed to be forcibly densified, ```0.01``` by default.
-
-</details>
-<br>
-
-Note that similar to MipNeRF360 and vanilla 3DGS, we target images at resolutions in the 1-1.6K pixel range. For convenience, arbitrary-size inputs can be passed and will be automatically resized if their width exceeds 1600 pixels. We recommend to keep this behavior, but you may force training to use your higher-resolution images by setting ```-r 1```.
-
-## 🎬 Interactive Viewers
-
-Our 3DGS representation is identical to vanilla 3DGS, so you can use the official [SIBR viewer](https://github.com/graphdeco-inria/gaussian-splatting?tab=readme-ov-file#interactive-viewers) for interactive visualization. For a quick start without local setup, try the web-based [Supersplat](https://superspl.at/editor).
-
-## 🎯 Quick Facts
-
-| Feature | FastGS | Previous Methods |
-|---------|---------|---------------------|
-| Training Time | **100 seconds** | 5-30 minutes |
-| Gaussian Efficiency | ✅ **Strict Control** | ❌ Redundant Growth |
-| Memory Usage | ✅ **Low Footprint** | ❌ High Demand |
-| Task Versatility | ✅ **6 Domains** | ❌ Limited Scope |
-
-## 📧 Contact
-
-If you have any questions, please contact us at **renshiwei@mail.nankai.edu.cn**.
-
-
-## 🙏 Acknowledgements
-
-This project is built upon [3DGS](https://github.com/graphdeco-inria/gaussian-splatting), [Taming-3DGS](https://github.com/humansensinglab/taming-3dgs), [Speedy-Splat](https://github.com/j-alex-hanson/speedy-splat), and [Abs-GS](https://github.com/TY424/AbsGS). We extend our gratitude to all the authors for their outstanding contributions and excellent repositories!
-
-**License**: Please adhere to the licenses of 3DGS, Taming-3DGS, and Speedy-Splat.
-
-Special thanks to the authors of [DashGaussian](https://github.com/YouyuChen0207/DashGaussian) for their generous support!
-
-
-## Citation
-If you find this repo useful, please cite:
-```
-@article{ren2025fastgs,
-  title={FastGS: Training 3D Gaussian Splatting in 100 Seconds},
-  author={Ren, Shiwei and Wen, Tianci and Fang, Yongchun and Lu, Biao},
-  journal={arXiv preprint arXiv:2511.04283},
-  year={2025}
-}
-
+vfm-gs-train --variant fastgs_baseline -s datasets/mipnerf360/bicycle -i images -m output/bicycle_baseline --eval
+vfm-gs-render -m output/bicycle_baseline --skip_train
+vfm-gs-metrics -m output/bicycle_baseline
 ```
 
----
+批量脚本仍保留，但已经指向新的包入口：
 
-<div align="center">
+```bash
+bash scripts/train_base.sh
+bash scripts/train_big.sh
+```
 
-**⭐ If FastGS helps your research, please consider starring this repository!**
+## Variants And Scorers
 
-*FastGS: Training 3D Gaussian Splatting in 100 Seconds*
+训练入口支持两层切换：
 
-</div>
+- `--variant <name>` 读取 `configs/variants/<name>.yaml`。
+- `--config <path>` 在 variant 之上叠加某次实验的配置。
 
----
+当前可用 variant：
+
+| Variant | Config | Scorer | Intent |
+|---|---|---|---|
+| `fastgs_baseline` | `configs/variants/fastgs_baseline.yaml` | `fastgs_photometric` | 原 FastGS 标准训练设置 |
+| `fastgs_big` | `configs/variants/fastgs_big.yaml` | `fastgs_photometric` | 更频繁 densification 的高质量设置 |
+
+scorer registry 位于 `src/vfm_gs/scorers/`。当前只注册 `fastgs_photometric`，后续 VFM 拓扑 scorer 应以新的 registry key 接入，而不是在训练循环里硬编码分支。
+
+实验配置示例：
+
+```bash
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_scorer.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0001/bicycle \
+  --eval
+```
+
+## Experiment Docs
+
+`docs/` 是实验统筹目录，不存放大型运行产物。
+
+- `docs/roadmap.md`：实验队列和状态。
+- `docs/experiments/index.md`：实验总表。
+- `docs/experiments/_template.md`：新实验模板。
+- `docs/experiments/<id>/proposal.md`：方案。
+- `docs/experiments/<id>/runbook.md`：命令和流程。
+- `docs/experiments/<id>/results.md`：指标摘要。
+- `docs/experiments/<id>/review.md`：结论和下一步。
+- `docs/adr/`：架构决策记录。
+
+运行输出放在 `output/`、`eval/`、`runs/` 或外部存储；docs 只记录关键指标、artifact 路径和决策。
+
+## Conversion
+
+COLMAP 转换入口也迁到了包内：
+
+```bash
+uv run --active python -m vfm_gs.cli.convert \
+  -s datasets/custom_scene \
+  --resize
+```
+
+## Upstream FastGS
+
+本项目基于 FastGS 代码改造。FastGS 原项目、论文和许可证信息保留在：
+
+- FastGS homepage: <https://fastgs.github.io/>
+- FastGS paper: <https://arxiv.org/abs/2511.04283>
+- Original license notes: [LICENSE_ORIGINAL.md](LICENSE_ORIGINAL.md)
+
+FastGS 构建于 3DGS、Taming-3DGS、Speedy-Splat、Abs-GS 等工作之上。继续使用或发布结果时，需要同时遵守上游项目和本仓库的许可证要求。

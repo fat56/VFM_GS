@@ -1,0 +1,13 @@
+name: base
+scorer: fastgs_photometric
+training_args:
+  optimizer_type: default
+  iterations: 30000
+  test_iterations: [30000]
+  save_iterations: [30000]
+  checkpoint_iterations: [30000]
+  loss_thresh: 0.1
+  grad_abs_thresh: 0.0012
+  grad_thresh: 0.0002
+  dense: 0.001
+  mult: 0.5

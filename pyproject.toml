@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vfm-gs"
+version = "0.1.0"
+description = "Research-oriented FastGS workspace for VFM-guided model iteration."
+requires-python = ">=3.7"
+dependencies = [
+  "pyyaml>=5.4",
+]
+
+[project.scripts]
+vfm-gs-train = "vfm_gs.cli.train:main"
+vfm-gs-render = "vfm_gs.cli.render:main"
+vfm-gs-metrics = "vfm_gs.cli.metrics:main"
+vfm-gs-convert = "vfm_gs.cli.convert:main"
+vfm-gs-full-eval = "vfm_gs.cli.full_eval:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
