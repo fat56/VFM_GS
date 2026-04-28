@@ -2,7 +2,7 @@ import torch
 import torch.nn.functional as F
 
 from vfm_gs.gaussian_renderer import render_fastgs
-from vfm_gs.scorers.vfm_cache import load_feature, read_manifest
+from vfm_gs.scorers.vfm_cache import load_feature, read_manifest, validate_cache
 from vfm_gs.utils.fast_utils import compute_gaussian_score_fastgs, normalize01
 
 from .registry import register_scorer
@@ -168,4 +168,35 @@ def compute_gaussian_score_fastgs_with_vfm(camlist, gaussians, pipe, bg, args, D
     return importance_score, pruning_score
 
 
+def preflight_vfm_topology_scorer(dataset, args):
+    backend = getattr(args, "vfm_backend", "mock_l1")
+    if backend != "cached_edge_l1":
+        return
+
+    cache_dir = getattr(args, "vfm_cache_dir", "")
+    source_path = getattr(dataset, "source_path", None)
+    images = getattr(dataset, "images", None)
+    errors, warnings, manifest = validate_cache(
+        cache_dir,
+        backend=backend,
+        source_path=source_path,
+        images=images,
+        check_checksum=True,
+        load_entries=False,
+    )
+    for warning in warnings:
+        print("[VFM cache preflight warning] {}".format(warning))
+    if errors:
+        formatted = "\n".join("- {}".format(error) for error in errors[:10])
+        raise ValueError("VFM cache preflight failed for {}:\n{}".format(cache_dir, formatted))
+    print(
+        "VFM cache preflight passed: {} {} entries at {}".format(
+            len(manifest.get("entries", {})),
+            manifest.get("backend", backend),
+            cache_dir,
+        )
+    )
+
+
+compute_gaussian_score_fastgs_with_vfm.preflight = preflight_vfm_topology_scorer
 register_scorer("vfm_topology_scorer", compute_gaussian_score_fastgs_with_vfm)

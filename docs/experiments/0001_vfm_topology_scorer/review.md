@@ -16,6 +16,7 @@ Keep `vfm_topology_scorer` as the v1 integration path. `mock_l1` validates the s
 - Training output `cfg_args` now records optimization and pipeline parameters in addition to model parameters, so scorer/backend settings are recoverable from each run directory.
 - `npz_uint8` compact storage reduced the bicycle edge cache from about 189MB to 35MB, and `vfm_gs.cli.validate_vfm_cache` passed checksum/source-image validation.
 - The compact run completed train/render/metrics with 78,682 Gaussians, PSNR 20.1588, SSIM 0.4275, LPIPS 0.5993. The larger PSNR drop suggests edge quantization can move early densification decisions.
+- Cached backends now run a training preflight before Scene construction. Good caches pass early; missing manifests fail before camera loading or densification.
 
 ## Limitations
 
@@ -27,7 +28,7 @@ Keep `vfm_topology_scorer` as the v1 integration path. `mock_l1` validates the s
 ## Next Version Plan
 
 1. Do a dependency and memory feasibility check for one real cached VFM backend, starting with DINOv2 features for semantic topology and a monocular depth/edge backend for geometry.
-2. Add a preflight check in `vfm_topology_scorer` so cached backends fail before densification if `vfm_cache_dir` is missing or invalid.
-3. Run a longer bicycle ablation with matched baseline, `mock_l1`, `cached_edge_l1` float32, and `cached_edge_l1` compact schedules.
-4. If the dependency check passes, add the first real VFM cache builder and keep the scorer path unchanged.
-5. Compare PSNR/SSIM/LPIPS, Gaussian count, render FPS, cache build time, scorer overhead, cache size, and visual floaters.
+2. Run a longer bicycle ablation with matched baseline, `mock_l1`, `cached_edge_l1` float32, and `cached_edge_l1` compact schedules.
+3. If the dependency check passes, add the first real VFM cache builder and keep the scorer path unchanged.
+4. Compare PSNR/SSIM/LPIPS, Gaussian count, render FPS, cache build time, scorer overhead, cache size, and visual floaters.
+5. Decide whether compact storage needs threshold retuning or should remain a storage-only option for less sensitive backends.

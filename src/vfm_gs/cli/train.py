@@ -57,6 +57,15 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     from vfm_gs.utils.fast_utils import sampling_cameras
 
     first_iter = 0
+    scorer_name = getattr(opt, "scorer", "fastgs_photometric")
+    if getattr(opt, "vfm_enable", False):
+        scorer_name = "vfm_topology_scorer"
+    gaussian_scorer = get_scorer(scorer_name)
+    scorer_preflight = getattr(gaussian_scorer, "preflight", None)
+    if scorer_preflight is not None:
+        scorer_preflight(dataset, opt)
+    print("Using Gaussian scorer: {}".format(scorer_name))
+
     tb_writer = prepare_output_and_logger(dataset, opt, pipe)
     gaussians = GaussianModel(dataset.sh_degree, opt.optimizer_type)
     scene = Scene(dataset, gaussians)
@@ -83,11 +92,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
     first_iter += 1
     bg = torch.rand((3), device="cuda") if opt.random_background else background
-    scorer_name = getattr(opt, "scorer", "fastgs_photometric")
-    if getattr(opt, "vfm_enable", False):
-        scorer_name = "vfm_topology_scorer"
-    gaussian_scorer = get_scorer(scorer_name)
-    print("Using Gaussian scorer: {}".format(scorer_name))
 
     for iteration in range(first_iter, opt.iterations + 1):
 

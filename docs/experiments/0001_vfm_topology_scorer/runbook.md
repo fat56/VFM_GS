@@ -24,6 +24,7 @@ uv run --active python -m vfm_gs.cli.train \
 ## Cached Edge Proxy v1
 
 `cached_edge_l1` 后端先用 GT 图像的归一化 luminance edge map 作为轻量离线缓存代理。它不是最终 VFM 后端，但能验证 `image_name -> cache entry -> pixel_error_map` 的真实缓存读取流程。
+训练入口会在 Scene 加载前自动执行 cache preflight；这里仍显式运行 `validate_vfm_cache`，用于把缓存检查作为实验流程的一部分记录下来。
 
 ```bash
 uv run --active python -m vfm_gs.cli.build_vfm_cache \
