@@ -237,6 +237,47 @@ uv run --active python -m vfm_gs.cli.train \
   -r 8
 ```
 
+## Importance Mode Probe
+
+`vfm_importance_mode=rgb_only` disables direct VFM densification while keeping VFM pruning-score fusion active. This probe showed that a full 30k run is required; short smoke metrics do not reveal the final Gaussian-budget effect.
+
+```bash
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_cached_edge_compact.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0001/vfm_cached_edge_rgb_only_bicycle_30k_r8 \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_importance_mode rgb_only \
+  -r 8
+
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_dinov2_token_edge.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0001/vfm_dinov2_token_edge_rgb_only_bicycle_30k_r8 \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_importance_mode rgb_only \
+  -r 8
+```
+
+Run render and metrics after each train:
+
+```bash
+uv run --active python -m vfm_gs.cli.render -m <run_dir> --skip_train
+uv run --active python -m vfm_gs.cli.metrics -m <run_dir>
+```
+
 ## 2026-04-28 Smoke Validation
 
 同条件低分辨率短跑，用于确认 densification 分支实际触发 scorer：

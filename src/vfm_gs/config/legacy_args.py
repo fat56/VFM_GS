@@ -108,6 +108,7 @@ class OptimizationParams(ParamGroup):
         self.vfm_loss_thresh = 0.5
         self.vfm_weight = 0.25
         self.vfm_importance_weight = 1.0
+        self.vfm_importance_mode = "max"
         self.vfm_use_albedo_sh0 = True
         super().__init__(parser, "Optimization Parameters")
 

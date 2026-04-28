@@ -176,6 +176,7 @@ def compute_gaussian_score_fastgs_with_vfm(camlist, gaussians, pipe, bg, args, D
     loss_thresh = getattr(args, "vfm_loss_thresh", 0.5)
     vfm_weight = getattr(args, "vfm_weight", 0.25)
     vfm_importance_weight = max(0.0, getattr(args, "vfm_importance_weight", 1.0))
+    vfm_importance_mode = getattr(args, "vfm_importance_mode", "max").lower()
     use_albedo_sh0 = getattr(args, "vfm_use_albedo_sh0", True)
     cache_dir = getattr(args, "vfm_cache_dir", "")
 
@@ -215,11 +216,25 @@ def compute_gaussian_score_fastgs_with_vfm(camlist, gaussians, pipe, bg, args, D
 
     if DENSIFY:
         vfm_importance = torch.div(vfm_counts_total, len(camlist), rounding_mode="floor")
-        if vfm_importance_weight != 1.0:
-            vfm_importance = torch.floor(vfm_importance.to(torch.float32) * vfm_importance_weight).to(
-                dtype=rgb_importance.dtype
+        if vfm_importance_mode == "rgb_only":
+            importance_score = rgb_importance
+        elif vfm_importance_mode == "weighted":
+            blend = min(vfm_importance_weight, 1.0)
+            importance_score = torch.floor(
+                (1.0 - blend) * rgb_importance.to(torch.float32) + blend * vfm_importance.to(torch.float32)
+            ).to(dtype=rgb_importance.dtype)
+        elif vfm_importance_mode == "max":
+            if vfm_importance_weight != 1.0:
+                vfm_importance = torch.floor(vfm_importance.to(torch.float32) * vfm_importance_weight).to(
+                    dtype=rgb_importance.dtype
+                )
+            importance_score = torch.maximum(rgb_importance, vfm_importance)
+        else:
+            raise ValueError(
+                "Unsupported vfm_importance_mode {!r}. Available: max, weighted, rgb_only.".format(
+                    vfm_importance_mode
+                )
             )
-        importance_score = torch.maximum(rgb_importance, vfm_importance)
     else:
         importance_score = None
 

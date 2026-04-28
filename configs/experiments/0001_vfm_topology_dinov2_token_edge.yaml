@@ -9,6 +9,7 @@ training_args:
   vfm_loss_thresh: 0.45
   vfm_weight: 0.25
   vfm_importance_weight: 1.0
+  vfm_importance_mode: max
   vfm_use_albedo_sh0: true
 experiment:
   status: dinov2_token_edge_v1

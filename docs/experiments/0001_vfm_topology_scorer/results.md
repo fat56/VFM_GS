@@ -84,6 +84,25 @@ Interpretation:
 - Edge remains insensitive to this control, which suggests its extra points are not easily suppressed by simple post-count scaling.
 - The next implementation should add a harder mode such as `vfm_importance_mode=rgb_only|max|weighted`, where `rgb_only` lets VFM affect pruning but not densification.
 
+## 2026-04-28 Importance Mode Probe
+
+Code change: add `vfm_importance_mode`, defaulting to `max` for backward compatibility. Available modes are `max`, `weighted`, and `rgb_only`. In `rgb_only`, VFM still contributes to pruning-score fusion through `vfm_weight`, but densification importance uses the RGB/FastGS importance counts directly.
+
+Dataset and schedule match the 30k ablation above. These runs use `vfm_importance_mode=rgb_only` with each variant's default `vfm_loss_thresh`, `vfm_weight`, and `vfm_importance_weight`.
+
+| Artifact | Backend | PSNR | SSIM | LPIPS | Train Time | Render FPS | Gaussian Count | Output Size | Delta vs Baseline Count | Notes |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `output/0001/vfm_cached_edge_rgb_only_bicycle_30k_r8` | `cached_edge_l1` / `npz_uint8` | 26.9574 | 0.8243 | 0.1961 | 158.76s | 282.64 | 413,914 | 123M | +72.2% | Disabling direct VFM densification did not reduce edge count |
+| `output/0001/vfm_dinov2_token_edge_rgb_only_bicycle_30k_r8` | `dinov2_token_edge_l1` | 26.9310 | 0.8237 | 0.1962 | 159.52s | 185.85 | 413,223 | 123M | +71.9% | Lower than default DINO count, but still far above baseline |
+
+Interpretation:
+
+- `rgb_only` proves that short 220-iteration scores are too weak for choosing scorer behavior. The full 30k runs expose model-budget shifts that short runs cannot see.
+- Direct VFM densification is not the only source of extra Gaussians. VFM pruning-score fusion alone can preserve or reshape enough points that final count remains about 1.72x baseline.
+- DINO `rgb_only` reduces the default DINO point count by about 15.8%, but gives back most of the default DINO metric advantage.
+- Edge `rgb_only` is effectively the same budget as previous edge probes, which means simple importance-mode controls are not sufficient for budget matching.
+- The next version needs an explicit Gaussian budget mechanism, such as a final prune/target-count pass or a hard cap in the densify/prune loop. A pure signal-quality claim should wait until VFM and baseline are compared under a matched point budget.
+
 ## 2026-04-28 Cache Preflight
 
 - `vfm_gs.cli.validate_vfm_cache` passed on `output/0001/vfm_cache/bicycle_edge_u8` with 194 `cached_edge_l1` entries.
