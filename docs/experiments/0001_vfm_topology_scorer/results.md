@@ -35,3 +35,30 @@ Dataset: `datasets/mipnerf360/bicycle`, test split, `-r 8`, 220 iterations, `den
 - Optional VFM packages are not installed: `transformers`, `timm`, `xformers`, `opencv-python`.
 - DINOv2 ViT-S/14 and ViT-B/14 are feasible first targets for offline cache building at `max_width` 518-640; raw float32 features at 640x426 are estimated at 0.40GB and 0.79GB for 194 images.
 - Details: `docs/experiments/0001_vfm_topology_scorer/vfm_backend_feasibility.md`.
+
+## 2026-04-28 DINOv2 Cache Smoke
+
+Command shape:
+
+```bash
+uv run --active python -m vfm_gs.cli.build_vfm_cache \
+  -s datasets/mipnerf360/bicycle \
+  -i images_8 \
+  -o output/0001/vfm_cache/bicycle_dinov2_vits14_smoke \
+  --backend dinov2_vits14 \
+  --dinov2_repo output/0001/external/dinov2 \
+  --max_width 224 \
+  --storage npy_float16 \
+  --limit 4
+```
+
+| Artifact | Backend | Feature | Entries | Storage | Patch Grid | Size | Validation |
+|---|---|---|---:|---|---|---:|---|
+| `output/0001/vfm_cache/bicycle_dinov2_vits14_smoke` | `dinov2_vits14` | `dinov2_patchtokens` | 4 | `npy_float16` | first entry `10x16x384` | 500K | passed |
+
+- The official DINOv2 repository was cloned under ignored output state at `output/0001/external/dinov2` and loaded through `torch.hub` with `source="local"`.
+- Pretrained ViT-S/14 weights downloaded successfully and produced normalized patch-token maps through `forward_features`.
+- The current PyTorch 1.12.1 runtime does not expose public `torch.nn.functional.scaled_dot_product_attention`; the builder adds a narrow compatibility shim over the private 1.12 function so the official DINOv2 code can run in this environment.
+- DINOv2 imports warn that `xformers` is unavailable, but the smoke run falls back cleanly and does not require installing it for cache building.
+- Regression checks also passed for storage defaults: `cached_edge_l1` defaults to `npy_float32`, while DINOv2 defaults to `npy_float16` when `--storage` is omitted.
+- This validates a real VFM cache artifact only. The training scorer still consumes `mock_l1` or `cached_edge_l1`; it does not yet compare rendered features against DINOv2 patch maps.

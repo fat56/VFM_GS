@@ -128,6 +128,7 @@ vfm-gs-metrics -m output/bicycle_baseline
 vfm-gs-build-vfm-cache -s datasets/mipnerf360/bicycle -i images_8 -o output/0001/vfm_cache/bicycle_edge_u8 --max_width 640 --storage npz_uint8
 vfm-gs-validate-vfm-cache -c output/0001/vfm_cache/bicycle_edge_u8 -s datasets/mipnerf360/bicycle -i images_8 --backend cached_edge_l1
 vfm-gs-probe-vfm-backend --width 640 --height 426 --num_images 194
+vfm-gs-build-vfm-cache -s datasets/mipnerf360/bicycle -i images_8 -o output/0001/vfm_cache/bicycle_dinov2_vits14_smoke --backend dinov2_vits14 --dinov2_repo output/0001/external/dinov2 --max_width 224 --limit 4
 ```
 
 批量脚本仍保留，但已经指向新的包入口：
@@ -177,6 +178,27 @@ uv run --active python -m vfm_gs.cli.train \
   -m output/0001/vfm_cached_edge/bicycle \
   --eval
 ```
+
+真实 VFM cache 的第一条可选路径是 DINOv2 patch-token builder。若 torch.hub 远程访问被 GitHub rate limit，先把官方 DINOv2 仓库 clone 到被忽略的输出目录，再用 `--dinov2_repo` 指向本地路径：
+
+```bash
+git clone https://github.com/facebookresearch/dinov2.git output/0001/external/dinov2
+
+uv run --active python -m vfm_gs.cli.build_vfm_cache \
+  -s datasets/mipnerf360/bicycle \
+  -i images_8 \
+  -o output/0001/vfm_cache/bicycle_dinov2_vits14_smoke \
+  --backend dinov2_vits14 \
+  --dinov2_repo output/0001/external/dinov2 \
+  --max_width 224 \
+  --limit 4
+
+uv run --active python -m vfm_gs.cli.validate_vfm_cache \
+  -c output/0001/vfm_cache/bicycle_dinov2_vits14_smoke \
+  --backend dinov2_vits14
+```
+
+DINOv2 cache 默认写 `npy_float16`，manifest feature 为 `dinov2_patchtokens`。当前训练 scorer 还没有消费 DINO patch-token cache；这一步只验证真实 VFM cache artifact 和运行环境兼容性。
 
 实验配置示例：
 

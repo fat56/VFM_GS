@@ -50,9 +50,12 @@ def cache_extension(storage):
     raise ValueError("Unsupported cache storage {!r}. Available: {}".format(storage, ", ".join(SUPPORTED_STORAGE)))
 
 
-def save_feature(path, feature, storage):
+def save_feature(path, feature, storage, normalize=True):
     path = Path(path)
-    feature = normalize_np(feature)
+    if normalize:
+        feature = normalize_np(feature)
+    else:
+        feature = np.nan_to_num(feature.astype(np.float32), nan=0.0, posinf=0.0, neginf=0.0)
     if storage == "npy_float32":
         np.save(path, feature.astype(np.float32))
     elif storage == "npy_float16":
@@ -156,8 +159,8 @@ def validate_cache(cache_dir, backend=None, source_path=None, images=None, check
             expected_shape = entry.get("shape")
             if expected_shape and list(feature.shape) != list(expected_shape):
                 errors.append("{}: shape mismatch loaded={} manifest={}".format(image_name, list(feature.shape), expected_shape))
-            if feature.ndim != 2:
-                errors.append("{}: expected 2D feature map, got shape {}".format(image_name, list(feature.shape)))
+            if feature.ndim not in (2, 3):
+                errors.append("{}: expected 2D/3D feature map, got shape {}".format(image_name, list(feature.shape)))
             if feature.size == 0:
                 errors.append("{}: empty feature map".format(image_name))
 

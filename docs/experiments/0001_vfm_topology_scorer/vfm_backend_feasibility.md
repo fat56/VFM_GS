@@ -44,11 +44,23 @@ Estimated raw float32 feature cache size:
 
 ## Decision
 
-- Prefer a torch.hub DINOv2 path first, because the current FastGS runtime is pinned to PyTorch 1.12.1 and the official repository exposes torch.hub loading.
-- Start with `dinov2_vits14` or `dinov2_vitb14` at `max_width` 518-640.
-- Cache reduced maps or projected features rather than raw full-resolution token tensors.
+- Prefer a torch.hub DINOv2 path first, because the current FastGS runtime is pinned to PyTorch 1.12.1 and the official repository exposes torch.hub loading. In practice, remote torch.hub listing hit a GitHub 403 rate limit during probing, so the reliable path is to clone the official DINOv2 repo once and pass `--dinov2_repo`.
+- Start with `dinov2_vits14` or `dinov2_vitb14` at `max_width` 518-640 for full-scene cache builds. Keep `max_width` 224 with `--limit` as a fast smoke target.
+- Cache reduced patch-token maps rather than raw full-resolution image features. The implemented builder stores L2-normalized DINOv2 patch tokens as `[grid_h, grid_w, dim]`.
 - Keep `cached_edge_l1` as the deterministic fallback and regression test backend.
+
+## DINOv2 Cache Smoke
+
+Observed on 2026-04-28:
+
+- Local clone: `output/0001/external/dinov2`.
+- Backend: `dinov2_vits14`, pretrained, `max_width=224`, `--limit 4`, storage `npy_float16`.
+- Output: `output/0001/vfm_cache/bicycle_dinov2_vits14_smoke`, 4 entries, about 500K.
+- First entry shape: `10x16x384`.
+- Validation: `vfm_gs.cli.validate_vfm_cache --backend dinov2_vits14` passed.
+- `xformers` is not installed; DINOv2 emitted fallback warnings but cache generation completed.
+- Current DINOv2 expects public `torch.nn.functional.scaled_dot_product_attention`, which PyTorch 1.12.1 does not provide. The builder adds an isolated compatibility shim over the private 1.12 attention function for this optional cache path.
 
 ## Next Implementation Step
 
-Add a real DINOv2 cache builder behind an optional dependency path. It should fail gracefully when weights or dependencies are unavailable, and it should write the same manifest shape used by `cached_edge_l1`.
+Add a training scorer path that consumes `dinov2_patchtokens` caches. The first version should avoid a learned adapter and instead compare cached DINO tokens against deterministic rendered RGB/SH0 descriptors pooled to the same patch grid, so scorer overhead and stability can be measured before adding more moving parts.

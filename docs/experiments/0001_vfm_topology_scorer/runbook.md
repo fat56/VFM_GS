@@ -49,6 +49,32 @@ uv run --active python -m vfm_gs.cli.train \
   --eval
 ```
 
+## Optional DINOv2 Cache Smoke
+
+DINOv2 cache building is an offline artifact path for real VFM features. It currently validates `dinov2_patchtokens` cache generation and manifest compatibility; the training scorer does not yet consume these DINOv2 maps.
+
+When torch.hub remote access is rate-limited, clone the official repository under ignored output state and pass it explicitly:
+
+```bash
+git clone https://github.com/facebookresearch/dinov2.git output/0001/external/dinov2
+
+uv run --active python -m vfm_gs.cli.build_vfm_cache \
+  -s datasets/mipnerf360/bicycle \
+  -i images_8 \
+  -o output/0001/vfm_cache/bicycle_dinov2_vits14_smoke \
+  --backend dinov2_vits14 \
+  --dinov2_repo output/0001/external/dinov2 \
+  --max_width 224 \
+  --storage npy_float16 \
+  --limit 4
+
+uv run --active python -m vfm_gs.cli.validate_vfm_cache \
+  -c output/0001/vfm_cache/bicycle_dinov2_vits14_smoke \
+  --backend dinov2_vits14
+```
+
+For DINOv2, `--storage` defaults to `npy_float16` when omitted. `npz_uint8` is intentionally rejected for DINO patch-token caches.
+
 ## 2026-04-28 Smoke Validation
 
 同条件低分辨率短跑，用于确认 densification 分支实际触发 scorer：
