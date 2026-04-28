@@ -30,6 +30,8 @@ Keep `vfm_topology_scorer` as the v1 integration path. `mock_l1` validates the s
 - Compact cached edge improved the 30k run to PSNR 26.8864, SSIM 0.8229, LPIPS 0.1972, but grew to 408,925 Gaussians and 196.43 FPS.
 - DINO token-edge gave the best 30k metrics: PSNR 27.0577, SSIM 0.8345, LPIPS 0.1767, with 490,832 Gaussians and 193.46 FPS.
 - The full-run result reverses the short-run impression: DINO token-edge looked neutral/slightly worse at 220 iterations but becomes the strongest metric variant after normal densification has time to operate.
+- A first budget-control probe with `vfm_loss_thresh=0.75` and `vfm_weight=0.10` did not bring VFM point counts near baseline. Edge stayed at 409,028 Gaussians; DINO dropped to 422,506 Gaussians but remained about 76% above baseline.
+- The budget-control probe kept good metrics, but below default DINO: DINO t075/w010 reached PSNR 26.9586, SSIM 0.8258, LPIPS 0.1935.
 
 ## Limitations
 
@@ -40,11 +42,12 @@ Keep `vfm_topology_scorer` as the v1 integration path. `mock_l1` validates the s
 - Compact storage helps disk use, but `npz_uint8` is not proven metric-neutral. Keep float32 and compact cache variants available for ablation.
 - The current DINO cache is built at `max_width=224`; full `max_width=518` or `640` cache time, disk use, and scorer behavior still need measurement.
 - The best 30k DINO result is not budget-controlled: it used about 2.04x the baseline Gaussian count. The next result must separate feature-signal quality from simply allowing denser reconstructions.
+- Existing knobs do not independently control VFM densification. `vfm_weight` affects pruning fusion, but `importance_score = max(rgb_importance, vfm_importance)` lets VFM increase clone/split candidates even when pruning weight is low.
 
 ## Next Version Plan
 
-1. Run budget-controlled 30k ablations for `cached_edge_l1` and `dinov2_token_edge_l1`, targeting baseline-like Gaussian counts through lower `vfm_weight`, higher `vfm_loss_thresh`, or stronger final prune.
-2. Keep 30k `-r 8` as the minimum quality gate; use 220 iterations only for smoke checks after code changes.
-3. Build a full-scene `dinov2_vits14` cache at `max_width=518` or `640`, record cache time and disk use, and compare against the `max_width=224` regression cache.
-4. Add an optional patch descriptor scorer that compares pooled rendered RGB/edge descriptors against a fixed projection of DINO tokens, then compare it with token-edge under a matched Gaussian budget.
-5. Compare PSNR/SSIM/LPIPS, Gaussian count, render FPS, cache build time, scorer overhead, cache size, and visual floaters before promoting DINOv2 beyond experimental status.
+1. Add explicit VFM densification controls, starting with `vfm_importance_weight` or `vfm_importance_mode`, so pruning weight and densification strength can be tuned separately.
+2. Rerun 30k `-r 8` budget-controlled ablations after the new importance control lands, targeting baseline-like Gaussian counts.
+3. Keep 30k `-r 8` as the minimum quality gate; use 220 iterations only for smoke checks after code changes.
+4. Build a full-scene `dinov2_vits14` cache at `max_width=518` or `640`, record cache time and disk use, and compare against the `max_width=224` regression cache.
+5. Add an optional patch descriptor scorer that compares pooled rendered RGB/edge descriptors against a fixed projection of DINO tokens, then compare it with token-edge under a matched Gaussian budget.

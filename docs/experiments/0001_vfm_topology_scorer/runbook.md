@@ -165,6 +165,44 @@ uv run --active python -m vfm_gs.cli.render -m output/0001/vfm_dinov2_token_edge
 uv run --active python -m vfm_gs.cli.metrics -m output/0001/vfm_dinov2_token_edge_bicycle_30k_r8
 ```
 
+## Budget-Control Probe
+
+Existing knobs can be overridden from the command line. The first probe used a higher VFM threshold and lower pruning fusion weight:
+
+```bash
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_cached_edge_compact.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0001/vfm_cached_edge_t075_w010_bicycle_30k_r8 \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_loss_thresh 0.75 \
+  --vfm_weight 0.10 \
+  -r 8
+
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_dinov2_token_edge.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0001/vfm_dinov2_token_edge_t075_w010_bicycle_30k_r8 \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_loss_thresh 0.75 \
+  --vfm_weight 0.10 \
+  -r 8
+```
+
+This did not bring Gaussian counts near the baseline, which is why the next implementation step is an explicit VFM importance control rather than more smoke-grid runs.
+
 ## 2026-04-28 Smoke Validation
 
 同条件低分辨率短跑，用于确认 densification 分支实际触发 scorer：

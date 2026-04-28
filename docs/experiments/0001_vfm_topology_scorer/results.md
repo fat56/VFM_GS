@@ -50,6 +50,22 @@ Interpretation:
 - The DINO token-edge scorer is now a promising direction on full-length low-resolution training, but the gain is entangled with a much larger Gaussian budget. The next comparison needs a budget-controlled run or a stronger final-prune setting before calling it a pure quality improvement.
 - `cached_edge_l1` remains a strong deterministic proxy baseline: it is less semantically meaningful than DINO, but it gave a clear metric gain with a smaller cache and lower training overhead than DINO token-edge.
 
+## 2026-04-28 Budget-Control Probe
+
+Dataset and schedule match the 30k ablation above. These runs only override `vfm_loss_thresh=0.75` and `vfm_weight=0.10` to test whether existing knobs can bring VFM runs closer to the baseline Gaussian count.
+
+| Artifact | Backend | PSNR | SSIM | LPIPS | Train Time | Render FPS | Gaussian Count | Output Size | Delta vs Baseline Count | Notes |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `output/0001/vfm_cached_edge_t075_w010_bicycle_30k_r8` | `cached_edge_l1` / `npz_uint8` | 26.9372 | 0.8238 | 0.1979 | 166.81s | 337.93 | 409,028 | 122M | +70.2% | Existing knobs did not reduce edge point count |
+| `output/0001/vfm_dinov2_token_edge_t075_w010_bicycle_30k_r8` | `dinov2_token_edge_l1` | 26.9586 | 0.8258 | 0.1935 | 166.60s | 377.72 | 422,506 | 125M | +75.8% | Lower than default DINO point count, but still far above baseline |
+
+Interpretation:
+
+- Raising `vfm_loss_thresh` and lowering `vfm_weight` is not sufficient budget control. `vfm_weight` currently affects pruning-score fusion, while densification still uses `max(rgb_importance, vfm_importance)`.
+- The DINO budget probe reduced Gaussian count by about 14% relative to the default DINO 30k run, but it also gave back part of the quality gain.
+- Edge proxy point count was effectively unchanged under these knobs. The next implementation should separate VFM densification strength from VFM pruning strength, for example with a dedicated `vfm_importance_weight` or `vfm_importance_mode`.
+- Render FPS varied enough that it should be interpreted together with Gaussian count and repeated where the budget comparison is close.
+
 ## 2026-04-28 Cache Preflight
 
 - `vfm_gs.cli.validate_vfm_cache` passed on `output/0001/vfm_cache/bicycle_edge_u8` with 194 `cached_edge_l1` entries.
