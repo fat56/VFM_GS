@@ -129,6 +129,7 @@ vfm-gs-build-vfm-cache -s datasets/mipnerf360/bicycle -i images_8 -o output/0001
 vfm-gs-validate-vfm-cache -c output/0001/vfm_cache/bicycle_edge_u8 -s datasets/mipnerf360/bicycle -i images_8 --backend cached_edge_l1
 vfm-gs-probe-vfm-backend --width 640 --height 426 --num_images 194
 vfm-gs-build-vfm-cache -s datasets/mipnerf360/bicycle -i images_8 -o output/0001/vfm_cache/bicycle_dinov2_vits14_smoke --backend dinov2_vits14 --dinov2_repo output/0001/external/dinov2 --max_width 224 --limit 4
+vfm-gs-train --variant fastgs_baseline --config configs/experiments/0001_vfm_topology_dinov2_token_edge.yaml -s datasets/mipnerf360/bicycle -i images -m output/0001/vfm_dinov2_token_edge/bicycle --eval
 ```
 
 批量脚本仍保留，但已经指向新的包入口：
@@ -198,7 +199,25 @@ uv run --active python -m vfm_gs.cli.validate_vfm_cache \
   --backend dinov2_vits14
 ```
 
-DINOv2 cache 默认写 `npy_float16`，manifest feature 为 `dinov2_patchtokens`。当前训练 scorer 还没有消费 DINO patch-token cache；这一步只验证真实 VFM cache artifact 和运行环境兼容性。
+DINOv2 cache 默认写 `npy_float16`，manifest feature 为 `dinov2_patchtokens`。`dinov2_token_edge_l1` 是第一版消费该 cache 的训练后端：它把 DINO patch tokens 投影成 token-edge topology map，再与 SH0 渲染图的 pooled edge map 形成 pixel error map。
+
+```bash
+uv run --active python -m vfm_gs.cli.build_vfm_cache \
+  -s datasets/mipnerf360/bicycle \
+  -i images_8 \
+  -o output/0001/vfm_cache/bicycle_dinov2_vits14 \
+  --backend dinov2_vits14 \
+  --dinov2_repo output/0001/external/dinov2 \
+  --max_width 224
+
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_dinov2_token_edge.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0001/vfm_dinov2_token_edge/bicycle \
+  --eval
+```
 
 实验配置示例：
 

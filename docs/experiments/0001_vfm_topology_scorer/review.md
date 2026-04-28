@@ -2,7 +2,7 @@
 
 ## Current Decision
 
-Keep `vfm_topology_scorer` as the v1 integration path. `mock_l1` validates the scoring plumbing, `cached_edge_l1` validates the offline cache contract, and the optional DINOv2 builder now validates that real VFM patch-token caches can be generated in this environment. Training has not yet consumed DINOv2 feature maps, so this is still an integration milestone rather than a VFM quality claim.
+Keep `vfm_topology_scorer` as the v1 integration path. `mock_l1` validates the scoring plumbing, `cached_edge_l1` validates the offline cache contract, and `dinov2_token_edge_l1` now validates that training can consume real DINOv2 patch-token caches. The DINOv2 path is still a conservative token-edge projection, not a final semantic feature scorer.
 
 ## Findings
 
@@ -22,20 +22,24 @@ Keep `vfm_topology_scorer` as the v1 integration path. `mock_l1` validates the s
 - A 4-image ViT-S/14 smoke cache at `max_width=224` wrote 4 `npy_float16` entries, first entry shape `10x16x384`, total size about 500K, and passed `vfm_gs.cli.validate_vfm_cache`.
 - Remote torch.hub listing hit GitHub rate limits during probing, but a local clone at `output/0001/external/dinov2` plus pretrained weight download worked. The builder reports a clear hint to pass `--dinov2_repo` when remote torch.hub loading fails.
 - PyTorch 1.12.1 lacks the public SDPA API expected by current DINOv2, so the cache builder includes a narrow compatibility shim over the private 1.12 attention function. This should remain isolated to optional DINOv2 cache generation.
+- A full-scene ViT-S/14 cache at `max_width=224` wrote 194 `npy_float16` entries to `output/0001/vfm_cache/bicycle_dinov2_vits14`, took 15s to build, occupied about 24M, and passed validation.
+- `dinov2_token_edge_l1` projects cached DINO patch tokens into a scalar token-edge topology map, pools SH0-rendered luminance edges to the same grid, and returns an upsampled pixel error map for the existing metric-map scorer path.
+- The DINO token-edge smoke run completed train/render/metrics: PSNR 20.2913, SSIM 0.4272, LPIPS 0.6006, 77,761 Gaussians, 1.72s training time, 410.94 FPS on rendered test frames.
+- DINO scorer preflight now accepts DINO cache manifests (`dinov2_vits14` or `dinov2_vitb14`) while rejecting mismatched cache features/backends before Scene construction.
 
 ## Limitations
 
 - `mock_l1` is deliberately not a real visual foundation model signal.
 - `cached_edge_l1` is also a proxy; it only tests cache mechanics and edge-alignment behavior.
-- DINOv2 cache generation is proven only as an offline artifact path. The scorer does not yet align rendered features with DINO patch tokens during training.
+- `dinov2_token_edge_l1` consumes DINO patch tokens, but it compares scalar topology projections rather than full semantic feature vectors.
 - The smoke run uses `-r 8` and 220 iterations, so it only validates integration health, not final reconstruction quality.
 - Compact storage helps disk use, but `npz_uint8` is not proven metric-neutral. Keep float32 and compact cache variants available for ablation.
-- The DINOv2 smoke used `--limit 4` and `max_width=224`; full-scene cache time, disk use, and training-time scorer overhead still need measurement.
+- The current DINO cache is built at `max_width=224`; full `max_width=518` or `640` cache time, disk use, and scorer behavior still need measurement.
 
 ## Next Version Plan
 
-1. Add a DINO feature-map scorer path that consumes `dinov2_patchtokens` caches and compares them with a deterministic projection of rendered RGB or SH0 features.
-2. Decide the first projection strategy explicitly: start with fixed color/edge descriptors pooled to the DINO patch grid, then add a learned lightweight adapter only if the fixed path is stable.
-3. Build a full-scene `dinov2_vits14` cache at `max_width=518` or `640`, record cache time and disk use, and keep the `max_width=224` smoke as a fast regression target.
+1. Run a threshold/weight smoke grid for `dinov2_token_edge_l1`, starting with `vfm_loss_thresh` 0.35/0.45/0.55 and `vfm_weight` 0.1/0.25.
+2. Build a full-scene `dinov2_vits14` cache at `max_width=518` or `640`, record cache time and disk use, and compare against the `max_width=224` regression cache.
+3. Add an optional patch descriptor scorer that compares pooled rendered RGB/edge descriptors against a fixed projection of DINO tokens, then compare it with token-edge.
 4. Run a longer bicycle ablation with matched baseline, `cached_edge_l1`, compact edge, and DINOv2 scorer schedules.
-5. Compare PSNR/SSIM/LPIPS, Gaussian count, render FPS, cache build time, scorer overhead, cache size, and visual floaters before promoting DINOv2 to the default VFM backend.
+5. Compare PSNR/SSIM/LPIPS, Gaussian count, render FPS, cache build time, scorer overhead, cache size, and visual floaters before promoting DINOv2 beyond experimental status.

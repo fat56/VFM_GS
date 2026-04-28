@@ -1,0 +1,15 @@
+name: 0001_vfm_topology_dinov2_token_edge
+extends: fastgs_baseline
+scorer: vfm_topology_scorer
+training_args:
+  densification_interval: 100
+  vfm_enable: true
+  vfm_backend: dinov2_token_edge_l1
+  vfm_cache_dir: output/0001/vfm_cache/bicycle_dinov2_vits14
+  vfm_loss_thresh: 0.45
+  vfm_weight: 0.25
+  vfm_use_albedo_sh0: true
+experiment:
+  status: dinov2_token_edge_v1
+  proposal: docs/experiments/0001_vfm_topology_scorer/proposal.md
+  note: Uses DINOv2 patch-token cache projected to a token-edge topology map.

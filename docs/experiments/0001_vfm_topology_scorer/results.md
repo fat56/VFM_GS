@@ -10,6 +10,7 @@ Dataset: `datasets/mipnerf360/bicycle`, test split, `-r 8`, 220 iterations, `den
 | `output/0001/vfm_mock_bicycle_smoke` | `0001_vfm_topology_scorer` | `vfm_topology_scorer` | `mock_l1` | 20.3459 | 0.4294 | 0.6010 | 1.05s | 78,375 | SH0 mock VFM branch validated |
 | `output/0001/vfm_cached_edge_bicycle_smoke` | `0001_vfm_topology_cached_edge` | `vfm_topology_scorer` | `cached_edge_l1` | 20.3265 | 0.4291 | 0.6005 | 1.17s | 78,605 | Offline cache read path validated |
 | `output/0001/vfm_cached_edge_compact_bicycle_smoke` | `0001_vfm_topology_cached_edge_compact` | `vfm_topology_scorer` | `cached_edge_l1` / `npz_uint8` | 20.1588 | 0.4275 | 0.5993 | 1.16s | 78,682 | Compact cache and validation path validated |
+| `output/0001/vfm_dinov2_token_edge_bicycle_smoke` | `0001_vfm_topology_dinov2_token_edge` | `vfm_topology_scorer` | `dinov2_token_edge_l1` | 20.2913 | 0.4272 | 0.6006 | 1.72s | 77,761 | DINOv2 token-edge cache consumed by training |
 
 ## Interpretation
 
@@ -21,6 +22,8 @@ Dataset: `datasets/mipnerf360/bicycle`, test split, `-r 8`, 220 iterations, `den
 - Cache artifact: `output/0001/vfm_cache/bicycle_edge`, 194 entries, about 189MB when built from `images_8` with `--max_width 640`.
 - Compact cache artifact: `output/0001/vfm_cache/bicycle_edge_u8`, 194 entries, about 35MB with `--storage npz_uint8`; `vfm_gs.cli.validate_vfm_cache` passed with checksum and source-image checks.
 - The compact cache run stayed stable but shifted PSNR downward more than the float32 cache. That points to quantization changing thresholded edge masks enough to affect early densification, so longer runs should compare cache precision as an ablation rather than assuming compact storage is metric-neutral.
+- The first DINOv2-consuming scorer stayed stable and produced slightly lower PSNR/SSIM than baseline in the short run, with LPIPS similar to prior VFM variants. It should be read as a successful real-cache training integration, not as evidence that the token-edge projection is the right quality signal.
+- DINO token-edge training time was 1.72s vs 1.17s for cached edge in the same 220-iteration schedule, so the derived DINO projection adds visible but still modest scorer overhead at this tiny scale.
 
 ## 2026-04-28 Cache Preflight
 
@@ -61,4 +64,35 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 - The current PyTorch 1.12.1 runtime does not expose public `torch.nn.functional.scaled_dot_product_attention`; the builder adds a narrow compatibility shim over the private 1.12 function so the official DINOv2 code can run in this environment.
 - DINOv2 imports warn that `xformers` is unavailable, but the smoke run falls back cleanly and does not require installing it for cache building.
 - Regression checks also passed for storage defaults: `cached_edge_l1` defaults to `npy_float32`, while DINOv2 defaults to `npy_float16` when `--storage` is omitted.
-- This validates a real VFM cache artifact only. The training scorer still consumes `mock_l1` or `cached_edge_l1`; it does not yet compare rendered features against DINOv2 patch maps.
+- This cache-only smoke validated the real VFM artifact path before the training scorer consumed DINOv2 maps. The token-edge scorer smoke below is the first DINO-consuming training run.
+
+## 2026-04-28 DINOv2 Token-Edge Scorer Smoke
+
+Cache command:
+
+```bash
+uv run --active python -m vfm_gs.cli.build_vfm_cache \
+  -s datasets/mipnerf360/bicycle \
+  -i images_8 \
+  -o output/0001/vfm_cache/bicycle_dinov2_vits14 \
+  --backend dinov2_vits14 \
+  --dinov2_repo output/0001/external/dinov2 \
+  --max_width 224
+```
+
+Train command used `configs/experiments/0001_vfm_topology_dinov2_token_edge.yaml` with the same `-r 8`, 220-iteration smoke schedule as previous rows.
+
+| Artifact | Value |
+|---|---|
+| Cache | `output/0001/vfm_cache/bicycle_dinov2_vits14` |
+| Cache entries | 194 |
+| Cache storage | `npy_float16` |
+| Cache size | 24M |
+| Cache build time | 15s |
+| Validation | `vfm_gs.cli.validate_vfm_cache --backend dinov2_vits14` passed |
+| Training preflight | 194 `dinov2_vits14` entries passed before Scene construction |
+| Render FPS | 410.94 FPS on 25 test frames |
+
+- `dinov2_token_edge_l1` converts cached DINO patch tokens into a scalar token-edge topology map and compares it with SH0-rendered luminance edges pooled to the same patch grid.
+- This is the first scorer variant in the plan that consumes real DINOv2 cache data during training.
+- It avoids online DINO inference in the training loop, so the runtime cost is cache loading, token-edge derivation, pooling, and an extra `render_fastgs(..., get_flag=True)` pass.

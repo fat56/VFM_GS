@@ -48,6 +48,7 @@ Estimated raw float32 feature cache size:
 - Start with `dinov2_vits14` or `dinov2_vitb14` at `max_width` 518-640 for full-scene cache builds. Keep `max_width` 224 with `--limit` as a fast smoke target.
 - Cache reduced patch-token maps rather than raw full-resolution image features. The implemented builder stores L2-normalized DINOv2 patch tokens as `[grid_h, grid_w, dim]`.
 - Keep `cached_edge_l1` as the deterministic fallback and regression test backend.
+- Use `dinov2_token_edge_l1` as the first training-time DINO consumer because it avoids online DINO inference and turns patch tokens into a scalar topology map that fits the existing FastGS metric-map scorer path.
 
 ## DINOv2 Cache Smoke
 
@@ -61,6 +62,17 @@ Observed on 2026-04-28:
 - `xformers` is not installed; DINOv2 emitted fallback warnings but cache generation completed.
 - Current DINOv2 expects public `torch.nn.functional.scaled_dot_product_attention`, which PyTorch 1.12.1 does not provide. The builder adds an isolated compatibility shim over the private 1.12 attention function for this optional cache path.
 
+## DINOv2 Token-Edge Scorer Smoke
+
+Observed on 2026-04-28:
+
+- Full-scene cache: `output/0001/vfm_cache/bicycle_dinov2_vits14`, 194 entries, `max_width=224`, `npy_float16`, about 24M.
+- Cache build time: 15s after the local DINOv2 repo and pretrained weights were already available.
+- Training config: `configs/experiments/0001_vfm_topology_dinov2_token_edge.yaml`.
+- Smoke result: PSNR 20.2913, SSIM 0.4272, LPIPS 0.6006, 77,761 Gaussians, 1.72s training time.
+- Render result: 25 test frames at 410.94 FPS.
+- Interpretation: stable real-DINO cache consumption is validated, but the scalar token-edge projection is still a proxy for semantic feature consistency.
+
 ## Next Implementation Step
 
-Add a training scorer path that consumes `dinov2_patchtokens` caches. The first version should avoid a learned adapter and instead compare cached DINO tokens against deterministic rendered RGB/SH0 descriptors pooled to the same patch grid, so scorer overhead and stability can be measured before adding more moving parts.
+Run a small threshold/weight grid for `dinov2_token_edge_l1`, then compare it with a second deterministic patch-descriptor projection before moving to a larger `max_width` cache or a longer training schedule.

@@ -75,6 +75,43 @@ uv run --active python -m vfm_gs.cli.validate_vfm_cache \
 
 For DINOv2, `--storage` defaults to `npy_float16` when omitted. `npz_uint8` is intentionally rejected for DINO patch-token caches.
 
+## DINOv2 Token-Edge Scorer v1
+
+`dinov2_token_edge_l1` 是第一版训练期消费 DINOv2 cache 的 scorer backend。它不在训练循环里跑 DINOv2，而是把离线 `dinov2_patchtokens` 转成 token-edge topology map，再和 SH0 渲染图的 pooled edge map 比较。
+
+```bash
+uv run --active python -m vfm_gs.cli.build_vfm_cache \
+  -s datasets/mipnerf360/bicycle \
+  -i images_8 \
+  -o output/0001/vfm_cache/bicycle_dinov2_vits14 \
+  --backend dinov2_vits14 \
+  --dinov2_repo output/0001/external/dinov2 \
+  --max_width 224
+
+uv run --active python -m vfm_gs.cli.validate_vfm_cache \
+  -c output/0001/vfm_cache/bicycle_dinov2_vits14 \
+  --backend dinov2_vits14
+
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_dinov2_token_edge.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0001/vfm_dinov2_token_edge_bicycle_smoke \
+  --eval \
+  --iterations 220 \
+  --densify_from_iter 50 \
+  --densify_until_iter 220 \
+  --densification_interval 50 \
+  --test_iterations 220 \
+  --save_iterations 220 \
+  --checkpoint_iterations 220 \
+  -r 8
+
+uv run --active python -m vfm_gs.cli.render -m output/0001/vfm_dinov2_token_edge_bicycle_smoke --skip_train
+uv run --active python -m vfm_gs.cli.metrics -m output/0001/vfm_dinov2_token_edge_bicycle_smoke
+```
+
 ## 2026-04-28 Smoke Validation
 
 同条件低分辨率短跑，用于确认 densification 分支实际触发 scorer：
