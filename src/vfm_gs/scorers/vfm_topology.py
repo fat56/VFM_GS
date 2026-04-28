@@ -1,11 +1,8 @@
-from pathlib import Path
-
-import numpy as np
 import torch
 import torch.nn.functional as F
 
 from vfm_gs.gaussian_renderer import render_fastgs
-from vfm_gs.scorers.vfm_cache import read_manifest
+from vfm_gs.scorers.vfm_cache import load_feature, read_manifest
 from vfm_gs.utils.fast_utils import compute_gaussian_score_fastgs, normalize01
 
 from .registry import register_scorer
@@ -26,8 +23,9 @@ class VFMFeatureCache:
             raise KeyError("Image {!r} is missing from VFM cache {}".format(image_name, self.cache_dir))
         if image_name not in self.features:
             entry = self.entries[image_name]
-            path = Path(self.cache_dir) / entry["cache_file"]
-            edge_map = torch.from_numpy(np.load(path)).to(torch.float32)
+            storage = entry.get("storage", self.manifest.get("storage", "npy_float32"))
+            path = "{}/{}".format(self.cache_dir.rstrip("/"), entry["cache_file"])
+            edge_map = torch.from_numpy(load_feature(path, storage)).to(torch.float32)
             self.features[image_name] = edge_map
 
         edge_map = self.features[image_name].to(device=device)

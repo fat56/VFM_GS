@@ -29,12 +29,19 @@ uv run --active python -m vfm_gs.cli.train \
 uv run --active python -m vfm_gs.cli.build_vfm_cache \
   -s datasets/mipnerf360/bicycle \
   -i images_8 \
-  -o output/0001/vfm_cache/bicycle_edge \
-  --max_width 640
+  -o output/0001/vfm_cache/bicycle_edge_u8 \
+  --max_width 640 \
+  --storage npz_uint8
+
+uv run --active python -m vfm_gs.cli.validate_vfm_cache \
+  -c output/0001/vfm_cache/bicycle_edge_u8 \
+  -s datasets/mipnerf360/bicycle \
+  -i images_8 \
+  --backend cached_edge_l1
 
 uv run --active python -m vfm_gs.cli.train \
   --variant fastgs_baseline \
-  --config configs/experiments/0001_vfm_topology_cached_edge.yaml \
+  --config configs/experiments/0001_vfm_topology_cached_edge_compact.yaml \
   -s datasets/mipnerf360/bicycle \
   -i images \
   -m output/0001/vfm_cached_edge/bicycle \
@@ -86,15 +93,22 @@ uv run --active python -m vfm_gs.cli.metrics -m output/0001/vfm_mock_bicycle_smo
 uv run --active python -m vfm_gs.cli.build_vfm_cache \
   -s datasets/mipnerf360/bicycle \
   -i images_8 \
-  -o output/0001/vfm_cache/bicycle_edge \
-  --max_width 640
+  -o output/0001/vfm_cache/bicycle_edge_u8 \
+  --max_width 640 \
+  --storage npz_uint8
+
+uv run --active python -m vfm_gs.cli.validate_vfm_cache \
+  -c output/0001/vfm_cache/bicycle_edge_u8 \
+  -s datasets/mipnerf360/bicycle \
+  -i images_8 \
+  --backend cached_edge_l1
 
 uv run --active python -m vfm_gs.cli.train \
   --variant fastgs_baseline \
-  --config configs/experiments/0001_vfm_topology_cached_edge.yaml \
+  --config configs/experiments/0001_vfm_topology_cached_edge_compact.yaml \
   -s datasets/mipnerf360/bicycle \
   -i images \
-  -m output/0001/vfm_cached_edge_bicycle_smoke \
+  -m output/0001/vfm_cached_edge_compact_bicycle_smoke \
   --eval \
   --iterations 220 \
   --densify_from_iter 50 \
@@ -105,6 +119,6 @@ uv run --active python -m vfm_gs.cli.train \
   --checkpoint_iterations 220 \
   -r 8
 
-uv run --active python -m vfm_gs.cli.render -m output/0001/vfm_cached_edge_bicycle_smoke --skip_train
-uv run --active python -m vfm_gs.cli.metrics -m output/0001/vfm_cached_edge_bicycle_smoke
+uv run --active python -m vfm_gs.cli.render -m output/0001/vfm_cached_edge_compact_bicycle_smoke --skip_train
+uv run --active python -m vfm_gs.cli.metrics -m output/0001/vfm_cached_edge_compact_bicycle_smoke
 ```

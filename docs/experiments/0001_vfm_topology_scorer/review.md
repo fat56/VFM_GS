@@ -14,18 +14,20 @@ Keep `vfm_topology_scorer` as the v1 integration path. `mock_l1` validates the s
 - `vfm_gs.cli.build_vfm_cache` now writes a manifest keyed by `Camera.image_name`, with backend name, source shape, cache shape, dtype, normalization, and per-entry checksum.
 - `cached_edge_l1` completed the same train/render/metrics smoke path: PSNR 20.3265, SSIM 0.4291, LPIPS 0.6005, 78,605 Gaussians.
 - Training output `cfg_args` now records optimization and pipeline parameters in addition to model parameters, so scorer/backend settings are recoverable from each run directory.
+- `npz_uint8` compact storage reduced the bicycle edge cache from about 189MB to 35MB, and `vfm_gs.cli.validate_vfm_cache` passed checksum/source-image validation.
+- The compact run completed train/render/metrics with 78,682 Gaussians, PSNR 20.1588, SSIM 0.4275, LPIPS 0.5993. The larger PSNR drop suggests edge quantization can move early densification decisions.
 
 ## Limitations
 
 - `mock_l1` is deliberately not a real visual foundation model signal.
 - `cached_edge_l1` is also a proxy; it only tests cache mechanics and edge-alignment behavior.
 - The smoke run uses `-r 8` and 220 iterations, so it only validates integration health, not final reconstruction quality.
-- Cache generation currently stores `.npy` maps and can be large at full image resolution; use `images_8` or `--max_width` for smoke tests.
+- Compact storage helps disk use, but `npz_uint8` is not proven metric-neutral. Keep float32 and compact cache variants available for ablation.
 
 ## Next Version Plan
 
-1. Add a compact cache storage option, such as quantized `.npz` or `float16`, and record the storage format in the manifest.
-2. Add a cache validation command that checks missing entries, shape metadata, checksum mismatches, and backend compatibility before training starts.
-3. Add one real cached VFM backend after dependency and memory checks, with DINOv2 features as the first semantic candidate and monocular depth/edge maps as the geometry candidate.
-4. Run a longer bicycle ablation with matched baseline, `mock_l1`, `cached_edge_l1`, and real cached VFM schedules.
-5. Compare PSNR/SSIM/LPIPS, Gaussian count, render FPS, cache build time, scorer overhead, and visual floaters.
+1. Do a dependency and memory feasibility check for one real cached VFM backend, starting with DINOv2 features for semantic topology and a monocular depth/edge backend for geometry.
+2. Add a preflight check in `vfm_topology_scorer` so cached backends fail before densification if `vfm_cache_dir` is missing or invalid.
+3. Run a longer bicycle ablation with matched baseline, `mock_l1`, `cached_edge_l1` float32, and `cached_edge_l1` compact schedules.
+4. If the dependency check passes, add the first real VFM cache builder and keep the scorer path unchanged.
+5. Compare PSNR/SSIM/LPIPS, Gaussian count, render FPS, cache build time, scorer overhead, cache size, and visual floaters.

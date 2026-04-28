@@ -125,7 +125,8 @@ uv run --active python -m vfm_gs.cli.metrics \
 vfm-gs-train --variant fastgs_baseline -s datasets/mipnerf360/bicycle -i images -m output/bicycle_baseline --eval
 vfm-gs-render -m output/bicycle_baseline --skip_train
 vfm-gs-metrics -m output/bicycle_baseline
-vfm-gs-build-vfm-cache -s datasets/mipnerf360/bicycle -i images_8 -o output/0001/vfm_cache/bicycle_edge --max_width 640
+vfm-gs-build-vfm-cache -s datasets/mipnerf360/bicycle -i images_8 -o output/0001/vfm_cache/bicycle_edge_u8 --max_width 640 --storage npz_uint8
+vfm-gs-validate-vfm-cache -c output/0001/vfm_cache/bicycle_edge_u8 -s datasets/mipnerf360/bicycle -i images_8 --backend cached_edge_l1
 ```
 
 批量脚本仍保留，但已经指向新的包入口：
@@ -157,12 +158,19 @@ scorer registry 位于 `src/vfm_gs/scorers/`。当前注册了 `fastgs_photometr
 uv run --active python -m vfm_gs.cli.build_vfm_cache \
   -s datasets/mipnerf360/bicycle \
   -i images_8 \
-  -o output/0001/vfm_cache/bicycle_edge \
-  --max_width 640
+  -o output/0001/vfm_cache/bicycle_edge_u8 \
+  --max_width 640 \
+  --storage npz_uint8
+
+uv run --active python -m vfm_gs.cli.validate_vfm_cache \
+  -c output/0001/vfm_cache/bicycle_edge_u8 \
+  -s datasets/mipnerf360/bicycle \
+  -i images_8 \
+  --backend cached_edge_l1
 
 uv run --active python -m vfm_gs.cli.train \
   --variant fastgs_baseline \
-  --config configs/experiments/0001_vfm_topology_cached_edge.yaml \
+  --config configs/experiments/0001_vfm_topology_cached_edge_compact.yaml \
   -s datasets/mipnerf360/bicycle \
   -i images \
   -m output/0001/vfm_cached_edge/bicycle \

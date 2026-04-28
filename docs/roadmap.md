@@ -2,12 +2,12 @@
 
 ## Active
 
-- `0001_vfm_topology_scorer`: cached edge proxy 已完成 bicycle smoke。下一步压缩缓存格式并接真实 VFM 后端。
+- `0001_vfm_topology_scorer`: compact cache 与 validation 已完成 bicycle smoke。下一步做真实 VFM 后端依赖/显存评估。
 
 ## Queued
 
-- 增加 cache validation 命令，训练前检查缺失 entry、shape、checksum 和 backend 兼容性。
-- 增加紧凑缓存格式，降低 `.npy` edge/feature map 的磁盘占用。
+- 为 cached backend 增加训练前 preflight，提前暴露缺失 cache 或 backend 不匹配。
+- 调研并验证 DINOv2 / monocular depth 后端在当前 Python 3.10、PyTorch 1.12.1、CUDA 11.6 环境下的可行性。
 - 运行 bicycle 长程 baseline vs VFM cached backend 消融。
 
 ## Blocked
@@ -20,3 +20,5 @@
 - 建立 `vfm_topology_scorer` mock v1，验证 scorer registry 与 FastGS baseline 的输出兼容。
 - 建立 `build_vfm_cache` CLI 和 `cached_edge_l1` 后端，验证离线缓存读取链路。
 - 为训练输出补充 scorer/backend/阈值/权重等 provenance 日志。
+- 增加 `npz_uint8` compact cache storage，将 bicycle edge cache 从约 189MB 降到约 35MB。
+- 增加 `validate_vfm_cache` CLI，支持 manifest、checksum、shape、source-image 和 backend 校验。
