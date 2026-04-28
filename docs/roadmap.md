@@ -2,7 +2,7 @@
 
 ## Active
 
-- `0001_vfm_topology_scorer`: `target_gaussian_count` final-prune control 已实现，下一步运行 30k budget-matched probe。
+- `0001_vfm_topology_scorer`: `target_gaussian_count` final-prune control 已修正为 low-score bulk pruning，下一步重跑 30k budget-matched probe。
 
 ## Queued
 
@@ -31,4 +31,4 @@
 - 完成 t075/w010 budget-control probe；现有阈值/权重 knob 无法充分控制 VFM densification 点数。
 - 增加 `vfm_importance_weight` 并完成 i0.25 30k probe；DINO 点数下降但仍未达成 budget matching。
 - 增加 `vfm_importance_mode=max|weighted|rgb_only` 并完成 `rgb_only` 30k probe；直接关闭 VFM densification 仍未达成 budget matching。
-- 增加 `target_gaussian_count` final-prune control，可在训练结束时按 scorer pruning score 裁到固定 Gaussian 预算并重新保存最终 PLY。
+- 增加 `target_gaussian_count` final-prune control；首版 high-score bulk pruning 是负例，已修正为 low-score bulk pruning。

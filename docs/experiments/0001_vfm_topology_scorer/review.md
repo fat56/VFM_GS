@@ -38,6 +38,8 @@ Keep `vfm_topology_scorer` as the v1 integration path. `mock_l1` validates the s
 - `vfm_importance_mode` now supports `max`, `weighted`, and `rgb_only`. The default `max` preserves previous behavior.
 - 30k `rgb_only` ablations completed. Edge reached PSNR 26.9574, SSIM 0.8243, LPIPS 0.1961, and 413,914 Gaussians; DINO reached PSNR 26.9310, SSIM 0.8237, LPIPS 0.1962, and 413,223 Gaussians.
 - `rgb_only` did not recover a baseline-like Gaussian count. VFM pruning-score fusion alone can still preserve or reshape enough points to keep final count about 72% above baseline.
+- The first `target_gaussian_count` probe matched the baseline count exactly but pruned highest-score Gaussians and collapsed quality: edge PSNR 11.1494, DINO PSNR 10.2215.
+- Target-count pruning now removes the lowest-score Gaussians first. This matches the observed score semantics for bulk budget control better than high-score removal.
 
 ## Limitations
 
@@ -49,12 +51,12 @@ Keep `vfm_topology_scorer` as the v1 integration path. `mock_l1` validates the s
 - The current DINO cache is built at `max_width=224`; full `max_width=518` or `640` cache time, disk use, and scorer behavior still need measurement.
 - The best 30k DINO result is not budget-controlled: it used about 2.04x the baseline Gaussian count. The next result must separate feature-signal quality from simply allowing denser reconstructions.
 - Existing knobs do not provide full budget control. `vfm_weight` affects pruning fusion, `vfm_importance_weight` affects direct VFM densification strength, and `vfm_importance_mode=rgb_only` can disable direct VFM densification, but none of them match the baseline point count.
-- `target_gaussian_count` is a new final-prune control, but its quality behavior is not measured yet. It must be validated in 30k runs before it is treated as the budget-matching answer.
+- `target_gaussian_count` is a new final-prune control, but its corrected low-score ordering is not measured yet. It must be validated in 30k runs before it is treated as the budget-matching answer.
 - The current 30k quality gains remain entangled with a larger Gaussian budget. A fair scorer comparison needs target-count results.
 
 ## Next Version Plan
 
-1. Run cached edge and DINO token-edge at 30k `-r 8` with `--target_gaussian_count 240394`, matching the baseline count.
+1. Rerun cached edge and DINO token-edge at 30k `-r 8` with corrected low-score `--target_gaussian_count 240394`, matching the baseline count.
 2. Compare budget-matched PSNR/SSIM/LPIPS/FPS against the baseline and against the unpruned VFM runs.
 3. Add a no-effect control mode such as `vfm_weight=0` + `vfm_importance_mode=rgb_only` to measure VFM scorer overhead without changing pruning or densification decisions.
 4. Keep 30k `-r 8` as the minimum quality gate; use 220 iterations only for smoke checks after code changes.

@@ -280,7 +280,7 @@ uv run --active python -m vfm_gs.cli.metrics -m <run_dir>
 
 ## Target Gaussian Budget Probe
 
-`target_gaussian_count` is a final budget control. When it is greater than zero, training computes the configured scorer's pruning score at the end, prunes the highest-score Gaussians down to the requested count, and saves the final target-pruned PLY at the training iteration.
+`target_gaussian_count` is a final budget control. When it is greater than zero, training computes the configured scorer's pruning score at the end, prunes the lowest-score Gaussians down to the requested count, and saves the final target-pruned PLY at the training iteration.
 
 Use the baseline 30k count as the first budget target:
 

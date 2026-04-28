@@ -103,6 +103,23 @@ Interpretation:
 - Edge `rgb_only` is effectively the same budget as previous edge probes, which means simple importance-mode controls are not sufficient for budget matching.
 - The next version needs an explicit Gaussian budget mechanism, such as a final prune/target-count pass or a hard cap in the densify/prune loop. A pure signal-quality claim should wait until VFM and baseline are compared under a matched point budget.
 
+## 2026-04-28 Target Budget Negative Probe
+
+Code change: add `target_gaussian_count`, a final-prune budget control. The first implementation pruned the highest pruning-score Gaussians down to the target count. It matched the budget exactly but destroyed quality, so this is recorded as a negative result and the implementation was changed to prune the lowest-score Gaussians first.
+
+Dataset and schedule match the 30k ablation above. The target count is the baseline 30k count: 240,394 Gaussians.
+
+| Artifact | Backend | Target Strategy | PSNR | SSIM | LPIPS | Train Time | Render FPS | Gaussian Count | Output Size | Notes |
+|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|
+| `output/0001/vfm_cached_edge_budget240394_bicycle_30k_r8` | `cached_edge_l1` / `npz_uint8` | prune highest score | 11.1494 | 0.2037 | 0.6308 | 155.51s | 143.74 | 240,394 | 79M | Budget matched, quality collapsed |
+| `output/0001/vfm_dinov2_token_edge_budget240394_bicycle_30k_r8` | `dinov2_token_edge_l1` | prune highest score | 10.2215 | 0.1360 | 0.6769 | 162.33s | 406.19 | 240,394 | 76M | Budget matched, quality collapsed |
+
+Interpretation:
+
+- Exact count matching is not enough. The prune ordering matters more than the count target.
+- Bulk-pruning highest-score Gaussians removes hard or high-error structure that the reconstruction still needs.
+- `target_gaussian_count` should prune the lowest support/score Gaussians first for budget matching. High-score pruning can remain useful only as a small outlier-removal rule, not as the main budget cutter.
+
 ## 2026-04-28 Cache Preflight
 
 - `vfm_gs.cli.validate_vfm_cache` passed on `output/0001/vfm_cache/bicycle_edge_u8` with 194 `cached_edge_l1` entries.

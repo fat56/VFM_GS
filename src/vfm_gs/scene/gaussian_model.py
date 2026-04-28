@@ -548,7 +548,7 @@ class GaussianModel:
         remove_count = current_count - target_count
         device = self.get_xyz.device
         if pruning_score is None:
-            scores = 1.0 - self.get_opacity.detach().squeeze().to(dtype=torch.float32, device=device)
+            scores = self.get_opacity.detach().squeeze().to(dtype=torch.float32, device=device)
         else:
             scores = pruning_score.detach().squeeze().to(dtype=torch.float32, device=device)
             if scores.numel() < current_count:
@@ -560,7 +560,7 @@ class GaussianModel:
             scores = torch.nan_to_num(scores, nan=0.0, posinf=0.0, neginf=0.0)
 
         prune_mask = torch.zeros((current_count), dtype=bool, device=device)
-        prune_indices = torch.topk(scores, remove_count, largest=True).indices
+        prune_indices = torch.topk(scores, remove_count, largest=False).indices
         prune_mask[prune_indices] = True
         self.prune_points(prune_mask)
         return remove_count
