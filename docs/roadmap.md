@@ -2,18 +2,19 @@
 
 ## Active
 
-- `0001_vfm_topology_scorer`: `target_gaussian_count` final-prune control 已修正为 low-score bulk pruning，下一步重跑 30k budget-matched probe。
+- `0001_vfm_topology_scorer`: low-score final target prune 已完成 30k probe，但一次性最终裁剪质量低于 baseline。下一步做 staged budget control 或 post-prune fine-tune。
 
 ## Queued
 
-- 运行 budget-matched 30k `-r 8` 消融，先固定到 baseline 附近点数，再比较 PSNR/SSIM/LPIPS/FPS。
+- 增加 staged target budget：densification/pruning 后分阶段向目标点数裁剪，让模型继续训练恢复。
+- 增加 post-prune fine-tune 选项，对比 staged budget 和最终裁剪后恢复训练。
 - 增加 no-effect control：`vfm_importance_mode=rgb_only` + `vfm_weight=0`，测 VFM scorer 开销和 cache overhead。
 - 构建 `max_width=518` 或 `640` 的 full-scene `dinov2_vits14` cache，记录 cache build time、disk size 和 validate 结果。
 - 增加固定 patch-descriptor projection scorer，对比 token-edge proxy。
 
 ## Blocked
 
-- DINOv2 token-edge 在 30k 指标上领先，但默认 Gaussian count 约为 baseline 的 2.04x；importance weight 0.25 和 `rgb_only` 仍约为 baseline 的 1.72x-1.74x。budget-matched result 出来前不能把收益完全归因于 VFM signal。
+- DINOv2 token-edge 在 30k 指标上领先，但默认 Gaussian count 约为 baseline 的 2.04x；importance weight 0.25 和 `rgb_only` 仍约为 baseline 的 1.72x-1.74x。final target prune 能匹配点数但质量低于 baseline，所以还不能把收益完全归因于 VFM signal。
 
 ## Completed
 
@@ -32,3 +33,4 @@
 - 增加 `vfm_importance_weight` 并完成 i0.25 30k probe；DINO 点数下降但仍未达成 budget matching。
 - 增加 `vfm_importance_mode=max|weighted|rgb_only` 并完成 `rgb_only` 30k probe；直接关闭 VFM densification 仍未达成 budget matching。
 - 增加 `target_gaussian_count` final-prune control；首版 high-score bulk pruning 是负例，已修正为 low-score bulk pruning。
+- 完成 low-score final target-prune 30k probe；点数精确匹配 baseline，但 edge/DINO 质量均低于 baseline，说明一次性最终裁剪不是可用的公平预算方案。

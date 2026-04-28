@@ -120,6 +120,24 @@ Interpretation:
 - Bulk-pruning highest-score Gaussians removes hard or high-error structure that the reconstruction still needs.
 - `target_gaussian_count` should prune the lowest support/score Gaussians first for budget matching. High-score pruning can remain useful only as a small outlier-removal rule, not as the main budget cutter.
 
+## 2026-04-28 Low-Score Target Budget Probe
+
+Code change: `target_gaussian_count` now prunes the lowest pruning/support scores first for bulk budget control. This fixes the score direction from the negative probe above, but still applies the count correction only once after training.
+
+Dataset and schedule match the 30k ablation above. The target count is the baseline 30k count: 240,394 Gaussians.
+
+| Artifact | Backend | Target Strategy | PSNR | SSIM | LPIPS | Train Time | Render FPS | Gaussian Count | Output Size | Notes |
+|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|
+| `output/0001/vfm_cached_edge_budget240394_lowscore_bicycle_30k_r8` | `cached_edge_l1` / `npz_uint8` | prune lowest score | 23.7729 | 0.7307 | 0.2685 | 153.06s | 283.32 | 240,394 | 81M | Exact budget, but below baseline quality |
+| `output/0001/vfm_dinov2_token_edge_budget240394_lowscore_bicycle_30k_r8` | `dinov2_token_edge_l1` | prune lowest score | 23.5571 | 0.7087 | 0.2797 | 157.34s | 357.34 | 240,394 | 81M | Exact budget, worse than edge under final prune |
+
+Interpretation:
+
+- Low-score pruning avoids the catastrophic failure of high-score pruning, but one-shot final pruning is still too destructive at a baseline-sized target.
+- Relative to the baseline 30k run, edge low-score target pruning is -2.9303 PSNR, -0.0760 SSIM, and +0.0407 LPIPS; DINO is -3.1461 PSNR, -0.0980 SSIM, and +0.0519 LPIPS.
+- Final-pruned VFM runs have matched point counts and smaller output artifacts, but they no longer retain the unpruned VFM quality gains. This suggests the extra VFM-driven points are not simply removable duplicates after convergence.
+- The next budget method should be staged during training, not a single final cut: enforce a soft cap after densification/pruning events, or run a post-prune fine-tune schedule after target pruning.
+
 ## 2026-04-28 Cache Preflight
 
 - `vfm_gs.cli.validate_vfm_cache` passed on `output/0001/vfm_cache/bicycle_edge_u8` with 194 `cached_edge_l1` entries.
