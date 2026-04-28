@@ -57,7 +57,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     from vfm_gs.utils.fast_utils import sampling_cameras
 
     first_iter = 0
-    tb_writer = prepare_output_and_logger(dataset)
+    tb_writer = prepare_output_and_logger(dataset, opt, pipe)
     gaussians = GaussianModel(dataset.sh_degree, opt.optimizer_type)
     scene = Scene(dataset, gaussians)
     gaussians.training_setup(opt)
@@ -202,7 +202,15 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     print(f"Gaussian number: {gaussians._xyz.shape[0]}")
     print(f"Training time: {total_time}")
     
-def prepare_output_and_logger(args):    
+def _namespace_from_groups(*groups):
+    values = {}
+    for group in groups:
+        if group is not None:
+            values.update(vars(group))
+    return Namespace(**values)
+
+
+def prepare_output_and_logger(args, opt=None, pipe=None):
     if not args.model_path:
         if os.getenv('OAR_JOB_ID'):
             unique_str=os.getenv('OAR_JOB_ID')
@@ -214,7 +222,7 @@ def prepare_output_and_logger(args):
     print("Output folder: {}".format(args.model_path))
     os.makedirs(args.model_path, exist_ok = True)
     with open(os.path.join(args.model_path, "cfg_args"), 'w') as cfg_log_f:
-        cfg_log_f.write(str(Namespace(**vars(args))))
+        cfg_log_f.write(str(_namespace_from_groups(args, opt, pipe)))
 
     # Create Tensorboard writer
     tb_writer = None

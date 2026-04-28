@@ -125,6 +125,7 @@ uv run --active python -m vfm_gs.cli.metrics \
 vfm-gs-train --variant fastgs_baseline -s datasets/mipnerf360/bicycle -i images -m output/bicycle_baseline --eval
 vfm-gs-render -m output/bicycle_baseline --skip_train
 vfm-gs-metrics -m output/bicycle_baseline
+vfm-gs-build-vfm-cache -s datasets/mipnerf360/bicycle -i images_8 -o output/0001/vfm_cache/bicycle_edge --max_width 640
 ```
 
 批量脚本仍保留，但已经指向新的包入口：
@@ -148,7 +149,25 @@ bash scripts/train_big.sh
 | `fastgs_baseline` | `configs/variants/fastgs_baseline.yaml` | `fastgs_photometric` | 原 FastGS 标准训练设置 |
 | `fastgs_big` | `configs/variants/fastgs_big.yaml` | `fastgs_photometric` | 更频繁 densification 的高质量设置 |
 
-scorer registry 位于 `src/vfm_gs/scorers/`。当前注册了 `fastgs_photometric` 和 `vfm_topology_scorer`。`vfm_topology_scorer` 的 v1 默认使用 `mock_l1` 后端：它用 SH0 渲染图与 GT 生成 VFM-style pixel error map，再通过 FastGS 既有 `metric_map` 计数器融合到 Gaussian 级评分。真实 VFM 后端和缓存格式将在下一版接入。
+scorer registry 位于 `src/vfm_gs/scorers/`。当前注册了 `fastgs_photometric` 和 `vfm_topology_scorer`。`vfm_topology_scorer` 的 v1 默认使用 `mock_l1` 后端：它用 SH0 渲染图与 GT 生成 VFM-style pixel error map，再通过 FastGS 既有 `metric_map` 计数器融合到 Gaussian 级评分。`cached_edge_l1` 后端可先验证离线缓存流程，后续真实 VFM 后端会复用同一 cache manifest 入口。
+
+离线缓存后端可以先用轻量 edge proxy 验证完整 cache 流程：
+
+```bash
+uv run --active python -m vfm_gs.cli.build_vfm_cache \
+  -s datasets/mipnerf360/bicycle \
+  -i images_8 \
+  -o output/0001/vfm_cache/bicycle_edge \
+  --max_width 640
+
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_cached_edge.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0001/vfm_cached_edge/bicycle \
+  --eval
+```
 
 实验配置示例：
 

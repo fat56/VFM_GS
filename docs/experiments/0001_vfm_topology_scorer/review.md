@@ -2,7 +2,7 @@
 
 ## Current Decision
 
-Keep `vfm_topology_scorer` as the v1 integration path, but treat the current `mock_l1` backend only as a pipeline validator. It proves the score path can be swapped through the registry and can survive densification, rendering, and metrics. It does not prove VFM quality gains yet.
+Keep `vfm_topology_scorer` as the v1 integration path. `mock_l1` validates the scoring plumbing, and `cached_edge_l1` now validates the offline cache contract. Neither backend proves VFM quality gains yet; they are stepping stones toward a real cached VFM backend.
 
 ## Findings
 
@@ -11,18 +11,21 @@ Keep `vfm_topology_scorer` as the v1 integration path, but treat the current `mo
 - `fastgs_photometric` normalization was hardened to avoid NaNs when a metric map or pruning score has zero dynamic range.
 - On the 2026-04-28 bicycle smoke run, mock v1 was metric-neutral against the baseline: PSNR 20.3459 vs 20.3464, SSIM 0.4294 vs 0.4294, LPIPS 0.6010 vs 0.6021.
 - The mock v1 run produced 78,375 Gaussians vs 78,633 for baseline, so the conservative fusion did not explode point count in the short validation.
+- `vfm_gs.cli.build_vfm_cache` now writes a manifest keyed by `Camera.image_name`, with backend name, source shape, cache shape, dtype, normalization, and per-entry checksum.
+- `cached_edge_l1` completed the same train/render/metrics smoke path: PSNR 20.3265, SSIM 0.4291, LPIPS 0.6005, 78,605 Gaussians.
+- Training output `cfg_args` now records optimization and pipeline parameters in addition to model parameters, so scorer/backend settings are recoverable from each run directory.
 
 ## Limitations
 
 - `mock_l1` is deliberately not a real visual foundation model signal.
+- `cached_edge_l1` is also a proxy; it only tests cache mechanics and edge-alignment behavior.
 - The smoke run uses `-r 8` and 220 iterations, so it only validates integration health, not final reconstruction quality.
-- `vfm_cache_dir` is exposed for config compatibility but no cache manifest or real feature reader is implemented yet.
-- Train-time provenance is currently stronger in this docs record than in `cfg_args`, because the legacy output config logs model params only.
+- Cache generation currently stores `.npy` maps and can be large at full image resolution; use `images_8` or `--max_width` for smoke tests.
 
 ## Next Version Plan
 
-1. Define a cache manifest format keyed by `Camera.image_name`, including backend name, source image size, tensor shape, normalization, and checksum.
-2. Add an offline cache builder CLI for one real low-risk backend, preferably an edge/depth proxy first and DINOv2 only after dependency and memory checks.
-3. Replace `mock_l1` in `configs/experiments/0001_vfm_topology_scorer.yaml` with a cached backend, while keeping `mock_l1` as the CI/smoke fallback.
-4. Log scorer name, VFM backend, threshold, weight, and densification summary into each training output directory.
-5. Run a longer bicycle ablation with matched baseline and VFM schedules, then compare PSNR/SSIM/LPIPS, Gaussian count, render FPS, and visual floaters.
+1. Add a compact cache storage option, such as quantized `.npz` or `float16`, and record the storage format in the manifest.
+2. Add a cache validation command that checks missing entries, shape metadata, checksum mismatches, and backend compatibility before training starts.
+3. Add one real cached VFM backend after dependency and memory checks, with DINOv2 features as the first semantic candidate and monocular depth/edge maps as the geometry candidate.
+4. Run a longer bicycle ablation with matched baseline, `mock_l1`, `cached_edge_l1`, and real cached VFM schedules.
+5. Compare PSNR/SSIM/LPIPS, Gaussian count, render FPS, cache build time, scorer overhead, and visual floaters.
