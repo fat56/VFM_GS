@@ -2,18 +2,18 @@
 
 ## Active
 
-- `0001_vfm_topology_scorer`: DINOv2 token-edge scorer smoke 已通过。下一步做阈值/权重小网格和更高 `max_width` cache 消融。
+- `0001_vfm_topology_scorer`: 30k `-r 8` matched ablation 已完成。下一步做 Gaussian budget-controlled VFM 消融，确认指标收益不是单纯来自更高点数。
 
 ## Queued
 
-- 运行 `dinov2_token_edge_l1` 的 `vfm_loss_thresh` / `vfm_weight` 小网格。
+- 运行 `cached_edge_l1` 和 `dinov2_token_edge_l1` 的 budget-controlled 30k 消融，目标 Gaussian count 接近 baseline。
+- 调整 `vfm_loss_thresh` / `vfm_weight` / final prune，使 VFM 指标收益和点数增长解耦。
 - 构建 `max_width=518` 或 `640` 的 full-scene `dinov2_vits14` cache，记录 cache build time、disk size 和 validate 结果。
 - 增加固定 patch-descriptor projection scorer，对比 token-edge proxy。
-- 运行 bicycle 长程 baseline vs cached edge vs DINOv2 scorer 消融。
 
 ## Blocked
 
-- DINOv2 训练 scorer 已能消费 cache，但当前还是 scalar token-edge proxy；完整语义 feature 对齐或 learned adapter 尚未实现。
+- DINOv2 token-edge 在 30k 指标上领先，但 Gaussian count 约为 baseline 的 2.04x；budget-controlled 结果出来前不能把收益完全归因于 VFM signal。
 
 ## Completed
 
@@ -27,3 +27,4 @@
 - 增加 `vfm_backend_probe` CLI，记录当前环境和 DINOv2 cache-size feasibility。
 - 增加 optional `dinov2_vits14` / `dinov2_vitb14` cache builder，并在当前 PyTorch 1.12.1 环境完成 4-image ViT-S/14 smoke cache validation。
 - 增加 `dinov2_token_edge_l1` scorer backend，完成 194-image DINOv2 cache build/validate 和 220-iteration bicycle smoke train/render/metrics。
+- 完成 baseline、compact cached edge、DINOv2 token-edge 的 30k `-r 8` matched ablation；DINO token-edge 指标最好，但点数和渲染成本也最高。

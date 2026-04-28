@@ -26,20 +26,25 @@ Keep `vfm_topology_scorer` as the v1 integration path. `mock_l1` validates the s
 - `dinov2_token_edge_l1` projects cached DINO patch tokens into a scalar token-edge topology map, pools SH0-rendered luminance edges to the same grid, and returns an upsampled pixel error map for the existing metric-map scorer path.
 - The DINO token-edge smoke run completed train/render/metrics: PSNR 20.2913, SSIM 0.4272, LPIPS 0.6006, 77,761 Gaussians, 1.72s training time, 410.94 FPS on rendered test frames.
 - DINO scorer preflight now accepts DINO cache manifests (`dinov2_vits14` or `dinov2_vitb14`) while rejecting mismatched cache features/backends before Scene construction.
+- A matched 30k `-r 8` ablation is now the main quality signal. Baseline reached PSNR 26.7032, SSIM 0.8067, LPIPS 0.2278, 240,394 Gaussians, and 334.36 FPS.
+- Compact cached edge improved the 30k run to PSNR 26.8864, SSIM 0.8229, LPIPS 0.1972, but grew to 408,925 Gaussians and 196.43 FPS.
+- DINO token-edge gave the best 30k metrics: PSNR 27.0577, SSIM 0.8345, LPIPS 0.1767, with 490,832 Gaussians and 193.46 FPS.
+- The full-run result reverses the short-run impression: DINO token-edge looked neutral/slightly worse at 220 iterations but becomes the strongest metric variant after normal densification has time to operate.
 
 ## Limitations
 
 - `mock_l1` is deliberately not a real visual foundation model signal.
 - `cached_edge_l1` is also a proxy; it only tests cache mechanics and edge-alignment behavior.
 - `dinov2_token_edge_l1` consumes DINO patch tokens, but it compares scalar topology projections rather than full semantic feature vectors.
-- The smoke run uses `-r 8` and 220 iterations, so it only validates integration health, not final reconstruction quality.
+- The 220-iteration smoke run validates integration health, not final reconstruction quality. It should not drive scorer selection now that 30k runs are cheap enough.
 - Compact storage helps disk use, but `npz_uint8` is not proven metric-neutral. Keep float32 and compact cache variants available for ablation.
 - The current DINO cache is built at `max_width=224`; full `max_width=518` or `640` cache time, disk use, and scorer behavior still need measurement.
+- The best 30k DINO result is not budget-controlled: it used about 2.04x the baseline Gaussian count. The next result must separate feature-signal quality from simply allowing denser reconstructions.
 
 ## Next Version Plan
 
-1. Run a threshold/weight smoke grid for `dinov2_token_edge_l1`, starting with `vfm_loss_thresh` 0.35/0.45/0.55 and `vfm_weight` 0.1/0.25.
-2. Build a full-scene `dinov2_vits14` cache at `max_width=518` or `640`, record cache time and disk use, and compare against the `max_width=224` regression cache.
-3. Add an optional patch descriptor scorer that compares pooled rendered RGB/edge descriptors against a fixed projection of DINO tokens, then compare it with token-edge.
-4. Run a longer bicycle ablation with matched baseline, `cached_edge_l1`, compact edge, and DINOv2 scorer schedules.
+1. Run budget-controlled 30k ablations for `cached_edge_l1` and `dinov2_token_edge_l1`, targeting baseline-like Gaussian counts through lower `vfm_weight`, higher `vfm_loss_thresh`, or stronger final prune.
+2. Keep 30k `-r 8` as the minimum quality gate; use 220 iterations only for smoke checks after code changes.
+3. Build a full-scene `dinov2_vits14` cache at `max_width=518` or `640`, record cache time and disk use, and compare against the `max_width=224` regression cache.
+4. Add an optional patch descriptor scorer that compares pooled rendered RGB/edge descriptors against a fixed projection of DINO tokens, then compare it with token-edge under a matched Gaussian budget.
 5. Compare PSNR/SSIM/LPIPS, Gaussian count, render FPS, cache build time, scorer overhead, cache size, and visual floaters before promoting DINOv2 beyond experimental status.

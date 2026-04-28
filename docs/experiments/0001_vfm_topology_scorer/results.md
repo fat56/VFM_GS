@@ -25,6 +25,31 @@ Dataset: `datasets/mipnerf360/bicycle`, test split, `-r 8`, 220 iterations, `den
 - The first DINOv2-consuming scorer stayed stable and produced slightly lower PSNR/SSIM than baseline in the short run, with LPIPS similar to prior VFM variants. It should be read as a successful real-cache training integration, not as evidence that the token-edge projection is the right quality signal.
 - DINO token-edge training time was 1.72s vs 1.17s for cached edge in the same 220-iteration schedule, so the derived DINO projection adds visible but still modest scorer overhead at this tiny scale.
 
+## 2026-04-28 30k Matched Ablation
+
+Dataset: `datasets/mipnerf360/bicycle`, test split, `-r 8`, 30,000 iterations. These runs use the normal FastGS densification schedule and are more informative than the 220-iteration smoke checks.
+
+| Artifact | Variant | Scorer | Backend | PSNR | SSIM | LPIPS | Train Time | Render FPS | Gaussian Count | Output Size | Notes |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|
+| `output/0001/baseline_bicycle_30k_r8` | `fastgs_baseline` | `fastgs_photometric` | n/a | 26.7032 | 0.8067 | 0.2278 | 116.92s | 334.36 | 240,394 | 82M | Control run |
+| `output/0001/vfm_cached_edge_compact_bicycle_30k_r8` | `0001_vfm_topology_cached_edge_compact` | `vfm_topology_scorer` | `cached_edge_l1` / `npz_uint8` | 26.8864 | 0.8229 | 0.1972 | 159.77s | 196.43 | 408,925 | 122M | Edge cache improves metrics but grows point count |
+| `output/0001/vfm_dinov2_token_edge_bicycle_30k_r8` | `0001_vfm_topology_dinov2_token_edge` | `vfm_topology_scorer` | `dinov2_token_edge_l1` | 27.0577 | 0.8345 | 0.1767 | 166.11s | 193.46 | 490,832 | 142M | Best metrics, densest reconstruction |
+
+Cache artifacts used:
+
+| Cache | Backend | Entries | Storage | Size | Validation |
+|---|---|---:|---|---:|---|
+| `output/0001/vfm_cache/bicycle_edge_u8` | `cached_edge_l1` | 194 | `npz_uint8` | 35M | passed |
+| `output/0001/vfm_cache/bicycle_dinov2_vits14` | `dinov2_vits14` | 194 | `npy_float16` | 24M | passed |
+
+Interpretation:
+
+- The 220-iteration smoke metrics were too weak to guide quality decisions. They remain useful for integration health, but the 30k runs changed the signal meaningfully.
+- `cached_edge_l1` improved over baseline by +0.1832 PSNR, +0.0163 SSIM, and -0.0306 LPIPS, but increased Gaussian count by about 70% and reduced test render FPS by about 41%.
+- `dinov2_token_edge_l1` improved over baseline by +0.3544 PSNR, +0.0278 SSIM, and -0.0511 LPIPS, but increased Gaussian count by about 104% and reduced test render FPS by about 42%.
+- The DINO token-edge scorer is now a promising direction on full-length low-resolution training, but the gain is entangled with a much larger Gaussian budget. The next comparison needs a budget-controlled run or a stronger final-prune setting before calling it a pure quality improvement.
+- `cached_edge_l1` remains a strong deterministic proxy baseline: it is less semantically meaningful than DINO, but it gave a clear metric gain with a smaller cache and lower training overhead than DINO token-edge.
+
 ## 2026-04-28 Cache Preflight
 
 - `vfm_gs.cli.validate_vfm_cache` passed on `output/0001/vfm_cache/bicycle_edge_u8` with 194 `cached_edge_l1` entries.

@@ -51,7 +51,7 @@ uv run --active python -m vfm_gs.cli.train \
 
 ## Optional DINOv2 Cache Smoke
 
-DINOv2 cache building is an offline artifact path for real VFM features. It currently validates `dinov2_patchtokens` cache generation and manifest compatibility; the training scorer does not yet consume these DINOv2 maps.
+DINOv2 cache building is an offline artifact path for real VFM features. The fast smoke validates `dinov2_patchtokens` cache generation and manifest compatibility before running a training scorer.
 
 When torch.hub remote access is rate-limited, clone the official repository under ignored output state and pass it explicitly:
 
@@ -110,6 +110,59 @@ uv run --active python -m vfm_gs.cli.train \
 
 uv run --active python -m vfm_gs.cli.render -m output/0001/vfm_dinov2_token_edge_bicycle_smoke --skip_train
 uv run --active python -m vfm_gs.cli.metrics -m output/0001/vfm_dinov2_token_edge_bicycle_smoke
+```
+
+## 30k Matched Ablation
+
+220-iteration runs are smoke checks only. Use this 30k `-r 8` set as the minimum quality gate while iterating on scorer behavior:
+
+```bash
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0001/baseline_bicycle_30k_r8 \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  -r 8
+
+uv run --active python -m vfm_gs.cli.render -m output/0001/baseline_bicycle_30k_r8 --skip_train
+uv run --active python -m vfm_gs.cli.metrics -m output/0001/baseline_bicycle_30k_r8
+
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_cached_edge_compact.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0001/vfm_cached_edge_compact_bicycle_30k_r8 \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  -r 8
+
+uv run --active python -m vfm_gs.cli.render -m output/0001/vfm_cached_edge_compact_bicycle_30k_r8 --skip_train
+uv run --active python -m vfm_gs.cli.metrics -m output/0001/vfm_cached_edge_compact_bicycle_30k_r8
+
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_dinov2_token_edge.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0001/vfm_dinov2_token_edge_bicycle_30k_r8 \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  -r 8
+
+uv run --active python -m vfm_gs.cli.render -m output/0001/vfm_dinov2_token_edge_bicycle_30k_r8 --skip_train
+uv run --active python -m vfm_gs.cli.metrics -m output/0001/vfm_dinov2_token_edge_bicycle_30k_r8
 ```
 
 ## 2026-04-28 Smoke Validation
