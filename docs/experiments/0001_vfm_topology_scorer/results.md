@@ -66,6 +66,24 @@ Interpretation:
 - Edge proxy point count was effectively unchanged under these knobs. The next implementation should separate VFM densification strength from VFM pruning strength, for example with a dedicated `vfm_importance_weight` or `vfm_importance_mode`.
 - Render FPS varied enough that it should be interpreted together with Gaussian count and repeated where the budget comparison is close.
 
+## 2026-04-28 Explicit Importance Weight Probe
+
+Code change: add `vfm_importance_weight`, defaulting to `1.0` for backward compatibility. It scales VFM densification counts before `max(rgb_importance, vfm_importance)` and is independent from `vfm_weight`, which continues to control pruning-score fusion.
+
+Dataset and schedule match the 30k ablation above. These runs use `vfm_importance_weight=0.25` with each variant's default `vfm_loss_thresh` and `vfm_weight`.
+
+| Artifact | Backend | PSNR | SSIM | LPIPS | Train Time | Render FPS | Gaussian Count | Output Size | Delta vs Baseline Count | Notes |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `output/0001/vfm_cached_edge_i025_bicycle_30k_r8` | `cached_edge_l1` / `npz_uint8` | 26.9439 | 0.8244 | 0.1958 | 166.85s | 168.15 | 413,301 | 123M | +71.9% | Explicit importance scaling did not reduce edge count |
+| `output/0001/vfm_dinov2_token_edge_i025_bicycle_30k_r8` | `dinov2_token_edge_l1` | 26.9261 | 0.8259 | 0.1928 | 159.84s | 279.87 | 418,073 | 124M | +73.9% | Reduced default DINO count by 14.8%, but not enough for budget matching |
+
+Interpretation:
+
+- `vfm_importance_weight=0.25` is useful but insufficient as the only budget lever.
+- DINO i0.25 gives a better Gaussian budget than default DINO, but also gives back most of the default DINO metric advantage.
+- Edge remains insensitive to this control, which suggests its extra points are not easily suppressed by simple post-count scaling.
+- The next implementation should add a harder mode such as `vfm_importance_mode=rgb_only|max|weighted`, where `rgb_only` lets VFM affect pruning but not densification.
+
 ## 2026-04-28 Cache Preflight
 
 - `vfm_gs.cli.validate_vfm_cache` passed on `output/0001/vfm_cache/bicycle_edge_u8` with 194 `cached_edge_l1` entries.

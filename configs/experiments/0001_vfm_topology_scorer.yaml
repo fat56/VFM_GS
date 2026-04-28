@@ -7,6 +7,7 @@ training_args:
   vfm_backend: mock_l1
   vfm_loss_thresh: 0.5
   vfm_weight: 0.25
+  vfm_importance_weight: 1.0
   vfm_use_albedo_sh0: true
 experiment:
   status: mock_v1

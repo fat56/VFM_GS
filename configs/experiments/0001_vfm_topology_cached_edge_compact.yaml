@@ -8,6 +8,7 @@ training_args:
   vfm_cache_dir: output/0001/vfm_cache/bicycle_edge_u8
   vfm_loss_thresh: 0.5
   vfm_weight: 0.25
+  vfm_importance_weight: 1.0
   vfm_use_albedo_sh0: true
 experiment:
   status: compact_cache_v1

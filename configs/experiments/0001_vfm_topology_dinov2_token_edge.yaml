@@ -8,6 +8,7 @@ training_args:
   vfm_cache_dir: output/0001/vfm_cache/bicycle_dinov2_vits14
   vfm_loss_thresh: 0.45
   vfm_weight: 0.25
+  vfm_importance_weight: 1.0
   vfm_use_albedo_sh0: true
 experiment:
   status: dinov2_token_edge_v1

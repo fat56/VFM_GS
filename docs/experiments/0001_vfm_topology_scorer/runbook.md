@@ -203,6 +203,40 @@ uv run --active python -m vfm_gs.cli.train \
 
 This did not bring Gaussian counts near the baseline, which is why the next implementation step is an explicit VFM importance control rather than more smoke-grid runs.
 
+## Explicit Importance Weight Probe
+
+`vfm_importance_weight` scales VFM densification counts before they are fused with RGB importance. It is separate from `vfm_weight`, which controls pruning-score fusion.
+
+```bash
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_cached_edge_compact.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0001/vfm_cached_edge_i025_bicycle_30k_r8 \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_importance_weight 0.25 \
+  -r 8
+
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_dinov2_token_edge.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0001/vfm_dinov2_token_edge_i025_bicycle_30k_r8 \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_importance_weight 0.25 \
+  -r 8
+```
+
 ## 2026-04-28 Smoke Validation
 
 同条件低分辨率短跑，用于确认 densification 分支实际触发 scorer：

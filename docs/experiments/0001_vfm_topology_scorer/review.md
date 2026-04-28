@@ -32,6 +32,9 @@ Keep `vfm_topology_scorer` as the v1 integration path. `mock_l1` validates the s
 - The full-run result reverses the short-run impression: DINO token-edge looked neutral/slightly worse at 220 iterations but becomes the strongest metric variant after normal densification has time to operate.
 - A first budget-control probe with `vfm_loss_thresh=0.75` and `vfm_weight=0.10` did not bring VFM point counts near baseline. Edge stayed at 409,028 Gaussians; DINO dropped to 422,506 Gaussians but remained about 76% above baseline.
 - The budget-control probe kept good metrics, but below default DINO: DINO t075/w010 reached PSNR 26.9586, SSIM 0.8258, LPIPS 0.1935.
+- `vfm_importance_weight` now separates densification strength from pruning fusion. The default is `1.0`, preserving previous behavior.
+- With `vfm_importance_weight=0.25`, edge reached PSNR 26.9439, SSIM 0.8244, LPIPS 0.1958, and 413,301 Gaussians; DINO reached PSNR 26.9261, SSIM 0.8259, LPIPS 0.1928, and 418,073 Gaussians.
+- Explicit importance weighting reduced the default DINO point count by about 14.8%, but still did not reach a baseline-like budget. Edge remained effectively above 400k Gaussians.
 
 ## Limitations
 
@@ -43,11 +46,12 @@ Keep `vfm_topology_scorer` as the v1 integration path. `mock_l1` validates the s
 - The current DINO cache is built at `max_width=224`; full `max_width=518` or `640` cache time, disk use, and scorer behavior still need measurement.
 - The best 30k DINO result is not budget-controlled: it used about 2.04x the baseline Gaussian count. The next result must separate feature-signal quality from simply allowing denser reconstructions.
 - Existing knobs do not independently control VFM densification. `vfm_weight` affects pruning fusion, but `importance_score = max(rgb_importance, vfm_importance)` lets VFM increase clone/split candidates even when pruning weight is low.
+- `vfm_importance_weight` is a partial control only. A hard mode that can disable VFM densification while retaining VFM pruning is still needed to get a true budget-matched baseline.
 
 ## Next Version Plan
 
-1. Add explicit VFM densification controls, starting with `vfm_importance_weight` or `vfm_importance_mode`, so pruning weight and densification strength can be tuned separately.
-2. Rerun 30k `-r 8` budget-controlled ablations after the new importance control lands, targeting baseline-like Gaussian counts.
+1. Add `vfm_importance_mode`, with at least `max`, `weighted`, and `rgb_only`, so VFM can be allowed to affect pruning without increasing densification candidates.
+2. Run 30k `-r 8` `rgb_only` ablations for cached edge and DINO token-edge to isolate VFM pruning effects under a baseline-like densification path.
 3. Keep 30k `-r 8` as the minimum quality gate; use 220 iterations only for smoke checks after code changes.
 4. Build a full-scene `dinov2_vits14` cache at `max_width=518` or `640`, record cache time and disk use, and compare against the `max_width=224` regression cache.
 5. Add an optional patch descriptor scorer that compares pooled rendered RGB/edge descriptors against a fixed projection of DINO tokens, then compare it with token-edge under a matched Gaussian budget.
