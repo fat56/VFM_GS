@@ -538,3 +538,29 @@ class GaussianModel:
         scores_mask = pruning_score > 0.9
         final_prune = torch.logical_or(prune_mask, scores_mask)
         self.prune_points(final_prune)
+
+    def prune_to_target_count(self, target_count, pruning_score=None):
+        target_count = int(target_count)
+        current_count = self.get_xyz.shape[0]
+        if target_count <= 0 or current_count <= target_count:
+            return 0
+
+        remove_count = current_count - target_count
+        device = self.get_xyz.device
+        if pruning_score is None:
+            scores = 1.0 - self.get_opacity.detach().squeeze().to(dtype=torch.float32, device=device)
+        else:
+            scores = pruning_score.detach().squeeze().to(dtype=torch.float32, device=device)
+            if scores.numel() < current_count:
+                padded_scores = torch.zeros((current_count), dtype=torch.float32, device=device)
+                padded_scores[: scores.numel()] = scores
+                scores = padded_scores
+            elif scores.numel() > current_count:
+                scores = scores[:current_count]
+            scores = torch.nan_to_num(scores, nan=0.0, posinf=0.0, neginf=0.0)
+
+        prune_mask = torch.zeros((current_count), dtype=bool, device=device)
+        prune_indices = torch.topk(scores, remove_count, largest=True).indices
+        prune_mask[prune_indices] = True
+        self.prune_points(prune_mask)
+        return remove_count

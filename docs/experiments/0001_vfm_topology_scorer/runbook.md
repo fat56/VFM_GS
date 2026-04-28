@@ -278,6 +278,42 @@ uv run --active python -m vfm_gs.cli.render -m <run_dir> --skip_train
 uv run --active python -m vfm_gs.cli.metrics -m <run_dir>
 ```
 
+## Target Gaussian Budget Probe
+
+`target_gaussian_count` is a final budget control. When it is greater than zero, training computes the configured scorer's pruning score at the end, prunes the highest-score Gaussians down to the requested count, and saves the final target-pruned PLY at the training iteration.
+
+Use the baseline 30k count as the first budget target:
+
+```bash
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_cached_edge_compact.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0001/vfm_cached_edge_budget240394_bicycle_30k_r8 \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --target_gaussian_count 240394 \
+  -r 8
+
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_dinov2_token_edge.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0001/vfm_dinov2_token_edge_budget240394_bicycle_30k_r8 \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --target_gaussian_count 240394 \
+  -r 8
+```
+
 ## 2026-04-28 Smoke Validation
 
 同条件低分辨率短跑，用于确认 densification 分支实际触发 scorer：

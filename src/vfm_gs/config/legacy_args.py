@@ -110,6 +110,7 @@ class OptimizationParams(ParamGroup):
         self.vfm_importance_weight = 1.0
         self.vfm_importance_mode = "max"
         self.vfm_use_albedo_sh0 = True
+        self.target_gaussian_count = 0
         super().__init__(parser, "Optimization Parameters")
 
 def get_combined_args(parser : ArgumentParser):

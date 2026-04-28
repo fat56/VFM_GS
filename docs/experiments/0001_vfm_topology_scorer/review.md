@@ -49,12 +49,13 @@ Keep `vfm_topology_scorer` as the v1 integration path. `mock_l1` validates the s
 - The current DINO cache is built at `max_width=224`; full `max_width=518` or `640` cache time, disk use, and scorer behavior still need measurement.
 - The best 30k DINO result is not budget-controlled: it used about 2.04x the baseline Gaussian count. The next result must separate feature-signal quality from simply allowing denser reconstructions.
 - Existing knobs do not provide full budget control. `vfm_weight` affects pruning fusion, `vfm_importance_weight` affects direct VFM densification strength, and `vfm_importance_mode=rgb_only` can disable direct VFM densification, but none of them match the baseline point count.
-- The current 30k quality gains remain entangled with a larger Gaussian budget. A fair scorer comparison needs an explicit target count, final prune, or cap.
+- `target_gaussian_count` is a new final-prune control, but its quality behavior is not measured yet. It must be validated in 30k runs before it is treated as the budget-matching answer.
+- The current 30k quality gains remain entangled with a larger Gaussian budget. A fair scorer comparison needs target-count results.
 
 ## Next Version Plan
 
-1. Add an explicit Gaussian budget control, preferably a target-count final prune or hard cap that can be applied after densification while preserving the FastGS scoring contract.
-2. Run baseline, cached edge, and DINO token-edge at 30k `-r 8` under the same target Gaussian count before making quality claims.
+1. Run cached edge and DINO token-edge at 30k `-r 8` with `--target_gaussian_count 240394`, matching the baseline count.
+2. Compare budget-matched PSNR/SSIM/LPIPS/FPS against the baseline and against the unpruned VFM runs.
 3. Add a no-effect control mode such as `vfm_weight=0` + `vfm_importance_mode=rgb_only` to measure VFM scorer overhead without changing pruning or densification decisions.
 4. Keep 30k `-r 8` as the minimum quality gate; use 220 iterations only for smoke checks after code changes.
 5. After budget matching is available, build a full-scene `dinov2_vits14` cache at `max_width=518` or `640`, then compare it with the `max_width=224` cache.

@@ -153,7 +153,7 @@ bash scripts/train_big.sh
 | `fastgs_baseline` | `configs/variants/fastgs_baseline.yaml` | `fastgs_photometric` | 原 FastGS 标准训练设置 |
 | `fastgs_big` | `configs/variants/fastgs_big.yaml` | `fastgs_photometric` | 更频繁 densification 的高质量设置 |
 
-scorer registry 位于 `src/vfm_gs/scorers/`。当前注册了 `fastgs_photometric` 和 `vfm_topology_scorer`。`vfm_topology_scorer` 的 v1 默认使用 `mock_l1` 后端：它用 SH0 渲染图与 GT 生成 VFM-style pixel error map，再通过 FastGS 既有 `metric_map` 计数器融合到 Gaussian 级评分。`cached_edge_l1` 后端可先验证离线缓存流程，后续真实 VFM 后端会复用同一 cache manifest 入口。cached backend 会在训练前执行 preflight，提前检查 manifest、backend 和 source image entry。`vfm_weight` 控制 VFM pruning-score 融合强度；`vfm_importance_mode` 和 `vfm_importance_weight` 控制 VFM densification importance，默认 `max` / `1.0` 保持旧行为。
+scorer registry 位于 `src/vfm_gs/scorers/`。当前注册了 `fastgs_photometric` 和 `vfm_topology_scorer`。`vfm_topology_scorer` 的 v1 默认使用 `mock_l1` 后端：它用 SH0 渲染图与 GT 生成 VFM-style pixel error map，再通过 FastGS 既有 `metric_map` 计数器融合到 Gaussian 级评分。`cached_edge_l1` 后端可先验证离线缓存流程，后续真实 VFM 后端会复用同一 cache manifest 入口。cached backend 会在训练前执行 preflight，提前检查 manifest、backend 和 source image entry。`vfm_weight` 控制 VFM pruning-score 融合强度；`vfm_importance_mode` 和 `vfm_importance_weight` 控制 VFM densification importance，默认 `max` / `1.0` 保持旧行为。`target_gaussian_count` 默认关闭，可在训练结束时按 pruning score 裁到固定 Gaussian 预算并重新保存最终 PLY。
 
 离线缓存后端可以先用轻量 edge proxy 验证完整 cache 流程：
 

@@ -202,7 +202,30 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             optim_time = optim_start.elapsed_time(optim_end)
             total_time += (iter_time + optim_time) / 1e3
 
-    # scene.save(iteration)
+    target_gaussian_count = int(getattr(opt, "target_gaussian_count", 0) or 0)
+    if target_gaussian_count > 0:
+        current_count = gaussians._xyz.shape[0]
+        if current_count > target_gaussian_count:
+            budget_start = time.time()
+            my_viewpoint_stack = scene.getTrainCameras().copy()
+            camlist = sampling_cameras(my_viewpoint_stack)
+            _, pruning_score = gaussian_scorer(camlist, gaussians, pipe, bg, opt)
+            pruned_count = gaussians.prune_to_target_count(target_gaussian_count, pruning_score=pruning_score)
+            torch.cuda.synchronize()
+            total_time += time.time() - budget_start
+            print(
+                "Target Gaussian prune: {} -> {} (removed {})".format(
+                    current_count,
+                    gaussians._xyz.shape[0],
+                    pruned_count,
+                )
+            )
+            if opt.iterations in saving_iterations:
+                print("\n[ITER {}] Saving target-pruned Gaussians".format(opt.iterations))
+                scene.save(opt.iterations)
+        else:
+            print("Target Gaussian prune skipped: {} <= {}".format(current_count, target_gaussian_count))
+
     print(f"Gaussian number: {gaussians._xyz.shape[0]}")
     print(f"Training time: {total_time}")
     

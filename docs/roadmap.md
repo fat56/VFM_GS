@@ -2,11 +2,10 @@
 
 ## Active
 
-- `0001_vfm_topology_scorer`: `vfm_importance_mode=rgb_only` 已实现并完成 30k probe，但仍不能把 Gaussian count 拉回 baseline。下一步增加显式 Gaussian budget control / final prune。
+- `0001_vfm_topology_scorer`: `target_gaussian_count` final-prune control 已实现，下一步运行 30k budget-matched probe。
 
 ## Queued
 
-- 增加 target Gaussian count / final prune / hard cap 机制，让 baseline、cached edge、DINO token-edge 能在同一预算下比较。
 - 运行 budget-matched 30k `-r 8` 消融，先固定到 baseline 附近点数，再比较 PSNR/SSIM/LPIPS/FPS。
 - 增加 no-effect control：`vfm_importance_mode=rgb_only` + `vfm_weight=0`，测 VFM scorer 开销和 cache overhead。
 - 构建 `max_width=518` 或 `640` 的 full-scene `dinov2_vits14` cache，记录 cache build time、disk size 和 validate 结果。
@@ -32,3 +31,4 @@
 - 完成 t075/w010 budget-control probe；现有阈值/权重 knob 无法充分控制 VFM densification 点数。
 - 增加 `vfm_importance_weight` 并完成 i0.25 30k probe；DINO 点数下降但仍未达成 budget matching。
 - 增加 `vfm_importance_mode=max|weighted|rgb_only` 并完成 `rgb_only` 30k probe；直接关闭 VFM densification 仍未达成 budget matching。
+- 增加 `target_gaussian_count` final-prune control，可在训练结束时按 scorer pruning score 裁到固定 Gaussian 预算并重新保存最终 PLY。
