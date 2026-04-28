@@ -48,12 +48,20 @@ uv pip install \
 # Install the project package and Python dependencies declared in pyproject.toml.
 uv pip install -e .
 
+# PyTorch 1.12 still imports pkg_resources while building CUDA extensions.
+uv pip install "setuptools<81" wheel
+
 # Build local CUDA extensions.
-uv pip install \
+TORCH_CUDA_ARCH_LIST="8.6+PTX" uv pip install --no-build-isolation \
   submodules/diff-gaussian-rasterization_fastgs \
   submodules/simple-knn \
   submodules/fused-ssim
 ```
+
+`TORCH_CUDA_ARCH_LIST="8.6+PTX"` is needed on RTX 40/Ada GPUs when using
+PyTorch 1.12, because that PyTorch release does not recognize `sm_89`
+directly. On older GPUs, set `TORCH_CUDA_ARCH_LIST` to the local compute
+capability instead.
 
 Windows 需要先准备 MSVC/CUDA 编译环境；如果使用 PowerShell，多条命令用 `;` 分隔。
 
@@ -140,7 +148,7 @@ bash scripts/train_big.sh
 | `fastgs_baseline` | `configs/variants/fastgs_baseline.yaml` | `fastgs_photometric` | 原 FastGS 标准训练设置 |
 | `fastgs_big` | `configs/variants/fastgs_big.yaml` | `fastgs_photometric` | 更频繁 densification 的高质量设置 |
 
-scorer registry 位于 `src/vfm_gs/scorers/`。当前只注册 `fastgs_photometric`，后续 VFM 拓扑 scorer 应以新的 registry key 接入，而不是在训练循环里硬编码分支。
+scorer registry 位于 `src/vfm_gs/scorers/`。当前注册了 `fastgs_photometric` 和 `vfm_topology_scorer`。`vfm_topology_scorer` 的 v1 默认使用 `mock_l1` 后端：它用 SH0 渲染图与 GT 生成 VFM-style pixel error map，再通过 FastGS 既有 `metric_map` 计数器融合到 Gaussian 级评分。真实 VFM 后端和缓存格式将在下一版接入。
 
 实验配置示例：
 

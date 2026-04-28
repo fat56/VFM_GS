@@ -1,9 +1,7 @@
 import torch
-from PIL import ImageFilter
 from vfm_gs.gaussian_renderer import render_fastgs
 from .loss_utils import l1_loss
 from fused_ssim import fused_ssim as fast_ssim
-import torchvision.transforms as transforms
 import random
 
 
@@ -18,11 +16,17 @@ def sampling_cameras(my_viewpoint_stack):
     
     return camlist
 
-def get_loss(reconstructed_image, original_image):
-    l1_loss = torch.mean(torch.abs(reconstructed_image - original_image), 0).detach()
-    l1_loss_norm = (l1_loss - torch.min(l1_loss)) / (torch.max(l1_loss) - torch.min(l1_loss))
+def normalize01(value_tensor, eps=1e-6):
+    value_tensor = torch.nan_to_num(value_tensor.detach().to(torch.float32), nan=0.0, posinf=0.0, neginf=0.0)
+    value_min = torch.min(value_tensor)
+    value_max = torch.max(value_tensor)
+    denom = torch.clamp(value_max - value_min, min=eps)
+    return (value_tensor - value_min) / denom
 
-    return l1_loss_norm
+
+def get_loss(reconstructed_image, original_image):
+    l1_loss_map = torch.mean(torch.abs(reconstructed_image - original_image), 0)
+    return normalize01(l1_loss_map)
 
 def compute_photometric_loss(viewpoint_cam, image):
     gt_image = viewpoint_cam.original_image.cuda()
@@ -32,13 +36,14 @@ def compute_photometric_loss(viewpoint_cam, image):
 
 def normalize(config_value, value_tensor):
     multiplier = config_value
-    value_tensor[value_tensor.isnan()] = 0
+    value_tensor = torch.nan_to_num(value_tensor, nan=0.0, posinf=0.0, neginf=0.0)
 
     valid_indices = (value_tensor > 0)
     valid_value = value_tensor[valid_indices].to(torch.float32)
 
     ret_value = torch.zeros_like(value_tensor, dtype=torch.float32)
-    ret_value[valid_indices] = multiplier * (valid_value / torch.median(valid_value))
+    if valid_value.numel() > 0:
+        ret_value[valid_indices] = multiplier * (valid_value / torch.clamp(torch.median(valid_value), min=1e-6))
 
     return ret_value
 
@@ -79,7 +84,7 @@ def compute_gaussian_score_fastgs(camlist, gaussians, pipe, bg, args, DENSIFY = 
         get_flag = True
         l1_loss_norm = get_loss(render_image, gt_image)
         
-        metric_map = (l1_loss_norm > args.loss_thresh).int()
+        metric_map = (l1_loss_norm > args.loss_thresh).int().reshape(-1).contiguous()
 
         render_pkg = render_fastgs(my_viewpoint_cam, gaussians, pipe, bg, args.mult, get_flag = get_flag, metric_map = metric_map)
 
@@ -96,7 +101,7 @@ def compute_gaussian_score_fastgs(camlist, gaussians, pipe, bg, args, DENSIFY = 
         else:
             full_metric_score += photometric_loss * accum_loss_counts
 
-    pruning_score = (full_metric_score - torch.min(full_metric_score)) / (torch.max(full_metric_score) - torch.min(full_metric_score))
+    pruning_score = normalize01(full_metric_score)
     
     if DENSIFY:
         importance_score = torch.div(full_metric_counts, len(camlist), rounding_mode='floor')

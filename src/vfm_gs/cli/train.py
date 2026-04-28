@@ -83,7 +83,11 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
     first_iter += 1
     bg = torch.rand((3), device="cuda") if opt.random_background else background
-    gaussian_scorer = get_scorer(getattr(opt, "scorer", "fastgs_photometric"))
+    scorer_name = getattr(opt, "scorer", "fastgs_photometric")
+    if getattr(opt, "vfm_enable", False):
+        scorer_name = "vfm_topology_scorer"
+    gaussian_scorer = get_scorer(scorer_name)
+    print("Using Gaussian scorer: {}".format(scorer_name))
 
     for iteration in range(first_iter, opt.iterations + 1):
 

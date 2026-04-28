@@ -102,6 +102,12 @@ class OptimizationParams(ParamGroup):
         self.random_background = False
         self.optimizer_type = "default"
         self.scorer = "fastgs_photometric"
+        self.vfm_enable = False
+        self.vfm_backend = "mock_l1"
+        self.vfm_cache_dir = ""
+        self.vfm_loss_thresh = 0.5
+        self.vfm_weight = 0.25
+        self.vfm_use_albedo_sh0 = True
         super().__init__(parser, "Optimization Parameters")
 
 def get_combined_args(parser : ArgumentParser):
