@@ -2,11 +2,11 @@
 
 ## Active
 
-- `0001_vfm_topology_scorer`: compact cache、validation 与训练 preflight 已完成。下一步做真实 VFM 后端依赖/显存评估。
+- `0001_vfm_topology_scorer`: DINOv2 后端依赖/显存评估已完成。下一步接 optional DINOv2 cache builder。
 
 ## Queued
 
-- 调研并验证 DINOv2 / monocular depth 后端在当前 Python 3.10、PyTorch 1.12.1、CUDA 11.6 环境下的可行性。
+- 增加 optional DINOv2 cache builder，优先 `dinov2_vits14`，复用现有 manifest。
 - 运行 bicycle 长程 baseline vs VFM cached backend 消融。
 
 ## Blocked
@@ -22,3 +22,4 @@
 - 增加 `npz_uint8` compact cache storage，将 bicycle edge cache 从约 189MB 降到约 35MB。
 - 增加 `validate_vfm_cache` CLI，支持 manifest、checksum、shape、source-image 和 backend 校验。
 - 为 cached backend 增加训练前 preflight，提前暴露缺失 cache 或 backend 不匹配。
+- 增加 `vfm_backend_probe` CLI，记录当前环境和 DINOv2 cache-size feasibility。

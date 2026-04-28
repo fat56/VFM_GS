@@ -24,6 +24,7 @@ vfm-gs-convert = "vfm_gs.cli.convert:main"
 vfm-gs-full-eval = "vfm_gs.cli.full_eval:main"
 vfm-gs-build-vfm-cache = "vfm_gs.cli.build_vfm_cache:main"
 vfm-gs-validate-vfm-cache = "vfm_gs.cli.validate_vfm_cache:main"
+vfm-gs-probe-vfm-backend = "vfm_gs.cli.vfm_backend_probe:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

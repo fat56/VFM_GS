@@ -27,3 +27,11 @@ Dataset: `datasets/mipnerf360/bicycle`, test split, `-r 8`, 220 iterations, `den
 - `vfm_gs.cli.validate_vfm_cache` passed on `output/0001/vfm_cache/bicycle_edge_u8` with 194 `cached_edge_l1` entries.
 - `vfm_topology_scorer.preflight` passed on the same compact cache before Scene construction.
 - A negative train-entry check with `--vfm_cache_dir output/0001/vfm_cache/does_not_exist` failed before camera loading with a structured `VFM cache preflight failed` error.
+
+## 2026-04-28 Backend Feasibility
+
+- `vfm_gs.cli.vfm_backend_probe` was added and run on the current environment.
+- Current runtime: Python 3.10.20, PyTorch 1.12.1+cu116, CUDA 11.6, RTX 4090 D 23.52GB.
+- Optional VFM packages are not installed: `transformers`, `timm`, `xformers`, `opencv-python`.
+- DINOv2 ViT-S/14 and ViT-B/14 are feasible first targets for offline cache building at `max_width` 518-640; raw float32 features at 640x426 are estimated at 0.40GB and 0.79GB for 194 images.
+- Details: `docs/experiments/0001_vfm_topology_scorer/vfm_backend_feasibility.md`.

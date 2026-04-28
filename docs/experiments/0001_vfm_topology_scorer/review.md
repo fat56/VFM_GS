@@ -17,6 +17,7 @@ Keep `vfm_topology_scorer` as the v1 integration path. `mock_l1` validates the s
 - `npz_uint8` compact storage reduced the bicycle edge cache from about 189MB to 35MB, and `vfm_gs.cli.validate_vfm_cache` passed checksum/source-image validation.
 - The compact run completed train/render/metrics with 78,682 Gaussians, PSNR 20.1588, SSIM 0.4275, LPIPS 0.5993. The larger PSNR drop suggests edge quantization can move early densification decisions.
 - Cached backends now run a training preflight before Scene construction. Good caches pass early; missing manifests fail before camera loading or densification.
+- `vfm_gs.cli.vfm_backend_probe` records runtime compatibility and estimates DINOv2 cache sizes. On this machine, ViT-S/14 and ViT-B/14 at 518-640px cache width are the safest real VFM candidates.
 
 ## Limitations
 
@@ -27,8 +28,8 @@ Keep `vfm_topology_scorer` as the v1 integration path. `mock_l1` validates the s
 
 ## Next Version Plan
 
-1. Do a dependency and memory feasibility check for one real cached VFM backend, starting with DINOv2 features for semantic topology and a monocular depth/edge backend for geometry.
-2. Run a longer bicycle ablation with matched baseline, `mock_l1`, `cached_edge_l1` float32, and `cached_edge_l1` compact schedules.
-3. If the dependency check passes, add the first real VFM cache builder and keep the scorer path unchanged.
-4. Compare PSNR/SSIM/LPIPS, Gaussian count, render FPS, cache build time, scorer overhead, cache size, and visual floaters.
-5. Decide whether compact storage needs threshold retuning or should remain a storage-only option for less sensitive backends.
+1. Add an optional DINOv2 cache builder using the existing manifest contract, starting with `dinov2_vits14`.
+2. Keep the builder dependency-isolated: fail with a clear message when torch.hub weights or optional dependencies are unavailable.
+3. Add a DINO feature-map scorer path that compares cached GT features against SH0 rendered features after aligned resizing/projection.
+4. Run a longer bicycle ablation with matched baseline, `cached_edge_l1`, and DINOv2 schedules.
+5. Compare PSNR/SSIM/LPIPS, Gaussian count, render FPS, cache build time, scorer overhead, cache size, and visual floaters.

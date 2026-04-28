@@ -127,6 +127,7 @@ vfm-gs-render -m output/bicycle_baseline --skip_train
 vfm-gs-metrics -m output/bicycle_baseline
 vfm-gs-build-vfm-cache -s datasets/mipnerf360/bicycle -i images_8 -o output/0001/vfm_cache/bicycle_edge_u8 --max_width 640 --storage npz_uint8
 vfm-gs-validate-vfm-cache -c output/0001/vfm_cache/bicycle_edge_u8 -s datasets/mipnerf360/bicycle -i images_8 --backend cached_edge_l1
+vfm-gs-probe-vfm-backend --width 640 --height 426 --num_images 194
 ```
 
 批量脚本仍保留，但已经指向新的包入口：
