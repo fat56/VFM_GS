@@ -138,6 +138,24 @@ Interpretation:
 - Final-pruned VFM runs have matched point counts and smaller output artifacts, but they no longer retain the unpruned VFM quality gains. This suggests the extra VFM-driven points are not simply removable duplicates after convergence.
 - The next budget method should be staged during training, not a single final cut: enforce a soft cap after densification/pruning events, or run a post-prune fine-tune schedule after target pruning.
 
+## 2026-04-29 Staged Target Budget Probe
+
+Code change: add `target_gaussian_staged`, `target_gaussian_stage_margin`, `target_gaussian_stage_start`, and `target_gaussian_stage_interval`. These controls periodically prune the lowest-score Gaussians during training toward `target_gaussian_count * margin`, then still write an exact-budget final PLY.
+
+Dataset and schedule match the 30k ablation above. These runs use `target_gaussian_count=240394`, `target_gaussian_staged=true`, `target_gaussian_stage_margin=1.2`, and `target_gaussian_stage_interval=500`. The staged cap is 288,473 Gaussians.
+
+| Artifact | Backend | PSNR | SSIM | LPIPS | Train Time | Render FPS | Gaussian Count | Output Size | Staged Prunes | Final Prune | Notes |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---|
+| `output/0001/vfm_cached_edge_budget240394_staged120_bicycle_30k_r8` | `cached_edge_l1` / `npz_uint8` | 25.7979 | 0.7747 | 0.2537 | 171.49s | 514.79 | 240,394 | 82M | 24 | 276,611 -> 240,394 | Better than final-only, still below baseline |
+| `output/0001/vfm_dinov2_token_edge_budget240394_staged120_bicycle_30k_r8` | `dinov2_token_edge_l1` | 25.3529 | 0.7727 | 0.2493 | 172.39s | 524.63 | 240,394 | 82M | 25 | 288,127 -> 240,394 | Best LPIPS among strict-budget VFM runs, still below baseline |
+
+Interpretation:
+
+- Staged pruning is a clear improvement over one-shot final pruning, gaining +2.0251 PSNR for edge and +1.7958 PSNR for DINO at the same exact 240,394 Gaussian budget.
+- Strict 240k budget still underperforms the baseline: edge is -0.9053 PSNR, -0.0320 SSIM, and +0.0259 LPIPS; DINO is -1.3503 PSNR, -0.0340 SSIM, and +0.0215 LPIPS.
+- The unpruned VFM quality gain appears to need more than baseline point count on this scene, or it needs recovery training after aggressive budget pruning.
+- Next comparison should use a looser staged budget, around 300k Gaussians, before spending effort on a more complex scorer.
+
 ## 2026-04-28 Cache Preflight
 
 - `vfm_gs.cli.validate_vfm_cache` passed on `output/0001/vfm_cache/bicycle_edge_u8` with 194 `cached_edge_l1` entries.

@@ -42,6 +42,8 @@ Keep `vfm_topology_scorer` as the v1 integration path. `mock_l1` validates the s
 - Target-count pruning now removes the lowest-score Gaussians first. This matches the observed score semantics for bulk budget control better than high-score removal.
 - Low-score target-count 30k runs matched the baseline Gaussian count exactly, but quality remained below baseline: edge PSNR 23.7729 / SSIM 0.7307 / LPIPS 0.2685; DINO PSNR 23.5571 / SSIM 0.7087 / LPIPS 0.2797.
 - A one-shot final prune is therefore not a valid budget-matched quality comparison. It removes too much converged structure without allowing the model to recover.
+- Staged target-count 30k runs improved substantially over one-shot final pruning while keeping the exact baseline count. Edge reached PSNR 25.7979, SSIM 0.7747, LPIPS 0.2537; DINO reached PSNR 25.3529, SSIM 0.7727, LPIPS 0.2493.
+- Staged 240k is still below the baseline quality, so strict baseline-count matching is too aggressive for the current VFM variants.
 
 ## Limitations
 
@@ -54,12 +56,12 @@ Keep `vfm_topology_scorer` as the v1 integration path. `mock_l1` validates the s
 - The best 30k DINO result is not budget-controlled: it used about 2.04x the baseline Gaussian count. The next result must separate feature-signal quality from simply allowing denser reconstructions.
 - Existing knobs do not provide full budget control. `vfm_weight` affects pruning fusion, `vfm_importance_weight` affects direct VFM densification strength, and `vfm_importance_mode=rgb_only` can disable direct VFM densification, but none of them match the baseline point count.
 - `target_gaussian_count` is useful as a count-control diagnostic, but final one-shot pruning is too destructive at the baseline-sized budget.
-- The current 30k quality gains remain entangled with a larger Gaussian budget. A fair scorer comparison needs staged budget control or post-prune fine-tuning.
+- Staged budget control is healthier, but 240k is still too strict for this VFM topology scorer. A fair scorer comparison should test a looser 300k-ish budget or add post-prune fine-tuning.
 
 ## Next Version Plan
 
-1. Run cached edge and DINO token-edge at 30k `-r 8` with `--target_gaussian_staged`, `--target_gaussian_count 240394`, `--target_gaussian_stage_margin 1.2`, and `--target_gaussian_stage_interval 500`.
+1. Run cached edge and DINO token-edge at 30k `-r 8` with staged budget target 300,000 and margin 1.15-1.20.
 2. Add a post-prune fine-tune option for final target pruning, then compare staged cap vs final-prune-plus-fine-tune.
-3. If staged budget still underperforms, test a looser target around 300k Gaussians before changing the VFM scorer.
-4. Add a no-effect control mode such as `vfm_weight=0` + `vfm_importance_mode=rgb_only` to measure VFM scorer overhead without changing pruning or densification decisions.
-5. Keep 30k `-r 8` as the minimum quality gate; use 220 iterations only for smoke checks after code changes.
+3. Add a no-effect control mode such as `vfm_weight=0` + `vfm_importance_mode=rgb_only` to measure VFM scorer overhead without changing pruning or densification decisions.
+4. Keep 30k `-r 8` as the minimum quality gate; use 220 iterations only for smoke checks after code changes.
+5. After a usable budget policy exists, revisit `dinov2_token_edge_l1` vs a patch-descriptor scorer.
