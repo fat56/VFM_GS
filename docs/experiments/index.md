@@ -2,4 +2,4 @@
 
 | ID | Status | Variant | Scorer | Dataset | Result | Decision |
 |---|---|---|---|---|---|---|
-| 0001_vfm_topology_scorer | staged_budget_240k_done | fastgs_baseline | vfm_topology_scorer / cached_edge_l1 / dinov2_token_edge_l1 | mipnerf360/bicycle `-r 8` | results.md | Run 300k staged budget probe next |
+| 0001_vfm_topology_scorer | staged_budget_300k_done | fastgs_baseline | vfm_topology_scorer / cached_edge_l1 / dinov2_token_edge_l1 | mipnerf360/bicycle `-r 8` | results.md | Run 350k staged budget probe next |

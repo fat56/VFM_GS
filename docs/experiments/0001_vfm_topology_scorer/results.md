@@ -156,6 +156,22 @@ Interpretation:
 - The unpruned VFM quality gain appears to need more than baseline point count on this scene, or it needs recovery training after aggressive budget pruning.
 - Next comparison should use a looser staged budget, around 300k Gaussians, before spending effort on a more complex scorer.
 
+## 2026-04-29 300k Staged Target Budget Probe
+
+Dataset and schedule match the 30k ablation above. These runs use `target_gaussian_count=300000`, `target_gaussian_staged=true`, `target_gaussian_stage_margin=1.15`, and `target_gaussian_stage_interval=500`. The staged cap is 345,000 Gaussians.
+
+| Artifact | Backend | PSNR | SSIM | LPIPS | Train Time | Render FPS | Gaussian Count | Output Size | Staged Prunes | Final Prune | Notes |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---|
+| `output/0001/vfm_cached_edge_budget300000_staged115_bicycle_30k_r8` | `cached_edge_l1` / `npz_uint8` | 26.2327 | 0.7866 | 0.2412 | 165.98s | 445.07 | 300,000 | 96M | 23 | 314,704 -> 300,000 | Much closer to baseline, still below on all metrics |
+| `output/0001/vfm_dinov2_token_edge_budget300000_staged115_bicycle_30k_r8` | `dinov2_token_edge_l1` | 25.9089 | 0.7925 | 0.2291 | 154.13s | 474.78 | 300,000 | 96M | 24 | 333,724 -> 300,000 | LPIPS nearly matches baseline, PSNR/SSIM remain lower |
+
+Interpretation:
+
+- Loosening the staged target from 240k to 300k recovers another +0.4348 PSNR for edge and +0.5561 PSNR for DINO.
+- Edge 300k is still below baseline by -0.4705 PSNR, -0.0201 SSIM, and +0.0134 LPIPS.
+- DINO 300k is below baseline by -0.7943 PSNR and -0.0142 SSIM, but LPIPS is only +0.0013 worse than baseline. DINO's perceptual signal remains the most promising under a constrained budget.
+- The budget-quality curve has not crossed baseline yet. A 350k staged target should be tested before adding more training machinery; if it still underperforms, the next code path should be post-prune fine-tuning or a less edge-like DINO descriptor scorer.
+
 ## 2026-04-28 Cache Preflight
 
 - `vfm_gs.cli.validate_vfm_cache` passed on `output/0001/vfm_cache/bicycle_edge_u8` with 194 `cached_edge_l1` entries.
