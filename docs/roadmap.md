@@ -2,11 +2,12 @@
 
 ## Active
 
-- `0001_vfm_topology_scorer`: low-score final target prune 已完成 30k probe，但一次性最终裁剪质量低于 baseline。下一步做 staged budget control 或 post-prune fine-tune。
+- `0001_vfm_topology_scorer`: staged budget control 已实现，下一步运行 30k staged budget probe。
 
 ## Queued
 
-- 增加 staged target budget：densification/pruning 后分阶段向目标点数裁剪，让模型继续训练恢复。
+- 运行 staged target budget 30k probe：`target_gaussian_count=240394`、`stage_margin=1.2`、`stage_interval=500`。
+- 如果 staged 仍低于 baseline，测试 300k 左右的松预算。
 - 增加 post-prune fine-tune 选项，对比 staged budget 和最终裁剪后恢复训练。
 - 增加 no-effect control：`vfm_importance_mode=rgb_only` + `vfm_weight=0`，测 VFM scorer 开销和 cache overhead。
 - 构建 `max_width=518` 或 `640` 的 full-scene `dinov2_vits14` cache，记录 cache build time、disk size 和 validate 结果。
@@ -34,3 +35,4 @@
 - 增加 `vfm_importance_mode=max|weighted|rgb_only` 并完成 `rgb_only` 30k probe；直接关闭 VFM densification 仍未达成 budget matching。
 - 增加 `target_gaussian_count` final-prune control；首版 high-score bulk pruning 是负例，已修正为 low-score bulk pruning。
 - 完成 low-score final target-prune 30k probe；点数精确匹配 baseline，但 edge/DINO 质量均低于 baseline，说明一次性最终裁剪不是可用的公平预算方案。
+- 增加 `target_gaussian_staged` / `target_gaussian_stage_margin` / `target_gaussian_stage_interval`，支持训练期分阶段预算控制。

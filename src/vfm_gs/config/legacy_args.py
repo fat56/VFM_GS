@@ -111,6 +111,10 @@ class OptimizationParams(ParamGroup):
         self.vfm_importance_mode = "max"
         self.vfm_use_albedo_sh0 = True
         self.target_gaussian_count = 0
+        self.target_gaussian_staged = False
+        self.target_gaussian_stage_margin = 1.2
+        self.target_gaussian_stage_start = 0
+        self.target_gaussian_stage_interval = 500
         super().__init__(parser, "Optimization Parameters")
 
 def get_combined_args(parser : ArgumentParser):

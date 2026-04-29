@@ -58,8 +58,8 @@ Keep `vfm_topology_scorer` as the v1 integration path. `mock_l1` validates the s
 
 ## Next Version Plan
 
-1. Add staged budget control: after densification/pruning events, softly prune toward a target cap so the model can keep training after each budget correction.
+1. Run cached edge and DINO token-edge at 30k `-r 8` with `--target_gaussian_staged`, `--target_gaussian_count 240394`, `--target_gaussian_stage_margin 1.2`, and `--target_gaussian_stage_interval 500`.
 2. Add a post-prune fine-tune option for final target pruning, then compare staged cap vs final-prune-plus-fine-tune.
-3. Rerun cached edge and DINO token-edge at 30k `-r 8` under the staged budget path, targeting about 240k-300k Gaussians.
+3. If staged budget still underperforms, test a looser target around 300k Gaussians before changing the VFM scorer.
 4. Add a no-effect control mode such as `vfm_weight=0` + `vfm_importance_mode=rgb_only` to measure VFM scorer overhead without changing pruning or densification decisions.
 5. Keep 30k `-r 8` as the minimum quality gate; use 220 iterations only for smoke checks after code changes.

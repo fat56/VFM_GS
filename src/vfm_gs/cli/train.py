@@ -51,6 +51,46 @@ except (ImportError, NameError):
     TENSORBOARD_FOUND = False
 
 
+def _target_gaussian_count(opt):
+    return int(getattr(opt, "target_gaussian_count", 0) or 0)
+
+
+def _staged_target_gaussian_count(opt):
+    target_count = _target_gaussian_count(opt)
+    if target_count <= 0:
+        return 0
+    margin = max(1.0, float(getattr(opt, "target_gaussian_stage_margin", 1.2) or 1.0))
+    return max(target_count, int(round(target_count * margin)))
+
+
+def _prune_to_target_budget(scene, gaussians, gaussian_scorer, pipe, bg, opt, target_count, label, iteration=None):
+    current_count = gaussians._xyz.shape[0]
+    if target_count <= 0 or current_count <= target_count:
+        return 0, 0.0
+
+    budget_start = time.time()
+    my_viewpoint_stack = scene.getTrainCameras().copy()
+    from vfm_gs.utils.fast_utils import sampling_cameras
+
+    camlist = sampling_cameras(my_viewpoint_stack)
+    _, pruning_score = gaussian_scorer(camlist, gaussians, pipe, bg, opt)
+    pruned_count = gaussians.prune_to_target_count(target_count, pruning_score=pruning_score)
+    torch.cuda.synchronize()
+    elapsed = time.time() - budget_start
+    prefix = "[ITER {}] ".format(iteration) if iteration is not None else ""
+    print(
+        "{}{} Gaussian prune: {} -> {} (removed {}, target {})".format(
+            prefix,
+            label,
+            current_count,
+            gaussians._xyz.shape[0],
+            pruned_count,
+            target_count,
+        )
+    )
+    return pruned_count, elapsed
+
+
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from, websockets):
     require_runtime_imports()
     from vfm_gs.scorers import get_scorer
@@ -92,6 +132,11 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
     first_iter += 1
     bg = torch.rand((3), device="cuda") if opt.random_background else background
+    target_gaussian_count = _target_gaussian_count(opt)
+    target_gaussian_staged = bool(getattr(opt, "target_gaussian_staged", False))
+    staged_target_gaussian_count = _staged_target_gaussian_count(opt)
+    target_gaussian_stage_start = int(getattr(opt, "target_gaussian_stage_start", 0) or 0)
+    target_gaussian_stage_interval = max(1, int(getattr(opt, "target_gaussian_stage_interval", 500) or 1))
 
     for iteration in range(first_iter, opt.iterations + 1):
 
@@ -173,6 +218,24 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                                                 args = opt,
                                                 importance_score = importance_score,
                                                 pruning_score = pruning_score)
+                    if (
+                        target_gaussian_staged
+                        and staged_target_gaussian_count > 0
+                        and iteration >= target_gaussian_stage_start
+                        and iteration % target_gaussian_stage_interval == 0
+                    ):
+                        _, budget_time = _prune_to_target_budget(
+                            scene,
+                            gaussians,
+                            gaussian_scorer,
+                            pipe,
+                            bg,
+                            opt,
+                            staged_target_gaussian_count,
+                            "Staged target",
+                            iteration=iteration,
+                        )
+                        total_time += budget_time
 
                 if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
                     gaussians.reset_opacity()
@@ -202,24 +265,20 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             optim_time = optim_start.elapsed_time(optim_end)
             total_time += (iter_time + optim_time) / 1e3
 
-    target_gaussian_count = int(getattr(opt, "target_gaussian_count", 0) or 0)
     if target_gaussian_count > 0:
         current_count = gaussians._xyz.shape[0]
         if current_count > target_gaussian_count:
-            budget_start = time.time()
-            my_viewpoint_stack = scene.getTrainCameras().copy()
-            camlist = sampling_cameras(my_viewpoint_stack)
-            _, pruning_score = gaussian_scorer(camlist, gaussians, pipe, bg, opt)
-            pruned_count = gaussians.prune_to_target_count(target_gaussian_count, pruning_score=pruning_score)
-            torch.cuda.synchronize()
-            total_time += time.time() - budget_start
-            print(
-                "Target Gaussian prune: {} -> {} (removed {})".format(
-                    current_count,
-                    gaussians._xyz.shape[0],
-                    pruned_count,
-                )
+            _, budget_time = _prune_to_target_budget(
+                scene,
+                gaussians,
+                gaussian_scorer,
+                pipe,
+                bg,
+                opt,
+                target_gaussian_count,
+                "Target",
             )
+            total_time += budget_time
             if opt.iterations in saving_iterations:
                 print("\n[ITER {}] Saving target-pruned Gaussians".format(opt.iterations))
                 scene.save(opt.iterations)
