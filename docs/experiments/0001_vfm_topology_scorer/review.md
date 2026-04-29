@@ -48,6 +48,7 @@ Keep `vfm_topology_scorer` as the v1 integration path. `mock_l1` validates the s
 - DINO 300k nearly matches baseline LPIPS but is still behind on PSNR/SSIM. Edge 300k is closer on PSNR but worse on LPIPS.
 - 350k staged target produced the first budget-controlled positive result. Edge reached PSNR 26.7788, SSIM 0.8089, LPIPS 0.2206 with 340,283 Gaussians, beating baseline on all three metrics.
 - DINO 350k reached PSNR 26.3634, SSIM 0.8033, LPIPS 0.2188 with 350,000 Gaussians. It improves LPIPS over baseline but remains lower on PSNR/SSIM.
+- The edge positive result replicated on garden. Garden baseline reached PSNR 28.7051, SSIM 0.8889, LPIPS 0.1134 with 196,201 Gaussians; staged edge reached PSNR 28.9411, SSIM 0.8964, LPIPS 0.1007 with 248,471 Gaussians.
 
 ## Limitations
 
@@ -60,12 +61,12 @@ Keep `vfm_topology_scorer` as the v1 integration path. `mock_l1` validates the s
 - The best 30k DINO result is not budget-controlled: it used about 2.04x the baseline Gaussian count. The next result must separate feature-signal quality from simply allowing denser reconstructions.
 - Existing knobs do not provide full budget control. `vfm_weight` affects pruning fusion, `vfm_importance_weight` affects direct VFM densification strength, and `vfm_importance_mode=rgb_only` can disable direct VFM densification, but none of them match the baseline point count.
 - `target_gaussian_count` is useful as a count-control diagnostic, but final one-shot pruning is too destructive at the baseline-sized budget.
-- Staged budget control is healthier, and 350k edge is a positive budget-controlled result. The DINO token-edge variant still needs a better projection or recovery training before it is budget-efficient.
+- Staged budget control is healthier, and edge has now produced positive budget-aware results on bicycle and garden. The DINO token-edge variant still needs a better projection or recovery training before it is budget-efficient.
 
 ## Next Version Plan
 
-1. Promote staged-budget `cached_edge_l1` at the 340k-350k range as the v1 positive control and rerun it on another scene or seed before broad claims.
-2. Add a no-effect control mode such as `vfm_weight=0` + `vfm_importance_mode=rgb_only` to measure VFM scorer overhead without changing pruning or densification decisions.
-3. Add a post-prune fine-tune option for final target pruning, then compare staged cap vs final-prune-plus-fine-tune.
-4. Replace or augment `dinov2_token_edge_l1` with a patch-descriptor scorer, because the current token-edge projection underperforms edge on PSNR/SSIM under budget control.
+1. Add a no-effect control mode such as `vfm_weight=0` + `vfm_importance_mode=rgb_only` to measure VFM scorer overhead without changing pruning or densification decisions.
+2. Add a post-prune fine-tune option for final target pruning, then compare staged cap vs final-prune-plus-fine-tune.
+3. Replace or augment `dinov2_token_edge_l1` with a patch-descriptor scorer, because the current token-edge projection underperforms edge on PSNR/SSIM under budget control.
+4. Run staged-budget edge on one more scene before promoting it beyond a v1 positive control.
 5. Keep 30k `-r 8` as the minimum quality gate; use 220 iterations only for smoke checks after code changes.

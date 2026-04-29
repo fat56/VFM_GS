@@ -188,6 +188,21 @@ Interpretation:
 - DINO 350k is still below baseline by -0.3398 PSNR and -0.0034 SSIM, while improving LPIPS by -0.0090. The current token-edge projection appears more perceptual than photometric under budget control.
 - The v1 positive result should be framed as staged-budget `cached_edge_l1`, not DINO token-edge. DINO needs a better descriptor scorer or a recovery/fine-tune path before it can be claimed as a budget-efficient improvement.
 
+## 2026-04-29 Garden Edge Replication
+
+Replication scene: `datasets/mipnerf360/garden`, `-r 8`, 30,000 iterations. The edge run used a newly built compact cache at `output/0001/vfm_cache/garden_edge_u8` with 185 entries and size 36M. The budget target was set to 278,606, matching the bicycle positive result's approximate `1.42x` baseline-count ratio.
+
+| Artifact | Variant | PSNR | SSIM | LPIPS | Train Time | Render FPS | Gaussian Count | Output Size | Notes |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---|
+| `output/0001/baseline_garden_30k_r8` | baseline | 28.7051 | 0.8889 | 0.1134 | 135.77s | 475.27 | 196,201 | 76M | Garden baseline |
+| `output/0001/vfm_cached_edge_garden_budget278606_staged110_30k_r8` | `cached_edge_l1`, staged target | 28.9411 | 0.8964 | 0.1007 | 146.57s | 533.30 | 248,471 | 88M | Target skipped because natural final count stayed below 278,606 |
+
+Interpretation:
+
+- The staged edge positive result replicated on a second scene. Garden edge improves over its baseline by +0.2360 PSNR, +0.0074 SSIM, and -0.0126 LPIPS.
+- Garden needed no staged or final target prune at the chosen target; FastGS plus the edge scorer naturally ended at 248,471 Gaussians, about 1.27x the garden baseline count.
+- This reduces the chance that the bicycle 350k edge result was a one-off. The current v1 positive claim should remain scoped to `cached_edge_l1` under staged/ratio-aware budget control.
+
 ## 2026-04-28 Cache Preflight
 
 - `vfm_gs.cli.validate_vfm_cache` passed on `output/0001/vfm_cache/bicycle_edge_u8` with 194 `cached_edge_l1` entries.
