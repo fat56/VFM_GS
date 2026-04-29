@@ -2,19 +2,20 @@
 
 ## Active
 
-- `0001_vfm_topology_scorer`: 300k staged budget probe 已完成，DINO LPIPS 接近 baseline 但 PSNR/SSIM 仍低。下一步测试 350k budget-quality 曲线点。
+- `0001_vfm_topology_scorer`: 350k staged budget probe 找到首个正结果：cached edge 在约 340k 点数下三项指标超过 baseline。下一步做复验/泛化和 DINO scorer 改进。
 
 ## Queued
 
-- 运行 staged target budget 30k probe：`target_gaussian_count=350000`、`stage_margin=1.10-1.15`、`stage_interval=500`。
-- 增加 post-prune fine-tune 选项，对比 staged budget 和最终裁剪后恢复训练。
+- 复验 staged-budget `cached_edge_l1` 正结果：换 scene 或重复 run，确认不是单次 bicycle 偶然。
 - 增加 no-effect control：`vfm_importance_mode=rgb_only` + `vfm_weight=0`，测 VFM scorer 开销和 cache overhead。
+- 增加 post-prune fine-tune 选项，对比 staged budget 和最终裁剪后恢复训练。
+- 改进 DINO scorer：从 token-edge proxy 转向 patch descriptor / feature projection 对齐。
 - 构建 `max_width=518` 或 `640` 的 full-scene `dinov2_vits14` cache，记录 cache build time、disk size 和 validate 结果。
 - 增加固定 patch-descriptor projection scorer，对比 token-edge proxy。
 
 ## Blocked
 
-- DINOv2 token-edge 在 30k 指标上领先，但默认 Gaussian count 约为 baseline 的 2.04x；importance weight 0.25 和 `rgb_only` 仍约为 baseline 的 1.72x-1.74x。300k staged budget 仍未超过 baseline，所以还不能把收益完全归因于 VFM signal。
+- DINOv2 token-edge 默认 30k 指标领先但预算过大；350k staged budget 下只在 LPIPS 上超过 baseline，PSNR/SSIM 仍低。当前 DINO token-edge 还不能作为预算高效的主结果。
 
 ## Completed
 
@@ -37,3 +38,4 @@
 - 增加 `target_gaussian_staged` / `target_gaussian_stage_margin` / `target_gaussian_stage_interval`，支持训练期分阶段预算控制。
 - 完成 240k staged budget 30k probe；质量较 final-only 大幅恢复，但仍低于 baseline。
 - 完成 300k staged budget 30k probe；DINO LPIPS 几乎追平 baseline，但 PSNR/SSIM 仍低。
+- 完成 350k staged budget 30k probe；cached edge 在约 340k 点数下超过 baseline，DINO 350k 仅 LPIPS 超过 baseline。

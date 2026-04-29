@@ -172,6 +172,22 @@ Interpretation:
 - DINO 300k is below baseline by -0.7943 PSNR and -0.0142 SSIM, but LPIPS is only +0.0013 worse than baseline. DINO's perceptual signal remains the most promising under a constrained budget.
 - The budget-quality curve has not crossed baseline yet. A 350k staged target should be tested before adding more training machinery; if it still underperforms, the next code path should be post-prune fine-tuning or a less edge-like DINO descriptor scorer.
 
+## 2026-04-29 350k Staged Target Budget Probe
+
+Dataset and schedule match the 30k ablation above. These runs use `target_gaussian_count=350000`, `target_gaussian_staged=true`, `target_gaussian_stage_margin=1.10`, and `target_gaussian_stage_interval=500`. The staged cap is 385,000 Gaussians.
+
+| Artifact | Backend | PSNR | SSIM | LPIPS | Train Time | Render FPS | Gaussian Count | Output Size | Staged Prunes | Final Prune | Notes |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---|
+| `output/0001/vfm_cached_edge_budget350000_staged110_bicycle_30k_r8` | `cached_edge_l1` / `npz_uint8` | 26.7788 | 0.8089 | 0.2206 | 161.89s | 529.06 | 340,283 | 106M | 21 | skipped, 340,283 <= 350,000 | First budget-controlled VFM run above baseline on all metrics |
+| `output/0001/vfm_dinov2_token_edge_budget350000_staged110_bicycle_30k_r8` | `dinov2_token_edge_l1` | 26.3634 | 0.8033 | 0.2188 | 166.69s | 517.33 | 350,000 | 108M | 23 | 360,043 -> 350,000 | Best constrained LPIPS, but PSNR/SSIM below baseline |
+
+Interpretation:
+
+- 350k staged edge is the first budget-controlled positive result: compared with baseline it is +0.0756 PSNR, +0.0022 SSIM, and -0.0072 LPIPS at about 1.42x the baseline Gaussian count.
+- Compared with default unpruned edge, staged 350k uses about 16.8% fewer Gaussians and keeps the quality above baseline, but gives back part of the unpruned edge gain.
+- DINO 350k is still below baseline by -0.3398 PSNR and -0.0034 SSIM, while improving LPIPS by -0.0090. The current token-edge projection appears more perceptual than photometric under budget control.
+- The v1 positive result should be framed as staged-budget `cached_edge_l1`, not DINO token-edge. DINO needs a better descriptor scorer or a recovery/fine-tune path before it can be claimed as a budget-efficient improvement.
+
 ## 2026-04-28 Cache Preflight
 
 - `vfm_gs.cli.validate_vfm_cache` passed on `output/0001/vfm_cache/bicycle_edge_u8` with 194 `cached_edge_l1` entries.
