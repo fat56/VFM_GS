@@ -554,6 +554,74 @@ uv run --active python -m vfm_gs.cli.train \
   -r 8
 ```
 
+## Counter Edge 第三场景复验
+
+Counter 用于验证 edge 正向控制组是否能跨到一个室内场景。先跑 baseline，再构建 compact edge cache，最后按 bicycle 正向结果的约 `1.42x` baseline 点数比例设置目标点数。
+
+```bash
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  -s datasets/mipnerf360/counter \
+  -i images \
+  -m output/0001/baseline_counter_30k_r8 \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  -r 8
+
+uv run --active python -m vfm_gs.cli.render \
+  -m output/0001/baseline_counter_30k_r8 \
+  --skip_train \
+  --quiet
+
+uv run --active python -m vfm_gs.cli.metrics \
+  -m output/0001/baseline_counter_30k_r8
+
+uv run --active python -m vfm_gs.cli.build_vfm_cache \
+  -s datasets/mipnerf360/counter \
+  -i images_8 \
+  -o output/0001/vfm_cache/counter_edge_u8 \
+  --max_width 640 \
+  --storage npz_uint8
+
+uv run --active python -m vfm_gs.cli.validate_vfm_cache \
+  -c output/0001/vfm_cache/counter_edge_u8 \
+  -s datasets/mipnerf360/counter \
+  -i images_8 \
+  --backend cached_edge_l1
+
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_cached_edge_compact.yaml \
+  -s datasets/mipnerf360/counter \
+  -i images \
+  -m output/0001/vfm_cached_edge_counter_budget160699_staged110_30k_r8 \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0001/vfm_cache/counter_edge_u8 \
+  --target_gaussian_count 160699 \
+  --target_gaussian_staged \
+  --target_gaussian_stage_margin 1.10 \
+  --target_gaussian_stage_interval 500 \
+  -r 8
+
+uv run --active python -m vfm_gs.cli.render \
+  -m output/0001/vfm_cached_edge_counter_budget160699_staged110_30k_r8 \
+  --iteration -1 \
+  --skip_train \
+  --quiet
+
+uv run --active python -m vfm_gs.cli.metrics \
+  -m output/0001/vfm_cached_edge_counter_budget160699_staged110_30k_r8
+```
+
+本组 edge 运行自然结束在 111,116 个 Gaussians，低于目标点数 160,699，因此没有触发最终 target prune。它仍超过 counter baseline，且点数更少；这使 `cached_edge_l1` 足以作为 0001 的 v1 正向控制组。
+
 ## 2026-04-28 快速验证
 
 同条件低分辨率短跑，用于确认 densification 分支实际触发 scorer：

@@ -203,6 +203,22 @@
 - Garden 在所选 target 下不需要 staged 或 final target prune；FastGS 加 edge scorer 自然结束在 248,471 个 Gaussians，约为 garden baseline count 的 1.27x。
 - 这降低了 bicycle 350k edge 结果只是单场景偶然的概率。当前 v1 正向结论仍应限定为 staged/ratio-aware budget control 下的 `cached_edge_l1`。
 
+## 2026-05-06 Counter Edge 复验
+
+复现场景：`datasets/mipnerf360/counter`，`-r 8`，30,000 iterations。edge run 使用新构建的 compact cache：`output/0001/vfm_cache/counter_edge_u8`，240 个 entries，大小 17M，并通过 `validate_vfm_cache`。budget target 设为 160,699，对齐 bicycle 正向结果约 `1.42x` baseline-count ratio；stage margin 为 1.10，cap 为 176,769。
+
+| 产物 | 变体 | PSNR | SSIM | LPIPS | 训练时间 | Gaussian 数量 | 输出大小 | 备注 |
+|---|---|---:|---:|---:|---:|---:|---:|---|
+| `output/0001/baseline_counter_30k_r8` | baseline | 29.5346 | 0.9304 | 0.0815 | 122.75s | 113,168 | 41M | Counter baseline |
+| `output/0001/vfm_cached_edge_counter_budget160699_staged110_30k_r8` | `cached_edge_l1`, staged target | 29.6316 | 0.9319 | 0.0791 | 132.67s | 111,116 | 40M | natural final count 低于 160,699，因此跳过 target |
+
+解读：
+
+- Counter edge 相比自身 baseline 提升 +0.0970 PSNR、+0.0015 SSIM、-0.0024 LPIPS。
+- 这组 edge run 的最终 Gaussian count 比 baseline 少 2,052 个，约少 1.8%。因此这个正向结果不是由更多点数换来的。
+- Counter 是第三个场景，且与 bicycle/garden 的室外场景不同。结合 bicycle 和 garden，`cached_edge_l1` 可以作为 v1 正向控制组固化：它证明 scorer/cache/pruning 路径能稳定产生正向信号，但它仍是边缘代理，不是最终 VFM 语义打分器。
+- Garden 与 Counter 在所选 target 下都自然低于目标点数，没有真正触发最终预算裁剪；严格预算机制的正向证据主要来自 bicycle 350k staged run。
+
 ## 2026-05-06 No-Effect 与 Densification Cadence 控制
 
 数据集和 schedule 与 bicycle 30k ablation 一致，`-r 8`，30,000 iterations。本组拆分两类影响：

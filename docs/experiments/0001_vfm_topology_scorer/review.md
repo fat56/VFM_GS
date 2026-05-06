@@ -2,7 +2,7 @@
 
 ## 当前决策
 
-继续保留 `vfm_topology_scorer` 作为 v1 集成路径。`mock_l1` 验证打分链路，`cached_edge_l1` 验证离线缓存契约，`dinov2_token_edge_l1` 验证训练可以消费真实 DINOv2 patch-token cache。当前 DINOv2 路径仍是保守的 token-edge projection，不是最终语义特征打分器。后续决策门槛以 30k 完整 run 为准，不再用短跑快速验证指标判断质量。
+继续保留 `vfm_topology_scorer` 作为 v1 集成路径。`mock_l1` 验证打分链路，`cached_edge_l1` 已固化为第一版正向控制组，`dinov2_token_edge_l1` 验证训练可以消费真实 DINOv2 patch-token cache。当前 DINOv2 路径仍是保守的 token-edge projection，不是最终语义特征打分器。后续决策门槛以 30k 完整 run 为准，不再用短跑快速验证指标判断质量。
 
 ## 发现
 
@@ -49,6 +49,8 @@
 - 350k staged target 产出首个预算受控正向结果。edge 在 340,283 个 Gaussians 下达到 PSNR 26.7788，SSIM 0.8089，LPIPS 0.2206，三项指标均超过 baseline。
 - DINO 350k 在 350,000 个 Gaussians 下达到 PSNR 26.3634，SSIM 0.8033，LPIPS 0.2188。它的 LPIPS 优于 baseline，但 PSNR/SSIM 仍低。
 - edge 正向结果已在 garden 复验。garden baseline 为 PSNR 28.7051，SSIM 0.8889，LPIPS 0.1134，196,201 个 Gaussians；staged edge 为 PSNR 28.9411，SSIM 0.8964，LPIPS 0.1007，248,471 个 Gaussians。
+- edge 正向结果已在 counter 完成第三场景复验。counter baseline 为 PSNR 29.5346，SSIM 0.9304，LPIPS 0.0815，113,168 个 Gaussians；staged edge 为 PSNR 29.6316，SSIM 0.9319，LPIPS 0.0791，111,116 个 Gaussians。
+- counter edge 的点数比 baseline 少 2,052 个，约少 1.8%。这说明至少在这个室内场景上，`cached_edge_l1` 的正向指标不是由更大的 Gaussian budget 解释的。
 - no-effect 控制已补齐。`fastgs_photometric + densification_interval=100` 达到 PSNR 26.9287，SSIM 0.8241，LPIPS 0.1964，412,078 个 Gaussians；zero-weight cached edge 和 zero-weight DINO 分别为 410,330 与 412,037 个 Gaussians，指标也基本一致。
 - 这说明 410k 级别点数主要由 `densification_interval=100` 的 cadence 改变驱动，而不是 VFM zero-weight scorer/cache 本身。后续预算归因必须固定或显式报告 densification cadence。
 - `post_prune_finetune_iterations` 已落地，默认关闭。训练会在最终 target prune 真的删除 Gaussians 后清空残留梯度，继续纯光度恢复训练，并保存到新的迭代号。
@@ -67,13 +69,14 @@
 - 最好的 30k DINO 结果不是预算受控结果：它使用了约 2.04x baseline Gaussian count。下一步必须把特征信号质量和允许更密 reconstruction 的收益拆开。
 - 现有 knobs 不能提供完整 budget control。`vfm_weight` 影响 pruning fusion，`vfm_importance_weight` 影响直接 VFM densification 强度，`vfm_importance_mode=rgb_only` 可以关闭直接 VFM densification，但都不能匹配 baseline point count。
 - `target_gaussian_count` 适合作为 count-control 诊断，但 baseline-sized budget 下的一次性 final pruning 破坏性太强。
-- staged budget control 更健康，edge 已在 bicycle 和 garden 产生预算感知的正向结果。DINO token-edge 仍需要更好的 projection 或 recovery training，才能成为预算高效方案。
+- staged budget control 更健康，edge 已在 bicycle、garden 和 counter 产生正向结果。DINO token-edge 仍需要更好的 projection 或 recovery training，才能成为预算高效方案。
+- garden 与 counter 的 staged edge 在所选目标下自然低于 target，没有真正触发最终预算裁剪；因此严格预算机制的正向证据主要来自 bicycle 350k staged run，跨场景结论应表述为比例感知的正向控制组，而不是所有场景都完成了精确预算匹配。
 - `vfm_enable` 当前没有 CLI 级显式关闭开关；若加载 VFM experiment yaml，就会触发 VFM scorer/preflight。严格 no-effect 需要从 baseline variant 出发手动覆盖非 VFM cadence 参数。
 - post-prune fine-tune 已证明有恢复价值，但严格 240k 预算下仍未转正；它现在更适合作为 staged budget 的补充机制，而不是替代 staged pruning 的主方案。
 
 ## 下一版计划
 
-1. 再跑一个 scene 的 staged-budget edge，然后再考虑把它从 v1 positive control 提升为更强结论。
+1. 将 `cached_edge_l1` 作为 0001 的 v1 正向控制组收口，并开启下一版 DINO descriptor scorer 实验。
 2. 用 patch-descriptor scorer 替换或增强 `dinov2_token_edge_l1`，因为当前 token-edge projection 在 budget control 下 PSNR/SSIM 弱于 edge。
 3. 补 `max_width=518` 或 `640` 的 DINO ViT-S/14 cache build/validate，并记录训练成本。
 4. 设计 dense post-prune recovery schedule，避免 30k 后每 64 步才更新一次导致恢复训练实际更新过少。

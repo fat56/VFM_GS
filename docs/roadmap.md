@@ -2,11 +2,11 @@
 
 ## 进行中
 
-- `0001_vfm_topology_scorer`: staged-budget cached edge 已在 bicycle 和 garden 两个 scene 上超过各自 baseline；no-effect/cadence 控制与 post-prune fine-tune 探测已完成。下一步先补第三个 scene 的 staged edge 复验，再改进 DINO scorer。
+- `0001_vfm_topology_scorer`: staged/ratio-aware cached edge 已在 bicycle、garden 和 counter 三个 scene 上超过各自 baseline；no-effect/cadence 控制与 post-prune fine-tune 探测已完成。下一步收口 0001，并进入 DINO scorer 下一版。
 
 ## 排队
 
-- 再跑一个 scene 的 staged-budget edge 复验，然后将 edge proxy 固化为 v1 positive control。
+- 将 `cached_edge_l1` 固化为 0001 v1 正向控制组，并整理下一版实验入口。
 - 改进 DINO scorer：从 token-edge proxy 转向 patch descriptor / feature projection 对齐。
 - 构建 `max_width=518` 或 `640` 的 full-scene `dinov2_vits14` cache，记录 cache build time、disk size 和 validate 结果。
 - 增加固定 patch-descriptor projection scorer，对比 token-edge proxy。
@@ -39,5 +39,6 @@
 - 完成 300k staged budget 30k probe；DINO LPIPS 几乎追平 baseline，但 PSNR/SSIM 仍低。
 - 完成 350k staged budget 30k probe；cached edge 在约 340k 点数下超过 baseline，DINO 350k 仅 LPIPS 超过 baseline。
 - 完成 garden staged-budget edge 复验；edge 在第二个 scene 上继续超过 baseline。
+- 完成 counter staged/ratio-aware edge 复验；edge 在第三个 scene 上继续超过 baseline，且 Gaussian count 低于自身 baseline。
 - 完成 no-effect/cadence control；`fastgs_photometric + densification_interval=100` 与 zero-weight VFM runs 都在约 410k Gaussians，说明此前 no-effect 高点数主要来自 densification cadence。
-- 增加 `post_prune_finetune_iterations` 并完成 final-prune-plus-fine-tune 探测；严格 240k 预算下质量明显优于 final-only，但仍低于 baseline 与 350k staged positive control。
+- 增加 `post_prune_finetune_iterations` 并完成 final-prune-plus-fine-tune 探测；严格 240k 预算下质量明显优于 final-only，但仍低于 baseline 与 350k staged 正向控制组。
