@@ -91,6 +91,90 @@ def _prune_to_target_budget(scene, gaussians, gaussian_scorer, pipe, bg, opt, ta
     return pruned_count, elapsed
 
 
+def _post_prune_finetune_iterations(opt):
+    return max(0, int(getattr(opt, "post_prune_finetune_iterations", 0) or 0))
+
+
+def _zero_optimizer_gradients(gaussians, opt):
+    if opt.optimizer_type == "default":
+        gaussians.optimizer.zero_grad(set_to_none=True)
+        gaussians.shoptimizer.zero_grad(set_to_none=True)
+    elif opt.optimizer_type == "sparse_adam":
+        gaussians.optimizer.zero_grad(set_to_none=True)
+
+
+def _run_post_prune_finetune(scene, gaussians, pipe, bg, opt, start_iteration, finetune_iterations):
+    if finetune_iterations <= 0:
+        return 0.0, start_iteration
+
+    _zero_optimizer_gradients(gaussians, opt)
+
+    iter_start = torch.cuda.Event(enable_timing=True)
+    iter_end = torch.cuda.Event(enable_timing=True)
+    optim_start = torch.cuda.Event(enable_timing=True)
+    optim_end = torch.cuda.Event(enable_timing=True)
+    total_time = 0.0
+    ema_loss_for_log = 0.0
+    viewpoint_stack = scene.getTrainCameras().copy()
+    viewpoint_indices = list(range(len(viewpoint_stack)))
+    progress_bar = tqdm(range(finetune_iterations), desc="Post-prune fine-tune")
+    last_progress_update = 0
+
+    for local_iteration in range(1, finetune_iterations + 1):
+        iteration = start_iteration + local_iteration
+        iter_start.record()
+
+        gaussians.update_learning_rate(iteration)
+        if iteration % 1000 == 0:
+            gaussians.oneupSHdegree()
+
+        if not viewpoint_stack:
+            viewpoint_stack = scene.getTrainCameras().copy()
+            viewpoint_indices = list(range(len(viewpoint_stack)))
+        rand_idx = randint(0, len(viewpoint_indices) - 1)
+        viewpoint_cam = viewpoint_stack.pop(rand_idx)
+        _ = viewpoint_indices.pop(rand_idx)
+
+        render_pkg = render_fastgs(viewpoint_cam, gaussians, pipe, bg, opt.mult)
+        image = render_pkg["render"]
+        radii = render_pkg["radii"]
+
+        gt_image = viewpoint_cam.original_image.cuda()
+        Ll1 = l1_loss(image, gt_image)
+        ssim_value = fast_ssim(image.unsqueeze(0), gt_image.unsqueeze(0))
+        loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim_value)
+        loss.backward()
+
+        iter_end.record()
+
+        with torch.no_grad():
+            ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log
+            if local_iteration % 10 == 0 or local_iteration == finetune_iterations:
+                progress_bar.set_postfix({"Loss": f"{ema_loss_for_log:.{7}f}"})
+                progress_bar.update(local_iteration - last_progress_update)
+                last_progress_update = local_iteration
+            if local_iteration == finetune_iterations:
+                progress_bar.close()
+
+            iter_time = iter_start.elapsed_time(iter_end)
+            optim_start.record()
+            if opt.optimizer_type == "default":
+                gaussians.optimizer_step(iteration)
+            elif opt.optimizer_type == "sparse_adam":
+                visible = radii > 0
+                gaussians.optimizer.step(visible, radii.shape[0])
+                gaussians.optimizer.zero_grad(set_to_none=True)
+            optim_end.record()
+            torch.cuda.synchronize()
+            optim_time = optim_start.elapsed_time(optim_end)
+            total_time += (iter_time + optim_time) / 1e3
+
+    save_iteration = start_iteration + finetune_iterations
+    print("\n[ITER {}] Saving post-prune fine-tuned Gaussians".format(save_iteration))
+    scene.save(save_iteration)
+    return total_time, save_iteration
+
+
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from, websockets):
     require_runtime_imports()
     from vfm_gs.scorers import get_scorer
@@ -265,10 +349,11 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             optim_time = optim_start.elapsed_time(optim_end)
             total_time += (iter_time + optim_time) / 1e3
 
+    target_pruned_count = 0
     if target_gaussian_count > 0:
         current_count = gaussians._xyz.shape[0]
         if current_count > target_gaussian_count:
-            _, budget_time = _prune_to_target_budget(
+            target_pruned_count, budget_time = _prune_to_target_budget(
                 scene,
                 gaussians,
                 gaussian_scorer,
@@ -284,6 +369,28 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 scene.save(opt.iterations)
         else:
             print("Target Gaussian prune skipped: {} <= {}".format(current_count, target_gaussian_count))
+
+    post_prune_finetune_iterations = _post_prune_finetune_iterations(opt)
+    if post_prune_finetune_iterations > 0:
+        if target_pruned_count > 0:
+            finetune_time, finetune_save_iteration = _run_post_prune_finetune(
+                scene,
+                gaussians,
+                pipe,
+                bg,
+                opt,
+                opt.iterations,
+                post_prune_finetune_iterations,
+            )
+            total_time += finetune_time
+            print(
+                "Post-prune fine-tune complete: {} iterations, saved iteration {}".format(
+                    post_prune_finetune_iterations,
+                    finetune_save_iteration,
+                )
+            )
+        else:
+            print("Post-prune fine-tune skipped: target prune did not remove Gaussians")
 
     print(f"Gaussian number: {gaussians._xyz.shape[0]}")
     print(f"Training time: {total_time}")

@@ -115,6 +115,7 @@ class OptimizationParams(ParamGroup):
         self.target_gaussian_stage_margin = 1.2
         self.target_gaussian_stage_start = 0
         self.target_gaussian_stage_interval = 500
+        self.post_prune_finetune_iterations = 0
         super().__init__(parser, "Optimization Parameters")
 
 def get_combined_args(parser : ArgumentParser):
