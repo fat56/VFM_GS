@@ -1,6 +1,6 @@
 # 0001 实验结果
 
-## 2026-04-28 Mock v1 冒烟
+## 2026-04-28 Mock v1 快速验证
 
 数据集：`datasets/mipnerf360/bicycle`，test split，`-r 8`，220 iterations，`densify_from_iter=50`，`densification_interval=50`。
 
@@ -15,10 +15,10 @@
 ## 解读
 
 - mock VFM scorer 已完成 train、render 和 metric evaluation，没有 shape、device 或 optimizer-state 失败。
-- 这个短跑 smoke 中质量指标基本打平。符合预期，因为 `mock_l1` 是 plumbing proxy，不是真实 VFM signal。
+- 这个短跑快速验证中质量指标基本打平。符合预期，因为 `mock_l1` 只是链路占位后端，不是真实 VFM 信号。
 - mock 分支在这次极短 run 中训练时间约增加 9%，但该数字受短跑固定开销主导，应在更长 schedule 上重新测。
 - Gaussian count 接近 baseline，说明保守的 `max(rgb_importance, vfm_importance)` 和 weighted pruning fusion 没有让 densification 失稳。
-- cached edge proxy 在 smoke 中带来小幅 PSNR 下降和小幅 LPIPS 改善。这不是质量结论，只确认 cached GT features 可以读取、resize、与 SH0 render features 对比并融合，且不会破坏训练。
+- cached edge proxy 在快速验证中带来小幅 PSNR 下降和小幅 LPIPS 改善。这不是质量结论，只确认缓存的 GT 特征可以读取、resize、与 SH0 渲染特征对比并融合，且不会破坏训练。
 - Cache 产物：`output/0001/vfm_cache/bicycle_edge`，194 个 entries，从 `images_8` 以 `--max_width 640` 构建时约 189MB。
 - Compact cache 产物：`output/0001/vfm_cache/bicycle_edge_u8`，194 个 entries，`--storage npz_uint8` 下约 35MB；`vfm_gs.cli.validate_vfm_cache` 通过 checksum 和 source-image 检查。
 - compact cache run 保持稳定，但 PSNR 相比 float32 cache 下降更明显。这说明 quantization 可能改变 thresholded edge masks，进而影响早期 densification；长跑应把 cache precision 作为 ablation，而不是默认 compact storage metric-neutral。
@@ -27,7 +27,7 @@
 
 ## 2026-04-28 30k 匹配消融
 
-数据集：`datasets/mipnerf360/bicycle`，test split，`-r 8`，30,000 iterations。这组使用正常 FastGS densification schedule，比 220-iteration smoke 更能指导质量判断。
+数据集：`datasets/mipnerf360/bicycle`，test split，`-r 8`，30,000 iterations。这组使用正常 FastGS densification schedule，比 220-iteration 快速验证更能指导质量判断。
 
 | 产物 | 变体 | 打分器 | 后端 | PSNR | SSIM | LPIPS | 训练时间 | 渲染 FPS | Gaussian 数量 | 输出大小 | 备注 |
 |---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|
@@ -44,10 +44,10 @@
 
 解读：
 
-- 220-iteration smoke 指标太弱，不能指导质量决策。它仍适合判断集成健康，但 30k runs 明显改变了信号含义。
+- 220-iteration 快速验证指标太弱，不能指导质量决策。它仍适合判断集成健康，但 30k runs 明显改变了信号含义。
 - `cached_edge_l1` 相比 baseline 提升 +0.1832 PSNR、+0.0163 SSIM、-0.0306 LPIPS，但 Gaussian count 增加约 70%，test render FPS 降低约 41%。
 - `dinov2_token_edge_l1` 相比 baseline 提升 +0.3544 PSNR、+0.0278 SSIM、-0.0511 LPIPS，但 Gaussian count 增加约 104%，test render FPS 降低约 42%。
-- DINO token-edge scorer 在 full-length 低分辨率训练上是有希望的方向，但收益与更大 Gaussian budget 纠缠。下次对比需要 budget-controlled run 或更强 final-prune 设置，之后才能称为纯质量改进。
+- DINO token-edge scorer 在完整低分辨率训练上是有希望的方向，但收益与更大的 Gaussian 预算纠缠。下次对比需要预算受控的 run 或更强 final-prune 设置，之后才能称为纯质量改进。
 - `cached_edge_l1` 仍是强确定性 proxy baseline：语义性弱于 DINO，但 cache 更小、训练开销更低，并给出清晰指标增益。
 
 ## 2026-04-28 预算控制探测
@@ -105,7 +105,7 @@
 
 ## 2026-04-28 目标预算负例探测
 
-代码变更：增加 `target_gaussian_count` 作为 final-prune budget control。首版实现会把最高 pruning-score Gaussians 裁到目标点数。它精确匹配预算但破坏质量，因此记录为负例，并已将实现改为优先裁剪 lowest-score Gaussians。
+代码变更：增加 `target_gaussian_count` 作为 final-prune 预算控制。首版实现会把最高 pruning-score Gaussians 裁到目标点数。它精确匹配预算但破坏质量，因此记录为负例，并已将实现改为优先裁剪最低分 Gaussians。
 
 数据集和 schedule 与上面的 30k ablation 一致。目标点数是 baseline 30k 点数：240,394 个 Gaussians。
 
@@ -118,7 +118,7 @@
 
 - 只精确匹配点数不够。prune ordering 比 count target 更重要。
 - bulk-pruning highest-score Gaussians 会删除重建仍需要的困难结构或高误差结构。
-- `target_gaussian_count` 应优先裁剪 lowest support/score Gaussians 来做 budget matching。high-score pruning 只能作为小规模 outlier-removal 规则，而不能作为主预算裁刀。
+- `target_gaussian_count` 应优先裁剪最低 support/score Gaussians 来做预算匹配。high-score pruning 只能作为小规模异常点移除规则，而不能作为主预算裁剪策略。
 
 ## 2026-04-28 Low-Score 目标预算探测
 
@@ -133,7 +133,7 @@
 
 解读：
 
-- Low-score pruning 避免了 high-score pruning 的灾难性失败，但 baseline-sized target 下 one-shot final pruning 仍破坏性太强。
+- Low-score pruning 避免了 high-score pruning 的灾难性失败，但 baseline-sized target 下单次 final pruning 仍破坏性太强。
 - 相比 baseline 30k run，edge low-score target pruning 为 -2.9303 PSNR、-0.0760 SSIM、+0.0407 LPIPS；DINO 为 -3.1461 PSNR、-0.0980 SSIM、+0.0519 LPIPS。
 - Final-pruned VFM runs 点数匹配且输出产物更小，但不再保留 unpruned VFM 的质量收益。这说明额外 VFM-driven points 不是收敛后可简单删除的重复点。
 - 下一种预算方法应在训练期 staged 执行，而不是最后单刀裁剪：在 densification/pruning events 后施加 soft cap，或在 target pruning 后跑 post-prune fine-tune schedule。
@@ -147,11 +147,11 @@
 | 产物 | 后端 | PSNR | SSIM | LPIPS | 训练时间 | 渲染 FPS | Gaussian 数量 | 输出大小 | Staged 裁剪 | 最终裁剪 | 备注 |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---|
 | `output/0001/vfm_cached_edge_budget240394_staged120_bicycle_30k_r8` | `cached_edge_l1` / `npz_uint8` | 25.7979 | 0.7747 | 0.2537 | 171.49s | 514.79 | 240,394 | 82M | 24 | 276,611 -> 240,394 | 优于 final-only，但仍低于 baseline |
-| `output/0001/vfm_dinov2_token_edge_budget240394_staged120_bicycle_30k_r8` | `dinov2_token_edge_l1` | 25.3529 | 0.7727 | 0.2493 | 172.39s | 524.63 | 240,394 | 82M | 25 | 288,127 -> 240,394 | strict-budget VFM 中 LPIPS 最好，但仍低于 baseline |
+| `output/0001/vfm_dinov2_token_edge_budget240394_staged120_bicycle_30k_r8` | `dinov2_token_edge_l1` | 25.3529 | 0.7727 | 0.2493 | 172.39s | 524.63 | 240,394 | 82M | 25 | 288,127 -> 240,394 | 严格预算 VFM 中 LPIPS 最好，但仍低于 baseline |
 
 解读：
 
-- Staged pruning 相比 one-shot final pruning 明显更好，在同样精确 240,394 Gaussian budget 下，edge 提升 +2.0251 PSNR，DINO 提升 +1.7958 PSNR。
+- Staged pruning 相比单次 final pruning 明显更好，在同样精确 240,394 Gaussian budget 下，edge 提升 +2.0251 PSNR，DINO 提升 +1.7958 PSNR。
 - strict 240k budget 仍低于 baseline：edge 为 -0.9053 PSNR、-0.0320 SSIM、+0.0259 LPIPS；DINO 为 -1.3503 PSNR、-0.0340 SSIM、+0.0215 LPIPS。
 - unpruned VFM 质量收益在这个 scene 上似乎需要超过 baseline point count，或者需要在激进 budget pruning 后做 recovery training。
 - 下一次对比应先使用更宽松的 staged budget，例如 300k Gaussians，然后再投入更复杂 scorer。
@@ -178,12 +178,12 @@
 
 | 产物 | 后端 | PSNR | SSIM | LPIPS | 训练时间 | 渲染 FPS | Gaussian 数量 | 输出大小 | Staged 裁剪 | 最终裁剪 | 备注 |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---|
-| `output/0001/vfm_cached_edge_budget350000_staged110_bicycle_30k_r8` | `cached_edge_l1` / `npz_uint8` | 26.7788 | 0.8089 | 0.2206 | 161.89s | 529.06 | 340,283 | 106M | 21 | 跳过，340,283 <= 350,000 | 首个所有指标超过 baseline 的 budget-controlled VFM run |
+| `output/0001/vfm_cached_edge_budget350000_staged110_bicycle_30k_r8` | `cached_edge_l1` / `npz_uint8` | 26.7788 | 0.8089 | 0.2206 | 161.89s | 529.06 | 340,283 | 106M | 21 | 跳过，340,283 <= 350,000 | 首个所有指标超过 baseline 的预算受控 VFM run |
 | `output/0001/vfm_dinov2_token_edge_budget350000_staged110_bicycle_30k_r8` | `dinov2_token_edge_l1` | 26.3634 | 0.8033 | 0.2188 | 166.69s | 517.33 | 350,000 | 108M | 23 | 360,043 -> 350,000 | 受限预算下 LPIPS 最好，但 PSNR/SSIM 低于 baseline |
 
 解读：
 
-- 350k staged edge 是首个 budget-controlled 正向结果：相比 baseline，在约 1.42x baseline Gaussian count 下达到 +0.0756 PSNR、+0.0022 SSIM、-0.0072 LPIPS。
+- 350k staged edge 是首个预算受控正向结果：相比 baseline，在约 1.42x baseline Gaussian count 下达到 +0.0756 PSNR、+0.0022 SSIM、-0.0072 LPIPS。
 - 相比默认 unpruned edge，staged 350k 减少约 16.8% Gaussians，并保持质量高于 baseline，但交回了一部分 unpruned edge 收益。
 - DINO 350k 的 PSNR 仍比 baseline 低 -0.3398，SSIM 低 -0.0034，但 LPIPS 改善 -0.0090。当前 token-edge projection 在 budget control 下更偏 perceptual，而非 photometric。
 - v1 正向结果应表述为 staged-budget `cached_edge_l1`，不是 DINO token-edge。DINO 需要更好的 descriptor scorer 或 recovery/fine-tune 路径，之后才能称为预算高效改进。
@@ -217,7 +217,7 @@
 - DINOv2 ViT-S/14 和 ViT-B/14 是 `max_width` 518-640 下离线 cache build 的可行首选；640x426 下 raw float32 features 对 194 张图估算分别为 0.40GB 和 0.79GB。
 - 详情见：`docs/experiments/0001_vfm_topology_scorer/vfm_backend_feasibility.md`。
 
-## 2026-04-28 DINOv2 Cache 冒烟
+## 2026-04-28 DINOv2 Cache 快速验证
 
 命令形态：
 
@@ -240,11 +240,11 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 - 官方 DINOv2 仓库 clone 到 ignored output state：`output/0001/external/dinov2`，并通过 `torch.hub` 以 `source="local"` 加载。
 - Pretrained ViT-S/14 weights 成功下载，并通过 `forward_features` 产出归一化 patch-token maps。
 - 当前 PyTorch 1.12.1 runtime 不暴露公开的 `torch.nn.functional.scaled_dot_product_attention`；builder 增加了一个窄兼容 shim，调用 1.12 私有函数，使官方 DINOv2 代码能在当前环境运行。
-- DINOv2 import 时提示 `xformers` 不可用，但 smoke run 可以 clean fallback，不需要为了 cache building 安装它。
+- DINOv2 import 时提示 `xformers` 不可用，但快速验证可以 clean fallback，不需要为了 cache building 安装它。
 - storage defaults 的回归检查也通过：`cached_edge_l1` 未传 `--storage` 时默认 `npy_float32`，DINOv2 默认 `npy_float16`。
-- 这个 cache-only smoke 在训练 scorer 消费 DINOv2 maps 前验证了真实 VFM artifact 路径。下面的 token-edge scorer smoke 是首个消费 DINO 的 training run。
+- 这个 cache-only 快速验证在训练 scorer 消费 DINOv2 maps 前验证了真实 VFM artifact 路径。下面的 token-edge scorer 快速验证是首个消费 DINO 的训练 run。
 
-## 2026-04-28 DINOv2 Token-Edge 打分器冒烟
+## 2026-04-28 DINOv2 Token-Edge 打分器快速验证
 
 Cache 命令：
 
@@ -258,7 +258,7 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
   --max_width 224
 ```
 
-训练命令使用 `configs/experiments/0001_vfm_topology_dinov2_token_edge.yaml`，并沿用前面同样的 `-r 8`、220-iteration smoke schedule。
+训练命令使用 `configs/experiments/0001_vfm_topology_dinov2_token_edge.yaml`，并沿用前面同样的 `-r 8`、220-iteration 快速验证 schedule。
 
 | 项目 | 值 |
 |---|---|
@@ -273,4 +273,4 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 
 - `dinov2_token_edge_l1` 将 cached DINO patch tokens 转为标量 token-edge topology map，并与汇聚到同一 patch grid 的 SH0 渲染亮度边缘对比。
 - 这是计划中第一个在训练期消费真实 DINOv2 cache data 的 scorer 变体。
-- 它避免在训练循环中在线 DINO inference，因此 runtime cost 来自 cache loading、token-edge derivation、pooling，以及额外一次 `render_fastgs(..., get_flag=True)` pass。
+- 它避免在训练循环中在线 DINO inference，因此运行开销来自 cache loading、token-edge derivation、pooling，以及额外一次 `render_fastgs(..., get_flag=True)` pass。

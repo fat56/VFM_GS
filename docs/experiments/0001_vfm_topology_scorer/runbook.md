@@ -1,6 +1,6 @@
 # 0001 VFM 拓扑打分器运行手册
 
-## 完整 Baseline
+## 完整基线
 
 ```bash
 uv run --active python -m vfm_gs.cli.train --variant fastgs_baseline -s <dataset>/<scene> -m output/0001_baseline/<scene> --eval
@@ -21,7 +21,7 @@ uv run --active python -m vfm_gs.cli.train \
 
 当前 v1 使用 `vfm_topology_scorer` + `mock_l1` 后端。它不是真实 VFM 质量实验，而是验证 SH0 render、pixel error map、metric map、Gaussian 计数和 FastGS 分数融合链路。
 
-## 缓存边缘代理 v1
+## 离线边缘缓存代理 v1
 
 `cached_edge_l1` 后端先用 GT 图像的归一化 luminance edge map 作为轻量离线缓存代理。它不是最终 VFM 后端，但能验证 `image_name -> cache entry -> pixel_error_map` 的真实缓存读取流程。
 训练入口会在 Scene 加载前自动执行 cache preflight；这里仍显式运行 `validate_vfm_cache`，用于把缓存检查作为实验流程的一部分记录下来。
@@ -49,9 +49,9 @@ uv run --active python -m vfm_gs.cli.train \
   --eval
 ```
 
-## 可选 DINOv2 Cache 冒烟
+## 可选 DINOv2 Cache 快速验证
 
-DINOv2 cache build 是真实 VFM features 的离线产物路径。快速 smoke 会在运行训练 scorer 前验证 `dinov2_patchtokens` cache 生成和 manifest 兼容性。
+DINOv2 cache build 是真实 VFM features 的离线产物路径。快速验证会在运行训练 scorer 前验证 `dinov2_patchtokens` cache 生成和 manifest 兼容性。
 
 当 `torch.hub` 远程访问被限流时，将官方仓库 clone 到 ignored output state，并显式传入路径：
 
@@ -75,7 +75,7 @@ uv run --active python -m vfm_gs.cli.validate_vfm_cache \
 
 对 DINOv2 来说，省略 `--storage` 时默认使用 `npy_float16`。DINO patch-token caches 会有意拒绝 `npz_uint8`。
 
-## DINOv2 令牌边缘打分器 v1
+## DINOv2 Token-Edge 打分器 v1
 
 `dinov2_token_edge_l1` 是第一版训练期消费 DINOv2 cache 的 scorer backend。它不在训练循环里跑 DINOv2，而是把离线 `dinov2_patchtokens` 转成 token-edge topology map，再和 SH0 渲染图的 pooled edge map 比较。
 
@@ -114,7 +114,7 @@ uv run --active python -m vfm_gs.cli.metrics -m output/0001/vfm_dinov2_token_edg
 
 ## 30k 匹配消融
 
-220-iteration runs 只作为 smoke checks。迭代 scorer 行为时，使用这组 30k `-r 8` 作为最低质量门槛：
+220-iteration runs 只作为快速验证。迭代 scorer 行为时，使用这组 30k `-r 8` 作为最低质量门槛：
 
 ```bash
 uv run --active python -m vfm_gs.cli.train \
@@ -201,7 +201,7 @@ uv run --active python -m vfm_gs.cli.train \
   -r 8
 ```
 
-这没有让 Gaussian counts 接近 baseline，因此下一步实现应做显式 VFM importance control，而不是继续跑更多 smoke-grid。
+这没有让 Gaussian counts 接近 baseline，因此下一步实现应做显式 VFM importance control，而不是继续跑更多短跑网格。
 
 ## 显式 Importance Weight 探测
 
@@ -239,7 +239,7 @@ uv run --active python -m vfm_gs.cli.train \
 
 ## 重要性模式探测
 
-`vfm_importance_mode=rgb_only` 会禁用直接 VFM densification，同时保留 VFM pruning-score fusion。这个 probe 显示必须跑完整 30k；短 smoke metrics 不能暴露最终 Gaussian-budget 影响。
+`vfm_importance_mode=rgb_only` 会禁用直接 VFM densification，同时保留 VFM pruning-score fusion。这个 probe 显示必须跑完整 30k；短跑快速验证指标不能暴露最终 Gaussian-budget 影响。
 
 ```bash
 uv run --active python -m vfm_gs.cli.train \
@@ -314,7 +314,7 @@ uv run --active python -m vfm_gs.cli.train \
   -r 8
 ```
 
-更早不带 `_lowscore_` 后缀的 high-score target-prune 输出保留为 negative controls，不应作为 budget-matched quality results 使用。
+更早不带 `_lowscore_` 后缀的 high-score target-prune 输出保留为负例控制组，不应作为预算匹配质量结果使用。
 
 ## 分阶段目标 Gaussian 预算探测
 
@@ -432,7 +432,7 @@ uv run --active python -m vfm_gs.cli.train \
   -r 8
 ```
 
-## 2026-04-28 冒烟验证
+## 2026-04-28 快速验证
 
 同条件低分辨率短跑，用于确认 densification 分支实际触发 scorer：
 
