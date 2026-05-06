@@ -49,6 +49,8 @@
 - 350k staged target 产出首个预算受控正向结果。edge 在 340,283 个 Gaussians 下达到 PSNR 26.7788，SSIM 0.8089，LPIPS 0.2206，三项指标均超过 baseline。
 - DINO 350k 在 350,000 个 Gaussians 下达到 PSNR 26.3634，SSIM 0.8033，LPIPS 0.2188。它的 LPIPS 优于 baseline，但 PSNR/SSIM 仍低。
 - edge 正向结果已在 garden 复验。garden baseline 为 PSNR 28.7051，SSIM 0.8889，LPIPS 0.1134，196,201 个 Gaussians；staged edge 为 PSNR 28.9411，SSIM 0.8964，LPIPS 0.1007，248,471 个 Gaussians。
+- no-effect 控制已补齐。`fastgs_photometric + densification_interval=100` 达到 PSNR 26.9287，SSIM 0.8241，LPIPS 0.1964，412,078 个 Gaussians；zero-weight cached edge 和 zero-weight DINO 分别为 410,330 与 412,037 个 Gaussians，指标也基本一致。
+- 这说明 410k 级别点数主要由 `densification_interval=100` 的 cadence 改变驱动，而不是 VFM zero-weight scorer/cache 本身。后续预算归因必须固定或显式报告 densification cadence。
 
 ## 局限
 
@@ -62,11 +64,12 @@
 - 现有 knobs 不能提供完整 budget control。`vfm_weight` 影响 pruning fusion，`vfm_importance_weight` 影响直接 VFM densification 强度，`vfm_importance_mode=rgb_only` 可以关闭直接 VFM densification，但都不能匹配 baseline point count。
 - `target_gaussian_count` 适合作为 count-control 诊断，但 baseline-sized budget 下的一次性 final pruning 破坏性太强。
 - staged budget control 更健康，edge 已在 bicycle 和 garden 产生预算感知的正向结果。DINO token-edge 仍需要更好的 projection 或 recovery training，才能成为预算高效方案。
+- `vfm_enable` 当前没有 CLI 级显式关闭开关；若加载 VFM experiment yaml，就会触发 VFM scorer/preflight。严格 no-effect 需要从 baseline variant 出发手动覆盖非 VFM cadence 参数。
 
 ## 下一版计划
 
-1. 增加 no-effect control，例如 `vfm_weight=0` + `vfm_importance_mode=rgb_only`，测量不改变 pruning 或 densification 决策时的 VFM scorer 开销。
-2. 增加 final target pruning 后的 post-prune fine-tune 选项，对比 staged cap 和 final-prune-plus-fine-tune。
-3. 用 patch-descriptor scorer 替换或增强 `dinov2_token_edge_l1`，因为当前 token-edge projection 在 budget control 下 PSNR/SSIM 弱于 edge。
-4. 再跑一个 scene 的 staged-budget edge，然后再考虑把它从 v1 positive control 提升为更强结论。
+1. 增加 final target pruning 后的 post-prune fine-tune 选项，对比 staged cap 和 final-prune-plus-fine-tune。
+2. 用 patch-descriptor scorer 替换或增强 `dinov2_token_edge_l1`，因为当前 token-edge projection 在 budget control 下 PSNR/SSIM 弱于 edge。
+3. 再跑一个 scene 的 staged-budget edge，然后再考虑把它从 v1 positive control 提升为更强结论。
+4. 补 `max_width=518` 或 `640` 的 DINO ViT-S/14 cache build/validate，并记录训练成本。
 5. 保持 30k `-r 8` 作为最小质量门槛；220 iteration 只用于代码变更后的快速验证。

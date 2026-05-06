@@ -203,6 +203,27 @@
 - Garden 在所选 target 下不需要 staged 或 final target prune；FastGS 加 edge scorer 自然结束在 248,471 个 Gaussians，约为 garden baseline count 的 1.27x。
 - 这降低了 bicycle 350k edge 结果只是单场景偶然的概率。当前 v1 正向结论仍应限定为 staged/ratio-aware budget control 下的 `cached_edge_l1`。
 
+## 2026-05-06 No-Effect 与 Densification Cadence 控制
+
+数据集和 schedule 与 bicycle 30k ablation 一致，`-r 8`，30,000 iterations。本组拆分两类影响：
+
+- `fastgs_densify100`：使用 `fastgs_photometric`，不启用 VFM scorer/cache，只把 `densification_interval` 从 baseline 的 500 覆盖为 100。
+- VFM zero-weight controls：启用 `vfm_topology_scorer`、cache preflight 和对应 backend，但设置 `vfm_weight=0.0`、`vfm_importance_mode=rgb_only`，用于检查 VFM scorer/cache 管线在不直接改变 importance/pruning 时的影响。
+
+| 产物 | Scorer / Backend | densification interval | VFM 设置 | PSNR | SSIM | LPIPS | 训练时间 | 渲染 FPS | Gaussian 数量 | 输出大小 | 备注 |
+|---|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---|
+| `output/0001/fastgs_densify100_bicycle_30k_r8` | `fastgs_photometric` | 100 | off | 26.9287 | 0.8241 | 0.1964 | 165.89s | 398.04 | 412,078 | 123M | 严格 cadence 控制组 |
+| `output/0001/vfm_cached_edge_noeffect_bicycle_30k_r8` | `vfm_topology_scorer` / `cached_edge_l1` | 100 | `vfm_weight=0`, `rgb_only` | 26.9312 | 0.8242 | 0.1968 | 142.62s | 477.44 | 410,330 | 122M | zero-weight VFM 管线控制 |
+| `output/0001/vfm_dinov2_token_edge_noeffect_bicycle_30k_r8` | `vfm_topology_scorer` / `dinov2_token_edge_l1` | 100 | `vfm_weight=0`, `rgb_only` | 26.9536 | 0.8243 | 0.1968 | 162.60s | 507.36 | 412,037 | 123M | zero-weight DINO 管线控制 |
+
+解读：
+
+- 410k 级别的 Gaussian count 主要来自 `densification_interval=100` 的更高 densification cadence，而不是 VFM signal 本身。`fastgs_densify100` 已达到 412,078 个 Gaussians，与两个 zero-weight VFM run 基本一致。
+- zero-weight cached edge 与 fastgs densify100 的差异很小：+0.0025 PSNR、+0.0002 SSIM、+0.0004 LPIPS，Gaussian count 反而少 1,748。
+- zero-weight DINO 与 fastgs densify100 也接近：+0.0249 PSNR、+0.0002 SSIM、+0.0004 LPIPS，Gaussian count 少 41。
+- 因此，之前 `rgb_only`/zero-weight run 不能用来说明 VFM 本身导致点数膨胀；需要把 cadence control 作为后续预算实验的固定对照。
+- 当前 `vfm_enable` 是 config 中的单向布尔开关；如果加载同一个 VFM experiment yaml，CLI 不能直接把它显式关闭。严格 no-effect 应从 `fastgs_baseline` 出发，手动覆盖 `--densification_interval 100`，而不是加载 VFM config 后尝试关闭 VFM。
+
 ## 2026-04-28 Cache 预检
 
 - `vfm_gs.cli.validate_vfm_cache` 在 `output/0001/vfm_cache/bicycle_edge_u8` 上通过，包含 194 个 `cached_edge_l1` entries。

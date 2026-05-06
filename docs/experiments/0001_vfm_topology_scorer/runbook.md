@@ -278,6 +278,64 @@ uv run --active python -m vfm_gs.cli.render -m <run_dir> --skip_train
 uv run --active python -m vfm_gs.cli.metrics -m <run_dir>
 ```
 
+## No-Effect 与 Densification Cadence 控制
+
+严格 no-effect 不能加载 VFM experiment config 后再“关掉 VFM”，因为当前 `vfm_enable` 没有 CLI 级显式 false 开关。应从 baseline variant 出发，只覆盖需要对齐 VFM 实验的非 VFM cadence 参数。
+
+```bash
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0001/fastgs_densify100_bicycle_30k_r8 \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --densification_interval 100 \
+  -r 8
+
+uv run --active python -m vfm_gs.cli.render -m output/0001/fastgs_densify100_bicycle_30k_r8 --skip_train
+uv run --active python -m vfm_gs.cli.metrics -m output/0001/fastgs_densify100_bicycle_30k_r8
+```
+
+zero-weight VFM 管线控制用于确认 cache/scorer 路径开启但不直接贡献 VFM score 时是否改变结果：
+
+```bash
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_cached_edge_compact.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0001/vfm_cached_edge_noeffect_bicycle_30k_r8 \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_weight 0.0 \
+  --vfm_importance_mode rgb_only \
+  -r 8
+
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_dinov2_token_edge.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0001/vfm_dinov2_token_edge_noeffect_bicycle_30k_r8 \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_weight 0.0 \
+  --vfm_importance_mode rgb_only \
+  -r 8
+```
+
+这三组要一起解读：如果 `fastgs_densify100` 与 zero-weight VFM 点数接近，说明高点数主要来自 `densification_interval=100`，不是 VFM signal。
+
 ## 目标 Gaussian 预算探测
 
 `target_gaussian_count` 是 final budget control。当它大于 0 时，训练会在结束时计算配置 scorer 的 pruning score，将最低分 Gaussians 裁剪到请求点数，并在训练 iteration 写出 final target-pruned PLY。
