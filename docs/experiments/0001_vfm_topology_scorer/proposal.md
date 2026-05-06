@@ -1,4 +1,4 @@
-# 基于视觉基础模型的拓扑打分器管线 (VFM Topology Scorer Pipeline)
+# 基于视觉基础模型的拓扑打分器管线
 
 ## 零、当前项目对齐结论
 
@@ -8,18 +8,18 @@ v1 的边界很明确：VFM 只做间歇式拓扑打分，不进入常规 RGB lo
 
 ```mermaid
 flowchart LR
-    GT[GT Images] --> Cache[VFM Feature Cache]
-    Cam[Densification Camlist] --> Render0[SH0 Albedo Render]
-    Render0 --> VFM[VFM Pixel Error Map]
+    GT[GT 图像] --> Cache[VFM 特征缓存]
+    Cam[Densification 视角列表] --> Render0[SH0 Albedo 渲染]
+    Render0 --> VFM[VFM 像素误差图]
     Cache --> VFM
-    VFM --> Metric[Binary metric_map]
+    VFM --> Metric[二值 metric_map]
     Metric --> Raster[render_fastgs get_flag=True]
     Raster --> Counts[accum_metric_counts]
     Counts --> Scores[importance_score / pruning_score]
     Scores --> FastGS[GaussianModel.densify_and_prune_fastgs]
 ```
 
-### Review / 修正建议
+### 复盘 / 修正建议
 
 - **当前判断**：这条结论与现有代码结构一致，比“VFM 直接掌控生杀”更容易落地。当前项目没有 VFM 后端、缓存系统或相关依赖，不能把 DINOv2、CLIP、Depth Anything 写成已存在能力。
 - **修正建议**：文档后续所有设计都应围绕 `pixel_error_map -> metric_map -> accum_metric_counts -> score` 展开。涉及模型 API 的地方只写抽象接口，具体第三方库在实现前再查官方文档确认。
@@ -35,7 +35,7 @@ flowchart LR
 
 核心收益来自三点。VFM 推理只在 densification interval 触发，避免每步训练增加大模型开销。VFM 误差通过现有 CUDA 计数器映射回 Gaussian，减少额外 3D 归因逻辑。RGB 与 VFM 的职责分离，能让常规训练保持 FastGS 的速度，同时在拓扑更新点加入更稳的结构信号。
 
-### Review / 修正建议
+### 复盘 / 修正建议
 
 - **当前判断**：“间歇式拓扑审查”的方向成立，但原文中“掌控生杀大权”“直接干预生长与消亡”的表述超过了当前代码能力。
 - **修正建议**：将 VFM 描述为额外评分源。v1 中它只改变 `importance_score` 与 `pruning_score` 的数值分布，不直接绕过 `grad_thresh`、`grad_abs_thresh`、opacity 和尺度过滤。
@@ -75,7 +75,7 @@ VFM 单步反传不属于当前 v1。现有 densification 分支在 `with torch.
 
 v2 若要探索梯度补偿，需要重新设计执行顺序：VFM loss 的前向和反传必须发生在可跟踪 autograd 的上下文中；densification 前后的参数必须有明确的梯度继承策略；optimizer state 对新增点、删除点和原点的处理需要显式定义。否则该能力只能停留在概念层面。
 
-### Review / 修正建议
+### 复盘 / 修正建议
 
 - **当前判断**：离线缓存、主循环低频触发、SH0 albedo 渲染都可以作为设计方向；原文把 VFM loss 直接变成 Gaussian 分数和梯度补偿，缺少与当前接口的中间层。
 - **修正建议**：把在线接口收敛成 `pixel_error_map`，再通过 `metric_map` 和 `accum_metric_counts` 映射到 Gaussian。`active_sh_degree=0` 必须局部生效并可靠恢复。
@@ -117,7 +117,7 @@ $$
 
 几何误差最后仍要合成为 `pixel_error_map`。如果当前 renderer 不返回深度图，v1 不应假设可直接得到 $\mathcal{D}_{rend}$；可以先用 albedo 图经过同一 depth 后端预测相对深度，后续再考虑改 CUDA renderer 输出真实渲染深度。
 
-### Review / 修正建议
+### 复盘 / 修正建议
 
 - **当前判断**：语义和几何公式可以保留为候选，但当前项目没有任何 VFM 依赖，也没有 renderer depth 输出接口。
 - **修正建议**：文档主接口写成后端无关的 `pixel_error_map`。Depth Anything、DINOv2、CLIP 的具体 API、依赖版本和显存开销必须在实现阶段查官方文档或实际 benchmark 后确定。
@@ -159,7 +159,7 @@ S_{vfm}^{prune}(i) =
 \text{normalize}\left(\sum_{v=1}^{K} \bar{\mathcal{E}}_{vfm}^{(v)} C_i^{(v)}\right)
 $$
 
-### Review / 修正建议
+### 复盘 / 修正建议
 
 - **当前判断**：这一节与当前项目最贴近，`metric_map` 和 `accum_metric_counts` 是 VFM v1 最应复用的接口。
 - **修正建议**：补充计数器真实语义，避免把它误解成任意 2D 到 3D 的可微反投影。分数输出应保持 `importance_score, pruning_score`，这样才能直接接入现有 `densify_and_prune_fastgs()`。
@@ -264,7 +264,7 @@ def compute_gaussian_score_fastgs_with_vfm(
 - `vfm_weight`：VFM pruning score 融合权重。
 - `vfm_use_albedo_sh0`：是否使用 SH0 渲染图作为 VFM 输入。
 
-### Review / 修正建议
+### 复盘 / 修正建议
 
 - **当前判断**：原伪代码返回 `densify_mask, prune_mask`，与当前 FastGS 接口不一致；直接调用 `vfm_loss_total.backward()` 也不符合当前 densification 执行环境。
 - **修正建议**：伪代码应返回 `importance_score, pruning_score`。VFM 分支只产生 `metric_map` 和计数，不保留计算图，不对现有训练 loss 做反传。
@@ -278,7 +278,7 @@ def compute_gaussian_score_fastgs_with_vfm(
 
 验证也应分层推进。先用 mock VFM 后端返回 RGB L1 error map，确认输出张量形状、device 和原 FastGS 兼容。再接入真实 VFM 缓存，检查单场景短迭代不会破坏训练。最后才比较启用 VFM 前后的 Gaussian 数量、训练时间、PSNR/SSIM/LPIPS 和浮点伪影变化。
 
-### Review / 修正建议
+### 复盘 / 修正建议
 
 - **当前判断**：文档本身不应承诺质量收益，只有实现和实验能证明 VFM score 是否改善拓扑。
 - **修正建议**：把验收标准写成可观测指标：训练是否稳定、评分张量是否对齐、耗时增加是否可接受、后期 pruning 是否减少明显 floaters。
