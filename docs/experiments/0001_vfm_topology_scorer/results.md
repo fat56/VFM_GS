@@ -224,6 +224,26 @@
 - 因此，之前 `rgb_only`/zero-weight run 不能用来说明 VFM 本身导致点数膨胀；需要把 cadence control 作为后续预算实验的固定对照。
 - 当前 `vfm_enable` 是 config 中的单向布尔开关；如果加载同一个 VFM experiment yaml，CLI 不能直接把它显式关闭。严格 no-effect 应从 `fastgs_baseline` 出发，手动覆盖 `--densification_interval 100`，而不是加载 VFM config 后尝试关闭 VFM。
 
+## 2026-05-06 最终裁剪后恢复训练探测
+
+代码变更：增加 `post_prune_finetune_iterations`。当 `target_gaussian_count` 的最终裁剪实际删除 Gaussians 后，训练会清空残留梯度，继续执行指定步数的光度恢复训练，并保存到 `iterations + post_prune_finetune_iterations`。该参数默认 `0`，不改变既有 run。
+
+快速验证：`output/0001/post_prune_finetune_smoke_bicycle_260_r8` 在 260-iteration 短跑中从 78,838 裁到 65,000，并继续 20 步保存到 `ours_280`；render 和 metrics 均能读取最新迭代。
+
+完整探测使用 bicycle 30k `-r 8`，`cached_edge_l1`，目标点数为 baseline 30k 的 240,394；不启用 staged pruning，只在最终 low-score target prune 后恢复 4,096 步。
+
+| 产物 | 后端 | 目标策略 | 恢复步数 | PSNR | SSIM | LPIPS | 训练时间 | Gaussian 数量 | 输出大小 | 备注 |
+|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|
+| `output/0001/vfm_cached_edge_budget240394_lowscore_finetune4096_bicycle_30k_r8` | `cached_edge_l1` | 最终裁剪最低分后恢复 | 4,096 | 26.0163 | 0.7760 | 0.2580 | 156.29s | 240,394 | 138M | 411,345 -> 240,394，保存 `ours_34096` |
+
+对比：
+
+- 相比 final-only low-score target prune，恢复训练提升 +2.2434 PSNR、+0.0453 SSIM、-0.0105 LPIPS，说明最终裁剪后的结构损伤可以被一部分恢复。
+- 相比 240k staged edge，post-prune fine-tune 的 PSNR/SSIM 更高：+0.2184 PSNR、+0.0013 SSIM；但 LPIPS 更差 +0.0043。
+- 相比 baseline 30k，仍低 -0.6869 PSNR、-0.0307 SSIM、+0.0302 LPIPS。严格 240k 预算下，单次最终裁剪加 4,096 步恢复还不能构成正向结果。
+- 由于默认 `optimizer_step` 在 20k 之后每 64 iteration 才更新一次，4,096 步恢复实际只有约 64 次参数更新。这可能解释了恢复有限；下一版若继续这条路，应增加专门的 dense recovery step schedule 或在裁剪前后采用更平滑的 staged+fine-tune 组合。
+- 本组输出包含 `iteration_30000` 和 `iteration_34096` 两份 PLY，因此目录大小为 138M；只看恢复后 PLY 约 57M。
+
 ## 2026-04-28 Cache 预检
 
 - `vfm_gs.cli.validate_vfm_cache` 在 `output/0001/vfm_cache/bicycle_edge_u8` 上通过，包含 194 个 `cached_edge_l1` entries。

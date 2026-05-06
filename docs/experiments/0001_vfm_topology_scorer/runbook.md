@@ -374,6 +374,70 @@ uv run --active python -m vfm_gs.cli.train \
 
 更早不带 `_lowscore_` 后缀的 high-score target-prune 输出保留为负例控制组，不应作为预算匹配质量结果使用。
 
+## 最终裁剪后恢复训练探测
+
+`post_prune_finetune_iterations` 默认关闭。设置为正数时，只有最终 `target_gaussian_count` 裁剪确实删除了 Gaussians，训练才会清空残留梯度并继续执行纯光度恢复训练。恢复后的 PLY 保存到 `iterations + post_prune_finetune_iterations`，因此 render/metrics 使用 `--iteration -1` 会自动读取恢复后的最新迭代。
+
+快速验证命令：
+
+```bash
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0001/post_prune_finetune_smoke_bicycle_260_r8 \
+  --eval \
+  --iterations 260 \
+  --densify_from_iter 50 \
+  --densify_until_iter 220 \
+  --densification_interval 50 \
+  --test_iterations 260 \
+  --save_iterations 260 \
+  --checkpoint_iterations 260 \
+  --target_gaussian_count 65000 \
+  --post_prune_finetune_iterations 20 \
+  -r 8
+
+uv run --active python -m vfm_gs.cli.render \
+  -m output/0001/post_prune_finetune_smoke_bicycle_260_r8 \
+  --iteration -1 \
+  --skip_train \
+  --quiet
+
+uv run --active python -m vfm_gs.cli.metrics \
+  -m output/0001/post_prune_finetune_smoke_bicycle_260_r8
+```
+
+完整 30k 探测命令：
+
+```bash
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_cached_edge.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0001/vfm_cached_edge_budget240394_lowscore_finetune4096_bicycle_30k_r8 \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --target_gaussian_count 240394 \
+  --post_prune_finetune_iterations 4096 \
+  -r 8
+
+uv run --active python -m vfm_gs.cli.render \
+  -m output/0001/vfm_cached_edge_budget240394_lowscore_finetune4096_bicycle_30k_r8 \
+  --iteration -1 \
+  --skip_train \
+  --quiet
+
+uv run --active python -m vfm_gs.cli.metrics \
+  -m output/0001/vfm_cached_edge_budget240394_lowscore_finetune4096_bicycle_30k_r8
+```
+
+注意：当前默认 optimizer cadence 在 20k 之后每 64 步才执行一次参数更新，所以 4,096 步恢复约等于 64 次更新。若要验证恢复上限，需要下一版增加专门的 dense recovery step schedule。
+
 ## 分阶段目标 Gaussian 预算探测
 
 `target_gaussian_staged` 启用训练期 budget correction。densification events 后，它会周期性重新计算 scorer pruning/support score，将 lowest-score Gaussians 向 `target_gaussian_count * target_gaussian_stage_margin` 裁剪，并继续训练。最终 target prune 仍会写出 exact-budget PLY。

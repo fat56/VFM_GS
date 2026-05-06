@@ -51,6 +51,10 @@
 - edge 正向结果已在 garden 复验。garden baseline 为 PSNR 28.7051，SSIM 0.8889，LPIPS 0.1134，196,201 个 Gaussians；staged edge 为 PSNR 28.9411，SSIM 0.8964，LPIPS 0.1007，248,471 个 Gaussians。
 - no-effect 控制已补齐。`fastgs_photometric + densification_interval=100` 达到 PSNR 26.9287，SSIM 0.8241，LPIPS 0.1964，412,078 个 Gaussians；zero-weight cached edge 和 zero-weight DINO 分别为 410,330 与 412,037 个 Gaussians，指标也基本一致。
 - 这说明 410k 级别点数主要由 `densification_interval=100` 的 cadence 改变驱动，而不是 VFM zero-weight scorer/cache 本身。后续预算归因必须固定或显式报告 densification cadence。
+- `post_prune_finetune_iterations` 已落地，默认关闭。训练会在最终 target prune 真的删除 Gaussians 后清空残留梯度，继续纯光度恢复训练，并保存到新的迭代号。
+- 260-iteration 快速验证确认了裁剪、恢复保存和 `--iteration -1` 评估链路：78,838 -> 65,000，20 步后保存 `ours_280`。
+- bicycle edge 30k 最终裁剪后 4,096 步恢复结果为 PSNR 26.0163，SSIM 0.7760，LPIPS 0.2580，240,394 个 Gaussians。相比 final-only target prune 明显恢复，但仍低于 baseline，也没有超过 240k staged 的 LPIPS。
+- 当前恢复训练沿用原 optimizer cadence；30k 后每 64 步才更新一次，因此 4,096 步只有约 64 次参数更新。这是 post-prune fine-tune 恢复幅度有限的主要可疑因素。
 
 ## 局限
 
@@ -65,11 +69,12 @@
 - `target_gaussian_count` 适合作为 count-control 诊断，但 baseline-sized budget 下的一次性 final pruning 破坏性太强。
 - staged budget control 更健康，edge 已在 bicycle 和 garden 产生预算感知的正向结果。DINO token-edge 仍需要更好的 projection 或 recovery training，才能成为预算高效方案。
 - `vfm_enable` 当前没有 CLI 级显式关闭开关；若加载 VFM experiment yaml，就会触发 VFM scorer/preflight。严格 no-effect 需要从 baseline variant 出发手动覆盖非 VFM cadence 参数。
+- post-prune fine-tune 已证明有恢复价值，但严格 240k 预算下仍未转正；它现在更适合作为 staged budget 的补充机制，而不是替代 staged pruning 的主方案。
 
 ## 下一版计划
 
-1. 增加 final target pruning 后的 post-prune fine-tune 选项，对比 staged cap 和 final-prune-plus-fine-tune。
+1. 再跑一个 scene 的 staged-budget edge，然后再考虑把它从 v1 positive control 提升为更强结论。
 2. 用 patch-descriptor scorer 替换或增强 `dinov2_token_edge_l1`，因为当前 token-edge projection 在 budget control 下 PSNR/SSIM 弱于 edge。
-3. 再跑一个 scene 的 staged-budget edge，然后再考虑把它从 v1 positive control 提升为更强结论。
-4. 补 `max_width=518` 或 `640` 的 DINO ViT-S/14 cache build/validate，并记录训练成本。
+3. 补 `max_width=518` 或 `640` 的 DINO ViT-S/14 cache build/validate，并记录训练成本。
+4. 设计 dense post-prune recovery schedule，避免 30k 后每 64 步才更新一次导致恢复训练实际更新过少。
 5. 保持 30k `-r 8` 作为最小质量门槛；220 iteration 只用于代码变更后的快速验证。
