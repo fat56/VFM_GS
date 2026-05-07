@@ -597,7 +597,14 @@ uv run --active python -m vfm_gs.cli.train \
 
 ## 最终裁剪后恢复训练探测
 
-`post_prune_finetune_iterations` 默认关闭。设置为正数时，只有最终 `target_gaussian_count` 裁剪确实删除了 Gaussians，训练才会清空残留梯度并继续执行纯光度恢复训练。恢复后的 PLY 保存到 `iterations + post_prune_finetune_iterations`，因此 render/metrics 使用 `--iteration -1` 会自动读取恢复后的最新迭代。
+`post_prune_finetune_iterations` 默认关闭。设置为正数时，训练会清空残留梯度并继续执行纯光度恢复训练。默认触发条件是最终 `target_gaussian_count` 裁剪确实删除了 Gaussians；也可用 `post_prune_finetune_trigger=staged_prune|any_prune|always` 改为 staged pruning 或任意裁剪后触发。恢复后的 PLY 保存到 `iterations + post_prune_finetune_iterations`，因此 render/metrics 使用 `--iteration -1` 会自动读取恢复后的最新迭代。
+
+dense recovery 相关参数默认保持旧行为：
+
+- `post_prune_finetune_step_interval=0`：沿用主训练 optimizer cadence；设为 `1` 表示恢复阶段每步更新主 optimizer。
+- `post_prune_finetune_sh_step_interval=0`：沿用主训练 SH optimizer cadence；设为 `1` 表示恢复阶段每步更新 SH optimizer。
+- `post_prune_finetune_lr_mode=continue`：沿用全局 iteration 的 xyz LR；`local` / `restart` 使用恢复阶段局部 step 计算 xyz LR。
+- `post_prune_finetune_lr_scale=1.0`：对恢复阶段 xyz LR 乘缩放系数。
 
 快速验证命令：
 
@@ -629,6 +636,40 @@ uv run --active python -m vfm_gs.cli.metrics \
   -m output/0001/post_prune_finetune_smoke_bicycle_260_r8
 ```
 
+dense recovery 快速验证命令：
+
+```bash
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0001/post_prune_dense_finetune_smoke_bicycle_260_r8 \
+  --eval \
+  --iterations 260 \
+  --densify_from_iter 50 \
+  --densify_until_iter 260 \
+  --densification_interval 50 \
+  --test_iterations 260 \
+  --save_iterations 260 \
+  --checkpoint_iterations 260 \
+  --target_gaussian_count 65000 \
+  --post_prune_finetune_iterations 20 \
+  --post_prune_finetune_step_interval 1 \
+  --post_prune_finetune_sh_step_interval 1 \
+  --post_prune_finetune_lr_mode local \
+  --post_prune_finetune_lr_scale 0.25 \
+  -r 8
+
+uv run --active python -m vfm_gs.cli.render \
+  -m output/0001/post_prune_dense_finetune_smoke_bicycle_260_r8 \
+  --iteration -1 \
+  --skip_train \
+  --quiet
+
+uv run --active python -m vfm_gs.cli.metrics \
+  -m output/0001/post_prune_dense_finetune_smoke_bicycle_260_r8
+```
+
 完整 30k 探测命令：
 
 ```bash
@@ -657,7 +698,37 @@ uv run --active python -m vfm_gs.cli.metrics \
   -m output/0001/vfm_cached_edge_budget240394_lowscore_finetune4096_bicycle_30k_r8
 ```
 
-注意：当前默认 optimizer cadence 在 20k 之后每 64 步才执行一次参数更新，所以 4,096 步恢复约等于 64 次更新。若要验证恢复上限，需要下一版增加专门的 dense recovery step schedule。
+dense recovery 完整 30k 探测命令：
+
+```bash
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_cached_edge.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0001/vfm_cached_edge_budget240394_lowscore_denseft4096_s1_lr025_bicycle_30k_r8 \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --target_gaussian_count 240394 \
+  --post_prune_finetune_iterations 4096 \
+  --post_prune_finetune_step_interval 1 \
+  --post_prune_finetune_sh_step_interval 16 \
+  --post_prune_finetune_lr_mode local \
+  --post_prune_finetune_lr_scale 0.25 \
+  -r 8
+
+uv run --active python -m vfm_gs.cli.render \
+  -m output/0001/vfm_cached_edge_budget240394_lowscore_denseft4096_s1_lr025_bicycle_30k_r8 \
+  --iteration -1 \
+  --skip_train \
+  --quiet
+
+uv run --active python -m vfm_gs.cli.metrics \
+  -m output/0001/vfm_cached_edge_budget240394_lowscore_denseft4096_s1_lr025_bicycle_30k_r8
+```
 
 ## 分阶段目标 Gaussian 预算探测
 

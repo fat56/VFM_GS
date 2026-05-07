@@ -8,7 +8,7 @@
 
 - 将 `cached_edge_l1` 固化为 0001 v1 正向控制组，并整理下一版实验入口。
 - 继续 descriptor 时只做会改变预算行为的方案：转向 staged pruning 后 dense recovery。
-- 设计 dense post-prune recovery schedule，增加恢复阶段独立 optimizer step interval / 可选 xyz LR scale，并让 staged pruning 后也能触发恢复训练。
+- 跑完整 dense recovery 对照，优先验证 cached edge 240k final-prune + dense fine-tune，以及 descriptor/top-k staged + `post_prune_finetune_trigger=any_prune`。
 
 ## 阻塞
 
@@ -56,3 +56,4 @@
 - 完成 counter staged/ratio-aware edge 复验；edge 在第三个 scene 上继续超过 baseline，且 Gaussian count 低于自身 baseline。
 - 完成 no-effect/cadence control；`fastgs_photometric + densification_interval=100` 与 zero-weight VFM runs 都在约 410k Gaussians，说明此前 no-effect 高点数主要来自 densification cadence。
 - 增加 `post_prune_finetune_iterations` 并完成 final-prune-plus-fine-tune 探测；严格 240k 预算下质量明显优于 final-only，但仍低于 baseline 与 350k staged 正向控制组。
+- 增加 dense recovery 调度参数；支持恢复阶段独立 optimizer step interval、SH step interval、局部 xyz LR 和 staged/any-prune 触发。260-step 快速验证已完成，能从 88,194 裁到 65,000 并保存 `ours_280`。

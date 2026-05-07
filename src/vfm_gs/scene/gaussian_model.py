@@ -214,16 +214,35 @@ class GaussianModel:
                                                     lr_delay_mult=training_args.position_lr_delay_mult,
                                                     max_steps=training_args.position_lr_max_steps)
 
-    def update_learning_rate(self, iteration):
+    def update_learning_rate(self, iteration, lr_step=None, lr_scale=1.0):
         ''' Learning rate scheduling per step '''
+        scheduler_step = iteration if lr_step is None else lr_step
         for param_group in self.optimizer.param_groups:
             if param_group["name"] == "xyz":
-                lr = self.xyz_scheduler_args(iteration)
+                lr = self.xyz_scheduler_args(scheduler_step) * lr_scale
                 param_group['lr'] = lr
                 return lr
 
-    def optimizer_step(self, iteration):
+    def optimizer_step(self, iteration, step_interval=None, sh_step_interval=None):
         ''' An optimization schdeuler. The goal is similar to the sparse Adam of taming 3dgs.'''
+        if step_interval is not None or sh_step_interval is not None:
+            default_step, default_sh_step = self._optimizer_step_flags(iteration)
+            do_step = default_step
+            do_sh_step = default_sh_step
+            if step_interval is not None:
+                step_interval = max(1, int(step_interval))
+                do_step = iteration % step_interval == 0
+            if sh_step_interval is not None:
+                sh_step_interval = max(1, int(sh_step_interval))
+                do_sh_step = iteration % sh_step_interval == 0
+            if do_step:
+                self.optimizer.step()
+                self.optimizer.zero_grad(set_to_none = True)
+            if do_sh_step:
+                self.shoptimizer.step()
+                self.shoptimizer.zero_grad(set_to_none = True)
+            return
+
         if iteration <= 15000:
             self.optimizer.step()
             self.optimizer.zero_grad(set_to_none = True)
@@ -242,6 +261,15 @@ class GaussianModel:
                 self.optimizer.zero_grad(set_to_none = True)
                 self.shoptimizer.step()
                 self.shoptimizer.zero_grad(set_to_none = True)
+
+    def _optimizer_step_flags(self, iteration):
+        if iteration <= 15000:
+            return True, iteration % 16 == 0
+        if iteration <= 20000:
+            should_step = iteration % 32 == 0
+            return should_step, should_step
+        should_step = iteration % 64 == 0
+        return should_step, should_step
 
     def construct_list_of_attributes(self):
         l = ['x', 'y', 'z', 'nx', 'ny', 'nz']

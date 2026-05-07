@@ -246,18 +246,25 @@
 
 快速验证：`output/0001/post_prune_finetune_smoke_bicycle_260_r8` 在 260-iteration 短跑中从 78,838 裁到 65,000，并继续 20 步保存到 `ours_280`；render 和 metrics 均能读取最新迭代。
 
+2026-05-07 代码变更：为 post-prune recovery 增加独立的 `post_prune_finetune_step_interval`、`post_prune_finetune_sh_step_interval`、`post_prune_finetune_lr_mode`、`post_prune_finetune_lr_scale` 和 `post_prune_finetune_trigger`。默认值保持旧行为；设置 step interval 后，恢复阶段可以脱离 30k 后每 64 步才更新一次的主训练 cadence。`post_prune_finetune_trigger=staged_prune|any_prune|always` 还允许 staged pruning 后触发恢复训练。
+
+Dense recovery 快速验证：`output/0001/post_prune_dense_finetune_smoke_bicycle_260_r8` 使用 `post_prune_finetune_step_interval=1`、`post_prune_finetune_sh_step_interval=1`、`post_prune_finetune_lr_mode=local` 和 `post_prune_finetune_lr_scale=0.25`。训练从 88,194 裁到 65,000，并继续 20 步保存到 `ours_280`；render 和 metrics 均读取最新迭代，达到 PSNR 20.4099、SSIM 0.4310、LPIPS 0.5961。该短跑只验证 dense recovery 调度、保存和评估链路，不作为质量结论。
+
 完整探测使用 bicycle 30k `-r 8`，`cached_edge_l1`，目标点数为 baseline 30k 的 240,394；不启用 staged pruning，只在最终 low-score target prune 后恢复 4,096 步。
 
 | 产物 | 后端 | 目标策略 | 恢复步数 | PSNR | SSIM | LPIPS | 训练时间 | Gaussian 数量 | 输出大小 | 备注 |
 |---|---|---|---:|---:|---:|---:|---:|---:|---:|---|
+| `output/0001/post_prune_dense_finetune_smoke_bicycle_260_r8` | `fastgs_photometric` | 最终裁剪最低分后 dense recovery | 20 | 20.4099 | 0.4310 | 0.5961 | 1.60s | 65,000 | 51M | 快速验证，88,194 -> 65,000，保存 `ours_280` |
 | `output/0001/vfm_cached_edge_budget240394_lowscore_finetune4096_bicycle_30k_r8` | `cached_edge_l1` | 最终裁剪最低分后恢复 | 4,096 | 26.0163 | 0.7760 | 0.2580 | 156.29s | 240,394 | 138M | 411,345 -> 240,394，保存 `ours_34096` |
 
 对比：
 
+- dense recovery 快速验证证明新参数不会破坏裁剪、恢复、保存和 `--iteration -1` 评估路径。由于它是 260-step 短跑，不能和 30k 质量结果比较。
 - 相比 final-only low-score target prune，恢复训练提升 +2.2434 PSNR、+0.0453 SSIM、-0.0105 LPIPS，说明最终裁剪后的结构损伤可以被一部分恢复。
 - 相比 240k staged edge，post-prune fine-tune 的 PSNR/SSIM 更高：+0.2184 PSNR、+0.0013 SSIM；但 LPIPS 更差 +0.0043。
 - 相比 baseline 30k，仍低 -0.6869 PSNR、-0.0307 SSIM、+0.0302 LPIPS。严格 240k 预算下，单次最终裁剪加 4,096 步恢复还不能构成正向结果。
 - 由于默认 `optimizer_step` 在 20k 之后每 64 iteration 才更新一次，4,096 步恢复实际只有约 64 次参数更新。这可能解释了恢复有限；下一版若继续这条路，应增加专门的 dense recovery step schedule 或在裁剪前后采用更平滑的 staged+fine-tune 组合。
+- dense recovery 参数已经补齐；下一步应跑完整 30k 对照，优先使用 cached edge 240k final-prune + dense recovery 和 descriptor/top-k staged + `post_prune_finetune_trigger=any_prune` 两类设置。
 - 本组输出包含 `iteration_30000` 和 `iteration_34096` 两份 PLY，因此目录大小为 138M；只看恢复后 PLY 约 57M。
 
 ## 2026-04-28 Cache 预检

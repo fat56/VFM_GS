@@ -90,8 +90,10 @@
 - 这说明 410k 级别点数主要由 `densification_interval=100` 的 cadence 改变驱动，而不是 VFM zero-weight scorer/cache 本身。后续预算归因必须固定或显式报告 densification cadence。
 - `post_prune_finetune_iterations` 已落地，默认关闭。训练会在最终 target prune 真的删除 Gaussians 后清空残留梯度，继续纯光度恢复训练，并保存到新的迭代号。
 - 260-iteration 快速验证确认了裁剪、恢复保存和 `--iteration -1` 评估链路：78,838 -> 65,000，20 步后保存 `ours_280`。
+- dense recovery 参数已落地，默认保持旧行为。新增 `post_prune_finetune_step_interval`、`post_prune_finetune_sh_step_interval`、`post_prune_finetune_lr_mode`、`post_prune_finetune_lr_scale` 和 `post_prune_finetune_trigger`，用于让恢复阶段脱离 30k 后的稀疏 optimizer cadence。
+- dense recovery 260-iteration 快速验证已完成。`post_prune_finetune_step_interval=1`、`post_prune_finetune_sh_step_interval=1`、`post_prune_finetune_lr_mode=local`、`post_prune_finetune_lr_scale=0.25` 从 88,194 裁到 65,000，并保存 `ours_280`；render/metrics 达到 PSNR 20.4099，SSIM 0.4310，LPIPS 0.5961。该结果只说明链路可用。
 - bicycle edge 30k 最终裁剪后 4,096 步恢复结果为 PSNR 26.0163，SSIM 0.7760，LPIPS 0.2580，240,394 个 Gaussians。相比 final-only target prune 明显恢复，但仍低于 baseline，也没有超过 240k staged 的 LPIPS。
-- 当前恢复训练沿用原 optimizer cadence；30k 后每 64 步才更新一次，因此 4,096 步只有约 64 次参数更新。这是 post-prune fine-tune 恢复幅度有限的主要可疑因素。
+- 旧恢复训练沿用原 optimizer cadence；30k 后每 64 步才更新一次，因此 4,096 步只有约 64 次参数更新。这是 post-prune fine-tune 恢复幅度有限的主要可疑因素。dense recovery 已补上调度参数，下一步需要跑完整 30k 对照。
 
 ## 局限
 
@@ -115,4 +117,4 @@
 1. 固化 `cached_edge_l1` 为 0001 v1 正向控制组：保留 bicycle/garden/counter 三场景结果，说明它是稳定 proxy，而不是最终语义 VFM scorer。
 2. 继续 descriptor 只做能改变预算行为的方案：转向 staged pruning 后 dense recovery。`rgb_only` support/pruning、降低 top-k ratio、percentile mask 与 soft top-k staged 已完成且未转正，不再作为优先方向。
 3. 评估 descriptor 训练成本优化：减少 scorer 采样视角数，或缓存同一 densification 节点内的 rendered descriptors。
-4. 设计 dense post-prune recovery schedule，避免 30k 后每 64 步才更新一次导致恢复训练实际更新过少。最小改动是为恢复阶段增加独立 optimizer step interval 和可选 xyz LR scale；staged pruning 场景还需要记录中期裁剪是否发生，避免最终自然低于 target 时跳过恢复训练。
+4. 跑完整 dense recovery 对照：先复测 cached edge 240k final-prune + `post_prune_finetune_step_interval=1` / `post_prune_finetune_lr_mode=local`，再测 descriptor/top-k staged + `post_prune_finetune_trigger=any_prune`，判断恢复调度是否能把预算对齐结果推回 cadence control 之上。

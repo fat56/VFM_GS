@@ -95,6 +95,41 @@ def _post_prune_finetune_iterations(opt):
     return max(0, int(getattr(opt, "post_prune_finetune_iterations", 0) or 0))
 
 
+def _post_prune_finetune_interval(opt, attr_name):
+    value = int(getattr(opt, attr_name, 0) or 0)
+    return max(1, value) if value > 0 else None
+
+
+def _post_prune_finetune_lr_step(opt, iteration, local_iteration):
+    lr_mode = str(getattr(opt, "post_prune_finetune_lr_mode", "continue") or "continue").lower()
+    if lr_mode == "continue":
+        return iteration
+    if lr_mode in ("local", "restart"):
+        return local_iteration
+    raise ValueError(
+        "Unsupported post_prune_finetune_lr_mode {!r}. Available: continue, local, restart.".format(lr_mode)
+    )
+
+
+def _should_run_post_prune_finetune(opt, target_pruned_count, staged_pruned_count):
+    trigger = str(getattr(opt, "post_prune_finetune_trigger", "final_prune") or "final_prune").lower()
+    final_pruned = target_pruned_count > 0
+    staged_pruned = staged_pruned_count > 0
+    if trigger == "final_prune":
+        return final_pruned
+    if trigger == "staged_prune":
+        return staged_pruned
+    if trigger == "any_prune":
+        return final_pruned or staged_pruned
+    if trigger == "always":
+        return True
+    raise ValueError(
+        "Unsupported post_prune_finetune_trigger {!r}. Available: final_prune, staged_prune, any_prune, always.".format(
+            trigger
+        )
+    )
+
+
 def _zero_optimizer_gradients(gaussians, opt):
     if opt.optimizer_type == "default":
         gaussians.optimizer.zero_grad(set_to_none=True)
@@ -119,12 +154,16 @@ def _run_post_prune_finetune(scene, gaussians, pipe, bg, opt, start_iteration, f
     viewpoint_indices = list(range(len(viewpoint_stack)))
     progress_bar = tqdm(range(finetune_iterations), desc="Post-prune fine-tune")
     last_progress_update = 0
+    step_interval = _post_prune_finetune_interval(opt, "post_prune_finetune_step_interval")
+    sh_step_interval = _post_prune_finetune_interval(opt, "post_prune_finetune_sh_step_interval")
+    lr_scale = max(0.0, float(getattr(opt, "post_prune_finetune_lr_scale", 1.0) or 0.0))
 
     for local_iteration in range(1, finetune_iterations + 1):
         iteration = start_iteration + local_iteration
         iter_start.record()
 
-        gaussians.update_learning_rate(iteration)
+        lr_step = _post_prune_finetune_lr_step(opt, iteration, local_iteration)
+        gaussians.update_learning_rate(iteration, lr_step=lr_step, lr_scale=lr_scale)
         if iteration % 1000 == 0:
             gaussians.oneupSHdegree()
 
@@ -159,7 +198,11 @@ def _run_post_prune_finetune(scene, gaussians, pipe, bg, opt, start_iteration, f
             iter_time = iter_start.elapsed_time(iter_end)
             optim_start.record()
             if opt.optimizer_type == "default":
-                gaussians.optimizer_step(iteration)
+                gaussians.optimizer_step(
+                    iteration,
+                    step_interval=step_interval,
+                    sh_step_interval=sh_step_interval,
+                )
             elif opt.optimizer_type == "sparse_adam":
                 visible = radii > 0
                 gaussians.optimizer.step(visible, radii.shape[0])
@@ -221,6 +264,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     staged_target_gaussian_count = _staged_target_gaussian_count(opt)
     target_gaussian_stage_start = int(getattr(opt, "target_gaussian_stage_start", 0) or 0)
     target_gaussian_stage_interval = max(1, int(getattr(opt, "target_gaussian_stage_interval", 500) or 1))
+    staged_pruned_count = 0
 
     for iteration in range(first_iter, opt.iterations + 1):
 
@@ -308,7 +352,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                         and iteration >= target_gaussian_stage_start
                         and iteration % target_gaussian_stage_interval == 0
                     ):
-                        _, budget_time = _prune_to_target_budget(
+                        pruned_count, budget_time = _prune_to_target_budget(
                             scene,
                             gaussians,
                             gaussian_scorer,
@@ -319,6 +363,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                             "Staged target",
                             iteration=iteration,
                         )
+                        staged_pruned_count += pruned_count
                         total_time += budget_time
 
                 if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
@@ -372,7 +417,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
     post_prune_finetune_iterations = _post_prune_finetune_iterations(opt)
     if post_prune_finetune_iterations > 0:
-        if target_pruned_count > 0:
+        if _should_run_post_prune_finetune(opt, target_pruned_count, staged_pruned_count):
             finetune_time, finetune_save_iteration = _run_post_prune_finetune(
                 scene,
                 gaussians,
@@ -390,7 +435,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 )
             )
         else:
-            print("Post-prune fine-tune skipped: target prune did not remove Gaussians")
+            print("Post-prune fine-tune skipped: configured prune trigger did not fire")
 
     print(f"Gaussian number: {gaussians._xyz.shape[0]}")
     print(f"Training time: {total_time}")
