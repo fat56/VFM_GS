@@ -121,11 +121,16 @@
 - 新增四场景合并后 PSNR 只微幅正向（+0.0350），但 SSIM/LPIPS 负向。因此 `cached_edge_l1` 可以作为 MipNeRF360 与 DB 的正向 proxy 控制组，但还不能视为跨数据集稳健方案。
 - `vfm_enable` 当前没有 CLI 级显式关闭开关；若加载 VFM experiment yaml，就会触发 VFM scorer/preflight。严格 no-effect 需要从 baseline variant 出发手动覆盖非 VFM cadence 参数。
 - post-prune fine-tune 已证明有恢复价值，但严格 240k 预算和 descriptor staged 410k 预算下都未转正；它现在只能作为局部补救机制，不能作为预算高效化主方案。
+- `prune_min_gaussian_count` 已作为默认关闭的容量保护参数落地。它会限制训练期抽样裁剪和最终一致性裁剪的最大删除量，避免点数低于指定下限。
+- Tandt 容量保护诊断显示，`train` 从 cached edge v1 的 PSNR 23.4054 / SSIM 0.9081 / LPIPS 0.0837 / 35,322 点恢复到 23.5970 / 0.9104 / 0.0804 / 58,788 点；`truck` 从 27.7543 / 0.9550 / 0.0379 / 27,802 点恢复到 27.9641 / 0.9570 / 0.0366 / 41,952 点。
+- 容量保护后的 Tandt 平均为 PSNR 25.7806、SSIM 0.9337、LPIPS 0.0585，优于原始 cached edge v1 的 25.5799 / 0.9316 / 0.0608，但仍低于 baseline 的 25.9551 / 0.9377 / 0.0541。结论是：容量下限是必要防线，但不能独立解决 Tandt 负例。
+- `vfm_weight=0.0` 的 Tandt `train` 诊断仍只有 35,698 个点且 PSNR 23.2628；纯 FastGS `densification_interval=100` 也只有 43,488 个点且 PSNR 23.6091。负例同时包含 cadence、edge signal 和 pruning trajectory 的耦合，不应简单归因为某一个 fusion 权重。
 
 ## 下一版计划
 
 1. 固化 `cached_edge_l1` 为 0001 v1 正向控制组，但结论边界改为：MipNeRF360 全 9 场景平均正向，DB 两场景正向，Tandt 两场景负向。它是有价值的 proxy，不是跨数据集稳健的最终 scorer。
-2. 为下一版增加场景自适应保护：当 edge v1 自然结束 Gaussian 数量显著低于 baseline 或 staged target 时，降低 pruning fusion 强度、回退到 baseline pruning，或触发容量保护，避免 Tandt 这类场景被压得过稀。
-3. 将 DINOv2 descriptor 收束为“真实语义特征路径已打通但预算机制未转正”。下一版不再优先增加 top-k、percentile 或 soft-top-k 单点，而是设计预算感知 score：按 Gaussian 支持度归一化 VFM 分数，削弱大面积重复命中的 densification 放大效应。
-4. 改造 VFM 的角色：优先测试 prune-protect 或 prune-reorder，让语义信号保护结构性点，而不是直接扩大 densification；必要时把 VFM importance 与 RGB gradient gate 做更强的 AND/ratio 约束。
-5. 重做恢复时序：不再只在训练结束后统一 dense recovery，而是在 staged pruning 发生后立即执行短局部恢复，观察是否能减少中期结构损伤。
+2. 把 `prune_min_gaussian_count` 保留为诊断/回退保护，但下一版不要依赖人工填 baseline count。更合理的方向是由 baseline 预跑、在线增长曲线或 scene scale 自动估计容量下限。
+3. 为下一版增加场景自适应保护：当 edge v1 自然结束 Gaussian 数量显著低于 baseline 或 staged target 时，降低 pruning fusion 强度、回退到 baseline pruning，或触发容量保护，避免 Tandt 这类场景被压得过稀。
+4. 将 DINOv2 descriptor 收束为“真实语义特征路径已打通但预算机制未转正”。下一版不再优先增加 top-k、percentile 或 soft-top-k 单点，而是设计预算感知 score：按 Gaussian 支持度归一化 VFM 分数，削弱大面积重复命中的 densification 放大效应。
+5. 改造 VFM 的角色：优先测试 prune-protect 或 prune-reorder，让语义信号保护结构性点，而不是直接扩大 densification；必要时把 VFM importance 与 RGB gradient gate 做更强的 AND/ratio 约束。
+6. 重做恢复时序：不再只在训练结束后统一 dense recovery，而是在 staged pruning 发生后立即执行短局部恢复，观察是否能减少中期结构损伤。

@@ -377,7 +377,11 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 camlist = sampling_cameras(my_viewpoint_stack)
 
                 _, pruning_score = gaussian_scorer(camlist, gaussians, pipe, bg, opt)
-                gaussians.final_prune_fastgs(min_opacity = 0.1, pruning_score = pruning_score)
+                gaussians.final_prune_fastgs(
+                    min_opacity=0.1,
+                    pruning_score=pruning_score,
+                    min_gaussian_count=getattr(opt, "prune_min_gaussian_count", 0),
+                )
         
             # Optimization step
             if iteration < opt.iterations:

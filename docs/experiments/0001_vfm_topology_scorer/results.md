@@ -101,6 +101,44 @@
 - 四个新增场景合并后，PSNR 只微幅正向（+0.0350），但 SSIM 和 LPIPS 负向，不能把 `cached_edge_l1` 简单推广为 Tandt/DB 的稳定正向方案。
 - 与 MipNeRF360 全场景结果对比，`db` 更接近室内重建收益模式，而 `tandt` 暴露出跨数据集泛化风险。下一版应加入场景自适应 target 或 pruning 强度控制，特别是当 edge v1 的自然结束点数显著低于 baseline 时，应触发保护机制或回退到 baseline pruning。
 
+## 2026-05-07 Tandt 容量保护诊断
+
+目标：解释 Tandt `train` 和 `truck` 中 `cached_edge_l1` 负向且 Gaussian 数量显著低于 baseline 的原因，并测试最小容量保护是否能恢复质量。所有实验继续使用 `datasets/tandt_db/tandt`、`-r 8`、30,000 iterations、`--eval`，测试指标来自 test split。
+
+代码变更：增加 `prune_min_gaussian_count`，默认值为 `0`，默认关闭。该参数会限制 FastGS 训练期抽样裁剪和最终一致性裁剪的最大删除量，避免点数低于指定下限。
+
+`train` 诊断：
+
+| 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 | 说明 |
+|---|---:|---:|---:|---:|---:|---|
+| baseline | 23.6772 | 0.9154 | 0.0752 | 58,788 | 145.92s | 原始 FastGS |
+| cached edge v1 | 23.4054 | 0.9081 | 0.0837 | 35,322 | 148.42s | v1 负例 |
+| cached edge, `vfm_weight=0.0` | 23.2628 | 0.9070 | 0.0820 | 35,698 | 146.52s | 关闭 pruning fusion 仍未恢复容量 |
+| FastGS, `densification_interval=100` | 23.6091 | 0.9128 | 0.0770 | 43,488 | 139.01s | 只改变 densification cadence 已低于 baseline |
+| cached edge, `densification_interval=500` | 23.6147 | 0.9094 | 0.0824 | 40,419 | 137.65s | 回到 baseline cadence 后 PSNR 接近 cadence 控制，但感知指标仍弱 |
+| cached edge + `prune_min_gaussian_count=58788` | 23.5970 | 0.9104 | 0.0804 | 58,788 | 148.36s | 容量恢复，质量部分恢复但未超过 baseline |
+
+`tandt` 两场景容量保护结果：
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| train | baseline | 23.6772 | 0.9154 | 0.0752 | 58,788 | 145.92s |
+| train | cached edge v1 | 23.4054 | 0.9081 | 0.0837 | 35,322 | 148.42s |
+| train | cached edge + 容量保护 | 23.5970 | 0.9104 | 0.0804 | 58,788 | 148.36s |
+| truck | baseline | 28.2330 | 0.9601 | 0.0330 | 41,952 | 134.59s |
+| truck | cached edge v1 | 27.7543 | 0.9550 | 0.0379 | 27,802 | 141.28s |
+| truck | cached edge + 容量保护 | 27.9641 | 0.9570 | 0.0366 | 41,952 | 139.71s |
+| **平均** | **baseline** | **25.9551** | **0.9377** | **0.0541** | **50,370** | **140.26s** |
+| **平均** | **cached edge v1** | **25.5799** | **0.9316** | **0.0608** | **31,562** | **144.85s** |
+| **平均** | **cached edge + 容量保护** | **25.7806** | **0.9337** | **0.0585** | **50,370** | **144.04s** |
+
+解读：
+
+- `prune_min_gaussian_count` 能把 Tandt 两个场景的最终 Gaussian 数量拉回 baseline 水平，并相对原始 cached edge v1 恢复 +0.2007 PSNR、+0.0021 SSIM、LPIPS 改善 -0.0023。
+- 容量保护后的平均结果仍低于 baseline：PSNR -0.1745、SSIM -0.0040、LPIPS 差 +0.0044。因此 Tandt 负例不只是“删得太多”，也包含 edge signal、densification cadence 与 pruning trajectory 对结构分布的影响。
+- `vfm_weight=0.0` 仍保持低点数，说明单独关闭 VFM pruning fusion 不足以修复 Tandt；`densification_interval=100` 本身也会让 `train` 的点数和质量低于 baseline。下一版应把容量保护作为防线，但主改动应转向场景自适应 scorer/cadence，而不是简单固定最小点数。
+- 该参数默认关闭，适合做诊断和回退保护；若用于正式方案，需要自动估计 `min_gaussian_count`，例如由 baseline 预跑、场景尺度或在线增长曲线预测。
+
 ## 2026-04-28 Mock v1 快速验证
 
 数据集：`datasets/mipnerf360/bicycle`，test split，`-r 8`，220 iterations，`densify_from_iter=50`，`densification_interval=50`。

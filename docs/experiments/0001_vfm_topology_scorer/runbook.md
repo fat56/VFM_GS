@@ -57,6 +57,108 @@ uv run --active python scripts/run_mipnerf360_v1_eval.py \
 - `output/0001/full_tandt_db_v1/<dataset>/<scene>/logs/<method>/render.log`
 - `output/0001/full_tandt_db_v1/<dataset>/<scene>/logs/<method>/metrics.log`
 
+## Tandt 容量保护诊断
+
+`prune_min_gaussian_count` 默认关闭。它用于诊断 `cached_edge_l1` 在 Tandt 上是否因为训练期或最终裁剪过强而低于 baseline 容量。下面两条命令分别把 `train` 和 `truck` 的最小 Gaussian 数量设为对应 baseline 的最终数量，其他条件仍保持 `-r 8`、30,000 iterations、`--eval` 和 v1 staged target。
+
+```bash
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_cached_edge_compact.yaml \
+  -s datasets/tandt_db/tandt/train \
+  -i images \
+  -m output/0001/full_tandt_db_v1/tandt/train/vfm_cached_edge_prunemin58788_staged142_30k_r8 \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0001/full_tandt_db_v1/tandt/train/cache/edge_u8 \
+  --prune_min_gaussian_count 58788 \
+  --target_gaussian_count 83479 \
+  --target_gaussian_staged \
+  --target_gaussian_stage_margin 1.10 \
+  --target_gaussian_stage_interval 500 \
+  -r 8
+
+uv run --active python -m vfm_gs.cli.render \
+  -m output/0001/full_tandt_db_v1/tandt/train/vfm_cached_edge_prunemin58788_staged142_30k_r8 \
+  --iteration -1 \
+  --skip_train \
+  --quiet
+
+uv run --active python -m vfm_gs.cli.metrics \
+  -m output/0001/full_tandt_db_v1/tandt/train/vfm_cached_edge_prunemin58788_staged142_30k_r8
+```
+
+```bash
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_cached_edge_compact.yaml \
+  -s datasets/tandt_db/tandt/truck \
+  -i images \
+  -m output/0001/full_tandt_db_v1/tandt/truck/vfm_cached_edge_prunemin41952_staged142_30k_r8 \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0001/full_tandt_db_v1/tandt/truck/cache/edge_u8 \
+  --prune_min_gaussian_count 41952 \
+  --target_gaussian_count 59572 \
+  --target_gaussian_staged \
+  --target_gaussian_stage_margin 1.10 \
+  --target_gaussian_stage_interval 500 \
+  -r 8
+
+uv run --active python -m vfm_gs.cli.render \
+  -m output/0001/full_tandt_db_v1/tandt/truck/vfm_cached_edge_prunemin41952_staged142_30k_r8 \
+  --iteration -1 \
+  --skip_train \
+  --quiet
+
+uv run --active python -m vfm_gs.cli.metrics \
+  -m output/0001/full_tandt_db_v1/tandt/truck/vfm_cached_edge_prunemin41952_staged142_30k_r8
+```
+
+配套诊断命令：
+
+```bash
+# 关闭 VFM pruning fusion，检查负例是否只来自融合项。
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_cached_edge_compact.yaml \
+  -s datasets/tandt_db/tandt/train \
+  -i images \
+  -m output/0001/full_tandt_db_v1/tandt/train/vfm_cached_edge_prune0_staged142_30k_r8 \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0001/full_tandt_db_v1/tandt/train/cache/edge_u8 \
+  --vfm_weight 0.0 \
+  --target_gaussian_count 83479 \
+  --target_gaussian_staged \
+  --target_gaussian_stage_margin 1.10 \
+  --target_gaussian_stage_interval 500 \
+  -r 8
+
+# 只改变 FastGS densification cadence，作为 Tandt 的 no-effect 参照。
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  -s datasets/tandt_db/tandt/train \
+  -i images \
+  -m output/0001/full_tandt_db_v1/tandt/train/fastgs_densify100_30k_r8 \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --densification_interval 100 \
+  -r 8
+```
+
 ## 模拟 VFM 拓扑 v1
 
 ```bash

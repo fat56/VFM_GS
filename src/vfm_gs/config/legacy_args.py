@@ -122,6 +122,7 @@ class OptimizationParams(ParamGroup):
         self.target_gaussian_stage_margin = 1.2
         self.target_gaussian_stage_start = 0
         self.target_gaussian_stage_interval = 500
+        self.prune_min_gaussian_count = 0
         self.post_prune_finetune_iterations = 0
         self.post_prune_finetune_step_interval = 0
         self.post_prune_finetune_sh_step_interval = 0

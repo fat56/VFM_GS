@@ -534,7 +534,13 @@ class GaussianModel:
         to_remove = torch.sum(prune_mask)
         remove_budget = int(0.5 * to_remove)
 
-        # The budget is not necessary for our method.
+        # Keep diagnostic capacity floors from pruning below a known baseline.
+        min_gaussian_count = max(0, int(getattr(args, "prune_min_gaussian_count", 0) or 0))
+        if min_gaussian_count > 0:
+            current_count = self.get_xyz.shape[0]
+            protected_budget = max(0, current_count - min_gaussian_count)
+            remove_budget = min(remove_budget, protected_budget)
+
         if remove_budget:
             n_init_points = self.get_xyz.shape[0]
             padded_importance = torch.zeros((n_init_points), dtype=torch.float32)
@@ -558,13 +564,35 @@ class GaussianModel:
         self.xyz_gradient_accum_abs[update_filter] += torch.norm(viewspace_point_tensor.grad[update_filter, 2:], dim=-1, keepdim=True)
         self.denom[update_filter] += 1
 
-    def final_prune_fastgs(self, min_opacity, pruning_score = None):
+    def final_prune_fastgs(self, min_opacity, pruning_score = None, min_gaussian_count=0):
         """Final-stage pruning: remove Gaussians based on opacity and multi-view consistency.
         In the final stage we remove Gaussians that have low opacity or that are flagged by
         our multi-view reconstruction consistency metric (provided as `pruning_score`)."""
         prune_mask = (self.get_opacity < min_opacity).squeeze() 
         scores_mask = pruning_score > 0.9
         final_prune = torch.logical_or(prune_mask, scores_mask)
+        min_gaussian_count = max(0, int(min_gaussian_count or 0))
+        if min_gaussian_count > 0:
+            current_count = self.get_xyz.shape[0]
+            remove_count = int(final_prune.sum().item())
+            max_remove = max(0, current_count - min_gaussian_count)
+            if remove_count > max_remove:
+                if max_remove <= 0:
+                    final_prune = torch.zeros_like(final_prune)
+                else:
+                    scores = pruning_score.detach().squeeze().to(dtype=torch.float32, device=self.get_xyz.device)
+                    if scores.numel() < current_count:
+                        padded_scores = torch.zeros((current_count), dtype=torch.float32, device=self.get_xyz.device)
+                        padded_scores[: scores.numel()] = scores
+                        scores = padded_scores
+                    elif scores.numel() > current_count:
+                        scores = scores[:current_count]
+                    scores = torch.nan_to_num(scores, nan=0.0, posinf=0.0, neginf=0.0)
+                    candidate_scores = scores.masked_fill(~final_prune, float("-inf"))
+                    selected = torch.topk(candidate_scores, max_remove, largest=True).indices
+                    protected_prune = torch.zeros_like(final_prune)
+                    protected_prune[selected] = True
+                    final_prune = protected_prune
         self.prune_points(final_prune)
 
     def prune_to_target_count(self, target_count, pruning_score=None):
