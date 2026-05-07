@@ -251,6 +251,42 @@ uv run --active python -m vfm_gs.cli.metrics \
   -m output/0001/vfm_dinov2_descriptor_topk015_smooth3_bicycle_30k_r8
 ```
 
+top-k/smoothing staged + dense recovery 是 0001 中 descriptor 预算恢复的最终诊断之一。该 run 使用接近 `fastgs_densify100` 的 410k target，并在任意 staged pruning 发生后触发 4,096 步 dense recovery。实验结果为 PSNR 26.8472、SSIM 0.8223、LPIPS 0.1974、387,109 个 Gaussians；它只小幅修复 LPIPS/SSIM，整体仍低于 cadence control。
+
+```bash
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_dinov2_descriptor_topk.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0001/vfm_dinov2_descriptor_topk015_smooth3_budget410000_staged105_denseft4096_anyprune_s1_lr025_bicycle_30k_r8 \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --target_gaussian_count 410000 \
+  --target_gaussian_staged \
+  --target_gaussian_stage_margin 1.05 \
+  --target_gaussian_stage_interval 500 \
+  --post_prune_finetune_iterations 4096 \
+  --post_prune_finetune_trigger any_prune \
+  --post_prune_finetune_step_interval 1 \
+  --post_prune_finetune_sh_step_interval 16 \
+  --post_prune_finetune_lr_mode local \
+  --post_prune_finetune_lr_scale 0.25 \
+  -r 8
+
+uv run --active python -m vfm_gs.cli.render \
+  -m output/0001/vfm_dinov2_descriptor_topk015_smooth3_budget410000_staged105_denseft4096_anyprune_s1_lr025_bicycle_30k_r8 \
+  --iteration -1 \
+  --skip_train \
+  --quiet
+
+uv run --active python -m vfm_gs.cli.metrics \
+  -m output/0001/vfm_dinov2_descriptor_topk015_smooth3_budget410000_staged105_denseft4096_anyprune_s1_lr025_bicycle_30k_r8
+```
+
 soft top-k 近似使用多层嵌套 top-k 二值图来模拟连续 metric map。当前 CUDA 计数接口仍是整数命中计数，因此该模式不改 rasterizer；它会对同一个 descriptor error map 生成 `vfm_metric_soft_levels` 层 top-k masks，并把每层 per-Gaussian 命中按 `1 / levels` 累加。620-step 集成验证已确认 iteration 600 会触发真实 descriptor scoring 和多层计数。
 
 完整 30k 对照已完成，质量高于 cadence control，但点数和训练成本仍偏高。staged 410k 预算诊断也已完成；该设置能把最终点数压到 383,528，但质量低于 cadence control，因此 soft top-k 不能作为预算高效方案。
