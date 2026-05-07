@@ -112,6 +112,33 @@ uv run --active python -m vfm_gs.cli.render -m output/0001/vfm_dinov2_token_edge
 uv run --active python -m vfm_gs.cli.metrics -m output/0001/vfm_dinov2_token_edge_bicycle_smoke
 ```
 
+## DINOv2 Descriptor 打分器 v0
+
+`dinov2_descriptor_cosine` 是下一版 DINO scorer 的最小真实语义路径。它复用 GT 侧 DINO patch-token cache，但在 densification/pruning 节点对 SH0 渲染图在线跑同一个 DINOv2 模型，再用 patch-token cosine distance 生成 `pixel_error_map`。它比 `dinov2_token_edge_l1` 更贴近 proposal 中的语义特征误差，但训练开销也更高。
+
+```bash
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_dinov2_descriptor.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0001/vfm_dinov2_descriptor_bicycle_smoke \
+  --eval \
+  --iterations 220 \
+  --densify_from_iter 50 \
+  --densify_until_iter 220 \
+  --densification_interval 50 \
+  --test_iterations 220 \
+  --save_iterations 220 \
+  --checkpoint_iterations 220 \
+  -r 8
+
+uv run --active python -m vfm_gs.cli.render -m output/0001/vfm_dinov2_descriptor_bicycle_smoke --skip_train
+uv run --active python -m vfm_gs.cli.metrics -m output/0001/vfm_dinov2_descriptor_bicycle_smoke
+```
+
+如果本地 `output/0001/external/dinov2` 不存在，先按上一节 clone 官方 DINOv2 仓库，或用命令行覆盖 `--vfm_dinov2_repo <path>`。
+
 ## 30k 匹配消融
 
 220-iteration runs 只作为快速验证。迭代 scorer 行为时，使用这组 30k `-r 8` 作为最低质量门槛：

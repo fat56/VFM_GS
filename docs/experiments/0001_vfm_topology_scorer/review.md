@@ -2,7 +2,7 @@
 
 ## 当前决策
 
-继续保留 `vfm_topology_scorer` 作为 v1 集成路径。`mock_l1` 验证打分链路，`cached_edge_l1` 已固化为第一版正向控制组，`dinov2_token_edge_l1` 验证训练可以消费真实 DINOv2 patch-token cache。当前 DINOv2 路径仍是保守的 token-edge projection，不是最终语义特征打分器。后续决策门槛以 30k 完整 run 为准，不再用短跑快速验证指标判断质量。
+继续保留 `vfm_topology_scorer` 作为 v1 集成路径。`mock_l1` 验证打分链路，`cached_edge_l1` 已固化为第一版正向控制组，`dinov2_token_edge_l1` 验证训练可以消费真实 DINOv2 patch-token cache，`dinov2_descriptor_cosine` 则打通了在线渲染图 descriptor 与 GT cache descriptor 的语义比较路径。后续决策门槛以 30k 完整 run 为准，不再用短跑快速验证指标判断质量。
 
 ## 发现
 
@@ -26,6 +26,9 @@
 - `dinov2_token_edge_l1` 将 cached DINO patch tokens 投影成标量 token-edge topology map，将 SH0 渲染亮度边缘汇聚到同一 grid，并返回上采样后的 pixel error map，供现有 metric-map scorer 路径使用。
 - DINO token-edge 快速验证完成 train/render/metrics：PSNR 20.2913，SSIM 0.4272，LPIPS 0.6006，77,761 个 Gaussians，训练时间 1.72s，测试帧渲染 410.94 FPS。
 - DINO scorer preflight 现在接受 DINO cache manifests（`dinov2_vits14` 或 `dinov2_vitb14`），并会在 Scene 构建前拒绝 cache feature/backend 不匹配。
+- `dinov2_descriptor_cosine` 已落地。它在 scorer 节点对 SH0 渲染图在线运行 DINOv2，再与 GT cache patch tokens 做 cosine distance，并上采样为 pixel error map。
+- descriptor 快速验证完成 80-step 和 220-step train/render/metrics。220-step bicycle 结果为 PSNR 20.0193，SSIM 0.4233，LPIPS 0.6018，77,060 个 Gaussians，训练时间 2.55s。
+- descriptor 快速验证指标略低于 token-edge 快速验证，但它是更贴近 proposal 语义特征误差的真实路径。下一步不应仅看短跑质量，而应先调 descriptor 阈值和 cache 分辨率，再进入 30k。
 - matched 30k `-r 8` ablation 已成为主质量信号。baseline 达到 PSNR 26.7032，SSIM 0.8067，LPIPS 0.2278，240,394 个 Gaussians，334.36 FPS。
 - compact cached edge 将 30k run 提升到 PSNR 26.8864，SSIM 0.8229，LPIPS 0.1972，但点数增长到 408,925，FPS 为 196.43。
 - DINO token-edge 给出最佳 30k 指标：PSNR 27.0577，SSIM 0.8345，LPIPS 0.1767，但点数达到 490,832，FPS 为 193.46。
@@ -63,6 +66,7 @@
 - `mock_l1` 有意不是一个真实视觉基础模型信号。
 - `cached_edge_l1` 也只是 proxy；它主要测试 cache 机制和 edge-alignment 行为。
 - `dinov2_token_edge_l1` 消费 DINO patch tokens，但比较的是标量 topology projection，而不是完整语义特征向量。
+- `dinov2_descriptor_cosine` 已比较完整 patch descriptor，但目前仍是在线 DINO 推理的朴素版本；需要评估 30k 成本、cache width、scorer 采样视角数和阈值。
 - 220-iteration 快速验证只验证集成健康，不验证最终重建质量。既然 30k runs 已足够便宜，后续不应用短跑结果选择 scorer。
 - compact storage 有助于节省磁盘，但 `npz_uint8` 尚未证明 metric-neutral。float32 与 compact cache 变体仍应保留用于 ablation。
 - 当前 DINO cache 构建于 `max_width=224`；完整 `max_width=518` 或 `640` 的缓存时间、磁盘占用和 scorer 行为仍需测量。
@@ -76,8 +80,8 @@
 
 ## 下一版计划
 
-1. 将 `cached_edge_l1` 作为 0001 的 v1 正向控制组收口，并开启下一版 DINO descriptor scorer 实验。
-2. 用 patch-descriptor scorer 替换或增强 `dinov2_token_edge_l1`，因为当前 token-edge projection 在 budget control 下 PSNR/SSIM 弱于 edge。
-3. 补 `max_width=518` 或 `640` 的 DINO ViT-S/14 cache build/validate，并记录训练成本。
+1. 对 `dinov2_descriptor_cosine` 做阈值和 cache width 探测，优先补 `max_width=518` 或 `640` 的 DINO ViT-S/14 cache build/validate。
+2. 如果 descriptor scorer 的短跑阈值稳定，再跑 30k `-r 8`，并与 token-edge、edge 正向控制组、no-effect/cadence 控制同表比较。
+3. 评估 descriptor scorer 的训练成本，必要时减少 scorer 采样视角数，或缓存同一 densification 节点的 rendered descriptors。
 4. 设计 dense post-prune recovery schedule，避免 30k 后每 64 步才更新一次导致恢复训练实际更新过少。
 5. 保持 30k `-r 8` 作为最小质量门槛；220 iteration 只用于代码变更后的快速验证。

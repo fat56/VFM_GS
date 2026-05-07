@@ -110,6 +110,8 @@ class OptimizationParams(ParamGroup):
         self.vfm_importance_weight = 1.0
         self.vfm_importance_mode = "max"
         self.vfm_use_albedo_sh0 = True
+        self.vfm_dinov2_repo = ""
+        self.vfm_dinov2_device = "cuda"
         self.target_gaussian_count = 0
         self.target_gaussian_staged = False
         self.target_gaussian_stage_margin = 1.2

@@ -9,11 +9,15 @@ from .registry import register_scorer
 
 
 _CACHE_READERS = {}
+_DINO_MODELS = {}
 _DINO_CACHE_BACKENDS = ("dinov2_vits14", "dinov2_vitb14")
 _CACHED_BACKEND_MANIFESTS = {
     "cached_edge_l1": ("cached_edge_l1",),
     "dinov2_token_edge_l1": _DINO_CACHE_BACKENDS,
+    "dinov2_descriptor_cosine": _DINO_CACHE_BACKENDS,
+    "dinov2_descriptor_cosine_l1": _DINO_CACHE_BACKENDS,
 }
+_DINO_PATCH_SIZE = 14
 
 
 class VFMFeatureCache:
@@ -101,6 +105,35 @@ def _dinov2_token_edge_map(token_map):
     return normalize01(torch.sqrt(dx.square() + dy.square() + 1e-12))
 
 
+def _get_dinov2_model(backend, repo, device):
+    key = (backend, repo or "", device)
+    if key not in _DINO_MODELS:
+        from vfm_gs.cli.build_vfm_cache import _load_dinov2_model
+
+        _DINO_MODELS[key] = _load_dinov2_model(backend, repo or None, device, pretrained=True)
+    return _DINO_MODELS[key]
+
+
+def _rendered_image_to_dino_tensor(rendered_image, grid_size):
+    target_h = int(grid_size[0]) * _DINO_PATCH_SIZE
+    target_w = int(grid_size[1]) * _DINO_PATCH_SIZE
+    image = rendered_image[:3].detach().clamp(0.0, 1.0).unsqueeze(0)
+    if tuple(image.shape[-2:]) != (target_h, target_w):
+        image = F.interpolate(image, size=(target_h, target_w), mode="bilinear", align_corners=False)
+    mean = torch.tensor([0.485, 0.456, 0.406], dtype=image.dtype, device=image.device).view(1, 3, 1, 1)
+    std = torch.tensor([0.229, 0.224, 0.225], dtype=image.dtype, device=image.device).view(1, 3, 1, 1)
+    return (image - mean) / std
+
+
+def _extract_rendered_dinov2_tokens(rendered_image, grid_size, backend, repo, device):
+    model = _get_dinov2_model(backend, repo, device)
+    tensor = _rendered_image_to_dino_tensor(rendered_image.to(device=device), grid_size)
+    with torch.no_grad():
+        tokens = model.forward_features(tensor)["x_norm_patchtokens"][0]
+        tokens = F.normalize(tokens.to(torch.float32), dim=-1)
+    return tokens.reshape(int(grid_size[0]), int(grid_size[1]), -1)
+
+
 def _pool_to_patch_grid(value_map, grid_size):
     return F.adaptive_avg_pool2d(value_map.reshape(1, 1, *value_map.shape[-2:]), output_size=grid_size).view(*grid_size)
 
@@ -140,7 +173,40 @@ def _dinov2_token_edge_l1_error(rendered_image, viewpoint_cam, cache_dir):
     ).view(*rendered_image.shape[-2:])
 
 
-def _compute_pixel_error_map(rendered_image, viewpoint_cam, backend, cache_dir):
+def _dinov2_descriptor_cosine_error(rendered_image, viewpoint_cam, cache_dir, dinov2_repo, dinov2_device):
+    cache = _get_cache(cache_dir)
+    gt_tokens = cache.get_feature_map(viewpoint_cam.image_name, rendered_image.device)
+    if gt_tokens.ndim != 3:
+        raise ValueError(
+            "Expected DINOv2 descriptor cache with shape [grid_h, grid_w, dim], got {}".format(
+                list(gt_tokens.shape)
+            )
+        )
+    dinov2_backend = cache.manifest.get("backend")
+    if dinov2_backend not in _DINO_CACHE_BACKENDS:
+        raise ValueError("Expected DINOv2 cache backend, got {!r}".format(dinov2_backend))
+    rendered_tokens = _extract_rendered_dinov2_tokens(
+        rendered_image,
+        gt_tokens.shape[:2],
+        dinov2_backend,
+        dinov2_repo,
+        dinov2_device,
+    ).to(device=rendered_image.device)
+    gt_tokens = F.normalize(gt_tokens.to(torch.float32), dim=-1)
+    patch_error = 0.5 * torch.clamp(
+        1.0 - F.cosine_similarity(rendered_tokens, gt_tokens, dim=-1),
+        min=0.0,
+        max=2.0,
+    )
+    return F.interpolate(
+        patch_error.view(1, 1, *patch_error.shape[-2:]),
+        size=rendered_image.shape[-2:],
+        mode="bilinear",
+        align_corners=False,
+    ).view(*rendered_image.shape[-2:])
+
+
+def _compute_pixel_error_map(rendered_image, viewpoint_cam, backend, cache_dir, dinov2_repo="", dinov2_device="cuda"):
     if backend in ("mock_l1", "photometric_l1"):
         gt_image = viewpoint_cam.original_image.to(rendered_image.device)
         return _mock_l1_error(rendered_image, gt_image)
@@ -151,9 +217,11 @@ def _compute_pixel_error_map(rendered_image, viewpoint_cam, backend, cache_dir):
         return _cached_edge_l1_error(rendered_image, viewpoint_cam, cache_dir)
     if backend == "dinov2_token_edge_l1":
         return _dinov2_token_edge_l1_error(rendered_image, viewpoint_cam, cache_dir)
+    if backend in ("dinov2_descriptor_cosine", "dinov2_descriptor_cosine_l1"):
+        return _dinov2_descriptor_cosine_error(rendered_image, viewpoint_cam, cache_dir, dinov2_repo, dinov2_device)
     raise ValueError(
         "Unsupported vfm_backend {!r}. Available backends: mock_l1, mock_edge_l1, cached_edge_l1, "
-        "dinov2_token_edge_l1.".format(backend)
+        "dinov2_token_edge_l1, dinov2_descriptor_cosine.".format(backend)
     )
 
 
@@ -179,6 +247,8 @@ def compute_gaussian_score_fastgs_with_vfm(camlist, gaussians, pipe, bg, args, D
     vfm_importance_mode = getattr(args, "vfm_importance_mode", "max").lower()
     use_albedo_sh0 = getattr(args, "vfm_use_albedo_sh0", True)
     cache_dir = getattr(args, "vfm_cache_dir", "")
+    dinov2_repo = getattr(args, "vfm_dinov2_repo", "")
+    dinov2_device = getattr(args, "vfm_dinov2_device", "cuda")
 
     for viewpoint_cam in camlist:
         if use_albedo_sh0:
@@ -186,7 +256,14 @@ def compute_gaussian_score_fastgs_with_vfm(camlist, gaussians, pipe, bg, args, D
         else:
             rendered_image = render_fastgs(viewpoint_cam, gaussians, pipe, bg, args.mult)["render"]
 
-        pixel_error_map = _compute_pixel_error_map(rendered_image, viewpoint_cam, backend, cache_dir)
+        pixel_error_map = _compute_pixel_error_map(
+            rendered_image,
+            viewpoint_cam,
+            backend,
+            cache_dir,
+            dinov2_repo=dinov2_repo,
+            dinov2_device=dinov2_device,
+        )
         metric_map = (normalize01(pixel_error_map) > loss_thresh).int().reshape(-1).contiguous()
         render_pkg = render_fastgs(
             viewpoint_cam,
@@ -266,7 +343,7 @@ def preflight_vfm_topology_scorer(dataset, args):
                 ", ".join(repr(item) for item in expected_manifest_backends),
             )
         )
-    if backend == "dinov2_token_edge_l1" and manifest.get("feature") != "dinov2_patchtokens":
+    if backend in ("dinov2_token_edge_l1", "dinov2_descriptor_cosine", "dinov2_descriptor_cosine_l1") and manifest.get("feature") != "dinov2_patchtokens":
         errors.append("feature mismatch: manifest={!r}, expected 'dinov2_patchtokens'".format(manifest.get("feature")))
     for warning in warnings:
         print("[VFM cache preflight warning] {}".format(warning))

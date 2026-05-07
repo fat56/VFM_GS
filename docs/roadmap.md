@@ -2,14 +2,13 @@
 
 ## 进行中
 
-- `0001_vfm_topology_scorer`: staged/ratio-aware cached edge 已在 bicycle、garden 和 counter 三个 scene 上超过各自 baseline；no-effect/cadence 控制与 post-prune fine-tune 探测已完成。下一步收口 0001，并进入 DINO scorer 下一版。
+- `0001_vfm_topology_scorer`: staged/ratio-aware cached edge 已在 bicycle、garden 和 counter 三个 scene 上超过各自 baseline；no-effect/cadence 控制与 post-prune fine-tune 探测已完成。当前正在推进 DINO descriptor scorer 下一版。
 
 ## 排队
 
 - 将 `cached_edge_l1` 固化为 0001 v1 正向控制组，并整理下一版实验入口。
-- 改进 DINO scorer：从 token-edge proxy 转向 patch descriptor / feature projection 对齐。
 - 构建 `max_width=518` 或 `640` 的 full-scene `dinov2_vits14` cache，记录 cache build time、disk size 和 validate 结果。
-- 增加固定 patch-descriptor projection scorer，对比 token-edge proxy。
+- 调参 `dinov2_descriptor_cosine`：先扫 `vfm_loss_thresh` 与 cache width，再决定是否跑 30k。
 - 设计 dense post-prune recovery schedule，避免 30k 后恢复训练实际更新次数过少。
 
 ## 阻塞
@@ -28,6 +27,7 @@
 - 增加 `vfm_backend_probe` CLI，记录当前环境和 DINOv2 cache-size feasibility。
 - 增加 optional `dinov2_vits14` / `dinov2_vitb14` cache builder，并在当前 PyTorch 1.12.1 环境完成 4-image ViT-S/14 cache 快速验证。
 - 增加 `dinov2_token_edge_l1` scorer backend，完成 194 张图 DINOv2 cache build/validate，以及 220-iteration bicycle 快速验证的 train/render/metrics。
+- 增加 `dinov2_descriptor_cosine` scorer backend，完成 80-step 和 220-step bicycle 快速验证的 train/render/metrics，打通在线渲染图 DINO descriptor 与 GT cache descriptor 比较路径。
 - 完成 baseline、compact cached edge、DINOv2 token-edge 的 30k `-r 8` matched ablation；DINO token-edge 指标最好，但点数和渲染成本也最高。
 - 完成 t075/w010 budget-control probe；现有阈值/权重 knob 无法充分控制 VFM densification 点数。
 - 增加 `vfm_importance_weight` 并完成 i0.25 30k probe；DINO 点数下降但仍未达成 budget matching。

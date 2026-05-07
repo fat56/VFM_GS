@@ -331,3 +331,21 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 - `dinov2_token_edge_l1` 将 cached DINO patch tokens 转为标量 token-edge topology map，并与汇聚到同一 patch grid 的 SH0 渲染亮度边缘对比。
 - 这是计划中第一个在训练期消费真实 DINOv2 cache data 的 scorer 变体。
 - 它避免在训练循环中在线 DINO inference，因此运行开销来自 cache loading、token-edge derivation、pooling，以及额外一次 `render_fastgs(..., get_flag=True)` pass。
+
+## 2026-05-07 DINOv2 Descriptor 打分器快速验证
+
+代码变更：增加 `dinov2_descriptor_cosine` 后端和 `configs/experiments/0001_vfm_topology_dinov2_descriptor.yaml`。该后端复用 GT 侧 `dinov2_patchtokens` cache，但在 densification/pruning 节点对 SH0 渲染图在线运行同一个 DINOv2 ViT-S/14，再用 patch-token cosine distance 生成 `pixel_error_map`。这比 `dinov2_token_edge_l1` 更接近 proposal 中的语义特征误差，但会增加训练期 scorer 开销。
+
+使用 cache：`output/0001/vfm_cache/bicycle_dinov2_vits14`，194 个 entries，`npy_float16`，24M；DINOv2 本地仓库：`output/0001/external/dinov2`。
+
+| 产物 | 后端 | 迭代 | PSNR | SSIM | LPIPS | 训练时间 | Gaussian 数量 | 输出大小 | 备注 |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---|
+| `output/0001/vfm_dinov2_descriptor_smoke_bicycle_80_r8` | `dinov2_descriptor_cosine` | 80 | 18.5433 | 0.3634 | 0.6927 | 1.66s | 57,709 | 16M | 最小链路验证，触发一次 descriptor scoring |
+| `output/0001/vfm_dinov2_descriptor_bicycle_smoke` | `dinov2_descriptor_cosine` | 220 | 20.0193 | 0.4233 | 0.6018 | 2.55s | 77,060 | 20M | 与历史快速验证 schedule 对齐 |
+
+解读：
+
+- descriptor scorer 已完成 train、render 和 metrics，证明“渲染图在线 DINO descriptor vs GT cache descriptor”的真实语义特征路径可以接入现有 `pixel_error_map -> metric_map -> accum_metric_counts` 管线。
+- 220-iteration 指标低于 token-edge 快速验证：PSNR -0.2720、SSIM -0.0039、LPIPS +0.0012。这个差距不能直接否定 descriptor 路径，因为短跑主要验证集成健康，且 descriptor 后端的阈值、cache 分辨率和投影策略尚未调参。
+- 当前实现每个 scorer 视角都在线运行 DINOv2。短跑训练时间从 token-edge 的 1.72s 增到 2.55s，仍可接受；30k 之前应先评估更高 cache width 和较少 scorer 视角/缓存 rendered descriptor 的折中。
+- DINOv2 import 继续提示 `xformers` 不可用，但官方实现能 fallback，训练未失败。
