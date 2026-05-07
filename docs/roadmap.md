@@ -2,7 +2,7 @@
 
 ## 进行中
 
-- `0001_vfm_topology_scorer`: 第一版实验进入收束阶段。`cached_edge_l1 + staged target ~= 1.42x baseline count` 已完成 MipNeRF360 全 9 场景评估，平均 PSNR/SSIM/LPIPS 均超过 baseline，是 0001 v1 的正向控制组；但平均 Gaussian 数量增加约 24.5%，训练时间增加约 11.1%，且 `treehill` 是明确负例。Tandt/DB 新增全场景评估显示跨数据集差异：DB 两场景平均正向，Tandt 两场景平均负向且 Gaussian 数量下降约 37.3%。已增加默认关闭的 `prune_min_gaussian_count` 并完成 Tandt 容量保护诊断：平均结果从 cached edge v1 的 PSNR 25.5799、SSIM 0.9316、LPIPS 0.0608 恢复到 25.7806、0.9337、0.0585，但仍低于 baseline 的 25.9551、0.9377、0.0541。下一步应把容量保护升级为自动场景自适应机制，并继续处理 edge/cadence/pruning trajectory 的耦合。DINOv2 descriptor 路径已从 cache、在线 descriptor、top-k/smoothing、soft top-k、percentile、`rgb_only`、staged 预算对齐推进到 dense recovery；当前结论是 descriptor unpruned 有真实质量收益，但接近 410k budget、降低 top-k ratio、只参与 support/pruning、percentile mask、多层 soft 计数、严格 240k dense recovery 或 staged 后 dense recovery 后，仍未稳定超过 `fastgs_densify100` cadence control。
+- `0001_vfm_topology_scorer`: 第一版实验进入收束阶段。`cached_edge_l1 + staged target ~= 1.42x baseline count` 已完成 MipNeRF360 全 9 场景评估，平均 PSNR/SSIM/LPIPS 均超过 baseline，是 0001 v1 的正向控制组；但平均 Gaussian 数量增加约 24.5%，训练时间增加约 11.1%，且 `treehill` 是明确负例。Tandt/DB 新增全场景评估显示跨数据集差异：DB 两场景平均正向，Tandt 两场景平均负向且 Gaussian 数量下降约 37.3%。已增加默认关闭的 `prune_min_gaussian_count` 并完成 Tandt 容量保护诊断：平均结果从 cached edge v1 的 PSNR 25.5799、SSIM 0.9316、LPIPS 0.0608 恢复到 25.7806、0.9337、0.0585，但仍低于 baseline 的 25.9551、0.9377、0.0541。下一步应把容量保护升级为自动场景自适应机制，并继续处理 edge/cadence/pruning trajectory 的耦合。DINOv2 descriptor 路径已从 cache、在线 descriptor、top-k/smoothing、soft top-k、percentile、`rgb_only`、staged 预算对齐推进到 dense recovery；当前结论是 descriptor unpruned 有真实质量收益，但接近 410k budget、降低 top-k ratio、只参与 support/pruning、percentile mask、多层 soft 计数、严格 240k dense recovery 或 staged 后 dense recovery 后，仍未稳定超过 `fastgs_densify100` cadence control。新增 DINO token-edge top-k 15% 配置已通过 bicycle 620-step train/render/metrics，下一步跑 30k 对照，判断它能否超过当前默认 DINO token-edge 上界。
 
 ## 排队
 
@@ -59,6 +59,7 @@
 - 完成 MipNeRF360 全 9 场景 baseline 与 cached-edge v1 统一评估；cached-edge v1 平均 PSNR 28.7213、SSIM 0.8579、LPIPS 0.1551，baseline 平均 PSNR 28.6527、SSIM 0.8551、LPIPS 0.1620。平均增益为 +0.0686 PSNR、+0.0028 SSIM、-0.0068 LPIPS。
 - 完成 Tandt/DB 全场景 baseline 与 cached-edge v1 统一评估；DB 平均增益为 +0.4451 PSNR、+0.0037 SSIM、-0.0021 LPIPS，Tandt 平均变化为 -0.3752 PSNR、-0.0061 SSIM、+0.0067 LPIPS，并且 Tandt cached-edge v1 平均 Gaussian 数量比 baseline 少约 37.3%。
 - 增加 `prune_min_gaussian_count`，默认关闭，用于容量保护诊断。Tandt 两场景保护后平均 PSNR/SSIM/LPIPS 从 cached edge v1 的 25.5799 / 0.9316 / 0.0608 恢复到 25.7806 / 0.9337 / 0.0585，并把平均 Gaussian 数量恢复到 baseline 的 50,370；但仍低于 baseline 质量，说明容量保护只是防线，不是完整解法。
+- 增加 `0001_vfm_topology_dinov2_token_edge_topk.yaml`，把 DINO token-edge 的 metric map 改为 top-k 15%。bicycle 620-step 快速验证完成 train/render/metrics，结果为 PSNR 20.8432、SSIM 0.4752、LPIPS 0.5460，61,555 个 Gaussians；该结果只说明链路健康。
 - 完成 no-effect/cadence control；`fastgs_photometric + densification_interval=100` 与 zero-weight VFM runs 都在约 410k Gaussians，说明此前 no-effect 高点数主要来自 densification cadence。
 - 增加 `post_prune_finetune_iterations` 并完成 final-prune-plus-fine-tune 探测；严格 240k 预算下质量明显优于 final-only，但仍低于 baseline 与 350k staged 正向控制组。
 - 增加 dense recovery 调度参数；支持恢复阶段独立 optimizer step interval、SH step interval、局部 xyz LR 和 staged/any-prune 触发。260-step 快速验证已完成，能从 88,194 裁到 65,000 并保存 `ours_280`。

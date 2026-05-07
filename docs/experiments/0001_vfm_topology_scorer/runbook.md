@@ -263,6 +263,37 @@ uv run --active python -m vfm_gs.cli.render -m output/0001/vfm_dinov2_token_edge
 uv run --active python -m vfm_gs.cli.metrics -m output/0001/vfm_dinov2_token_edge_bicycle_smoke
 ```
 
+### Token-Edge Top-k 探测
+
+`0001_vfm_topology_dinov2_token_edge_topk.yaml` 保持 `dinov2_token_edge_l1` 后端不变，只把 metric map 改为 top-k 15% 高误差区域。先用 620-step 验证链路，再进入 30k 完整对照。
+
+```bash
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_dinov2_token_edge_topk.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0001/vfm_dinov2_token_edge_topk015_bicycle_620_r8 \
+  --eval \
+  --iterations 620 \
+  --densify_from_iter 500 \
+  --densify_until_iter 620 \
+  --densification_interval 100 \
+  --test_iterations 620 \
+  --save_iterations 620 \
+  --checkpoint_iterations 620 \
+  -r 8
+
+uv run --active python -m vfm_gs.cli.render \
+  -m output/0001/vfm_dinov2_token_edge_topk015_bicycle_620_r8 \
+  --iteration -1 \
+  --skip_train \
+  --quiet
+
+uv run --active python -m vfm_gs.cli.metrics \
+  -m output/0001/vfm_dinov2_token_edge_topk015_bicycle_620_r8
+```
+
 ## DINOv2 Descriptor 打分器 v0
 
 `dinov2_descriptor_cosine` 是下一版 DINO scorer 的最小真实语义路径。它复用 GT 侧 DINO patch-token cache，但在 densification/pruning 节点对 SH0 渲染图在线跑同一个 DINOv2 模型，再用 patch-token cosine distance 生成 `pixel_error_map`。它比 `dinov2_token_edge_l1` 更贴近 proposal 中的语义特征误差，但训练开销也更高。

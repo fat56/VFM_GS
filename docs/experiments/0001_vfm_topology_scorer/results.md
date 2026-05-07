@@ -481,6 +481,22 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 - 这是计划中第一个在训练期消费真实 DINOv2 cache data 的 scorer 变体。
 - 它避免在训练循环中在线 DINO inference，因此运行开销来自 cache loading、token-edge derivation、pooling，以及额外一次 `render_fastgs(..., get_flag=True)` pass。
 
+## 2026-05-08 DINOv2 Token-Edge Top-k 快速验证
+
+代码变更：新增 `configs/experiments/0001_vfm_topology_dinov2_token_edge_topk.yaml`。它复用 `dinov2_token_edge_l1` 后端和 `output/0001/vfm_cache/bicycle_dinov2_vits14`，但把 metric map 从固定阈值改为 `vfm_metric_map_mode=topk`、`vfm_metric_topk=0.15`。目标是把 descriptor 分支中已经验证可用的 top-k 高误差区域选择迁移到当前最强的 DINO token-edge 路径上。
+
+数据集：`datasets/mipnerf360/bicycle`，test split，`-r 8`，620 iterations，`densify_from_iter=500`，`densification_interval=100`。该 run 只验证链路健康，不作为质量结论。
+
+| 产物 | Backend | Metric map | PSNR | SSIM | LPIPS | 训练时间 | Gaussian 数量 | 输出大小 | 备注 |
+|---|---|---|---:|---:|---:|---:|---:|---:|---|
+| `output/0001/vfm_dinov2_token_edge_topk015_bicycle_620_r8` | `dinov2_token_edge_l1` | top-k 15% | 20.8432 | 0.4752 | 0.5460 | 2.74s | 61,555 | 17M | 触发 token-edge top-k scoring 和 densification |
+
+解读：
+
+- 训练预检、train、render 和 metrics 均通过，说明 token-edge top-k 配置可直接进入 30k 完整对照。
+- 620-step 指标只说明集成健康。真正判断标准仍是 bicycle 30k `-r 8`，并优先与原始 baseline、`fastgs_densify100` cadence control、默认 DINO token-edge 以及 descriptor top-k 对比。
+- 这一路径不引入在线 DINO inference，预计训练成本接近默认 DINO token-edge，而低于 descriptor 系列。
+
 ## 2026-05-07 DINOv2 Descriptor 打分器快速验证
 
 代码变更：增加 `dinov2_descriptor_cosine` 后端和 `configs/experiments/0001_vfm_topology_dinov2_descriptor.yaml`。该后端复用 GT 侧 `dinov2_patchtokens` cache，但在 densification/pruning 节点对 SH0 渲染图在线运行同一个 DINOv2 ViT-S/14，再用 patch-token cosine distance 生成 `pixel_error_map`。这比 `dinov2_token_edge_l1` 更接近 proposal 中的语义特征误差，但会增加训练期 scorer 开销。
