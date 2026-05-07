@@ -45,6 +45,8 @@
 - top-k/smoothing 集成验证已完成。120-step bicycle run 触发一次 descriptor scoring 和 densification，达到 PSNR 19.3201，SSIM 0.3804，LPIPS 0.6716，58,605 个 Gaussians，训练时间 2.00s。该结果只说明链路可用，不作为质量判断。
 - top-k/smoothing 30k 对照已完成。`vfm_metric_map_mode=topk`、`vfm_metric_topk=0.15`、`vfm_descriptor_token_smooth_kernel=3` 达到 PSNR 27.0274，SSIM 0.8330，LPIPS 0.1805，484,229 个 Gaussians，训练时间 191.30s。
 - top-k/smoothing 相比默认 descriptor 提升 +0.0504 PSNR、+0.0032 SSIM、LPIPS 好 -0.0045，并接近 DINO token-edge；但它比 `fastgs_densify100` 多 72,151 个点，因此还不是预算受控结论。
+- top-k/smoothing 410k staged target 已完成。结果为 PSNR 26.9047，SSIM 0.8219，LPIPS 0.1998，389,250 个 Gaussians，训练时间 160.53s。
+- top-k/smoothing staged 相比 `fastgs_densify100` 低 -0.0240 PSNR、-0.0022 SSIM、LPIPS 差 +0.0034；相比默认 descriptor staged 410k 只小幅改善 LPIPS。这说明 top-k/smoothing 的 unpruned 收益没有经受住预算对齐。
 - matched 30k `-r 8` ablation 已成为主质量信号。baseline 达到 PSNR 26.7032，SSIM 0.8067，LPIPS 0.2278，240,394 个 Gaussians，334.36 FPS。
 - compact cached edge 将 30k run 提升到 PSNR 26.8864，SSIM 0.8229，LPIPS 0.1972，但点数增长到 408,925，FPS 为 196.43。
 - DINO token-edge 给出最佳 30k 指标：PSNR 27.0577，SSIM 0.8345，LPIPS 0.1767，但点数达到 490,832，FPS 为 193.46。
@@ -82,7 +84,7 @@
 - `mock_l1` 有意不是一个真实视觉基础模型信号。
 - `cached_edge_l1` 也只是 proxy；它主要测试 cache 机制和 edge-alignment 行为。
 - `dinov2_token_edge_l1` 消费 DINO patch tokens，但比较的是标量 topology projection，而不是完整语义特征向量。
-- `dinov2_descriptor_cosine` 已比较完整 patch descriptor，但目前仍是在线 DINO 推理版本；30k 成本高于 token-edge。top-k/smoothing 已把 descriptor 质量推进到接近 DINO token-edge，但点数仍偏高，必须继续做 staged budget 对齐。
+- `dinov2_descriptor_cosine` 已比较完整 patch descriptor，但目前仍是在线 DINO 推理版本；30k 成本高于 token-edge。top-k/smoothing 已把 unpruned descriptor 质量推进到接近 DINO token-edge，但 staged 预算对齐后仍低于 cadence control。
 - 220-iteration 快速验证只验证集成健康，不验证最终重建质量。既然 30k runs 已足够便宜，后续不应用短跑结果选择 scorer。
 - compact storage 有助于节省磁盘，但 `npz_uint8` 尚未证明 metric-neutral。float32 与 compact cache 变体仍应保留用于 ablation。
 - 当前 DINO cache 构建于 `max_width=224`；完整 `max_width=518` 或 `640` 的缓存时间、磁盘占用和 scorer 行为仍需测量。
@@ -97,7 +99,6 @@
 ## 下一版计划
 
 1. 固化 `cached_edge_l1` 为 0001 v1 正向控制组：保留 bicycle/garden/counter 三场景结果，说明它是稳定 proxy，而不是最终语义 VFM scorer。
-2. 对 top-k/smoothing descriptor 跑 410k staged target，对照 `fastgs_densify100`、默认 descriptor staged 410k 和 descriptor `rgb_only`。
-3. 若 top-k/smoothing staged 仍低于 cadence control，再比较 percentile mask 或调整 token smoothing kernel，避免继续扩大短跑网格。
-4. 评估 descriptor 训练成本优化：减少 scorer 采样视角数，或缓存同一 densification 节点内的 rendered descriptors。
-5. 设计 dense post-prune recovery schedule，避免 30k 后每 64 步才更新一次导致恢复训练实际更新过少。
+2. 继续 descriptor 只做能改变预算行为的方案：percentile mask、降低 top-k ratio、descriptor 只参与 support/pruning，或 staged pruning 后 dense recovery。
+3. 评估 descriptor 训练成本优化：减少 scorer 采样视角数，或缓存同一 densification 节点内的 rendered descriptors。
+4. 设计 dense post-prune recovery schedule，避免 30k 后每 64 步才更新一次导致恢复训练实际更新过少。
