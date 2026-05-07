@@ -50,6 +50,8 @@
 - top-k 8% 相比 `fastgs_densify100` cadence control 仍多 44,489 个 Gaussians，但指标更好：+0.0644 PSNR、+0.0060 SSIM、LPIPS 好 -0.0115。下一步需要做 410k staged 对齐，确认这个收益能否在贴近预算时保住。
 - top-k/smoothing 410k staged target 已完成。结果为 PSNR 26.9047，SSIM 0.8219，LPIPS 0.1998，389,250 个 Gaussians，训练时间 160.53s。
 - top-k/smoothing staged 相比 `fastgs_densify100` 低 -0.0240 PSNR、-0.0022 SSIM、LPIPS 差 +0.0034；相比默认 descriptor staged 410k 只小幅改善 LPIPS。这说明 top-k/smoothing 的 unpruned 收益没有经受住预算对齐。
+- top-k 8% staged 410k 已完成。结果为 PSNR 26.8783，SSIM 0.8208，LPIPS 0.2013，382,035 个 Gaussians，训练时间 165.01s。
+- top-k 8% staged 相比 `fastgs_densify100` 少 30,043 个 Gaussians，但质量低 -0.0504 PSNR、-0.0033 SSIM、LPIPS 差 +0.0049；相比 top-k 15% staged 也更弱。降低 top-k ratio 没有改善预算对齐结果。
 - top-k/smoothing `rgb_only` 已完成，用于测试“descriptor 只参与 support/pruning，不直接提高 densification importance”。结果为 PSNR 26.9117，SSIM 0.8237，LPIPS 0.1977，412,317 个 Gaussians，训练时间 154.16s。
 - top-k/smoothing `rgb_only` 与 `fastgs_densify100` 点数几乎一致，但指标低 -0.0170 PSNR、-0.0004 SSIM、LPIPS 差 +0.0014；相比普通 descriptor `rgb_only` 也略低。这条路线没有转正。
 - matched 30k `-r 8` ablation 已成为主质量信号。baseline 达到 PSNR 26.7032，SSIM 0.8067，LPIPS 0.2278，240,394 个 Gaussians，334.36 FPS。
@@ -89,7 +91,7 @@
 - `mock_l1` 有意不是一个真实视觉基础模型信号。
 - `cached_edge_l1` 也只是 proxy；它主要测试 cache 机制和 edge-alignment 行为。
 - `dinov2_token_edge_l1` 消费 DINO patch tokens，但比较的是标量 topology projection，而不是完整语义特征向量。
-- `dinov2_descriptor_cosine` 已比较完整 patch descriptor，但目前仍是在线 DINO 推理版本；30k 成本高于 token-edge。top-k/smoothing 已把 unpruned descriptor 质量推进到接近 DINO token-edge，top-k 8% 又给出更均衡的完整对照点，但 staged 预算对齐和 `rgb_only` support/pruning 接入后仍低于 cadence control。
+- `dinov2_descriptor_cosine` 已比较完整 patch descriptor，但目前仍是在线 DINO 推理版本；30k 成本高于 token-edge。top-k/smoothing 已把 unpruned descriptor 质量推进到接近 DINO token-edge，top-k 8% 又给出更均衡的完整对照点，但 staged 预算对齐、降低 top-k ratio 和 `rgb_only` support/pruning 接入后仍低于 cadence control。
 - 220-iteration 快速验证只验证集成健康，不验证最终重建质量。既然 30k runs 已足够便宜，后续不应用短跑结果选择 scorer。
 - compact storage 有助于节省磁盘，但 `npz_uint8` 尚未证明 metric-neutral。float32 与 compact cache 变体仍应保留用于 ablation。
 - 当前 DINO cache 构建于 `max_width=224`；完整 `max_width=518` 或 `640` 的缓存时间、磁盘占用和 scorer 行为仍需测量。
@@ -104,6 +106,6 @@
 ## 下一版计划
 
 1. 固化 `cached_edge_l1` 为 0001 v1 正向控制组：保留 bicycle/garden/counter 三场景结果，说明它是稳定 proxy，而不是最终语义 VFM scorer。
-2. 继续 descriptor 只做能改变预算行为的方案：优先补 top-k 8% 的 staged 410k 对齐；若仍低于 cadence control，再转向 percentile mask 或 staged pruning 后 dense recovery。`rgb_only` support/pruning 已完成且为负例，不再作为优先方向。
+2. 继续 descriptor 只做能改变预算行为的方案：转向 percentile/soft metric map，或 staged pruning 后 dense recovery。`rgb_only` support/pruning 与降低 top-k ratio 已完成且为负例，不再作为优先方向。
 3. 评估 descriptor 训练成本优化：减少 scorer 采样视角数，或缓存同一 densification 节点内的 rendered descriptors。
 4. 设计 dense post-prune recovery schedule，避免 30k 后每 64 步才更新一次导致恢复训练实际更新过少。
