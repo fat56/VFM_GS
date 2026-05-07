@@ -417,3 +417,19 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 - 相比默认 descriptor，它少 54,645 个 Gaussians，但指标退回 -0.0400 PSNR、-0.0059 SSIM、LPIPS 差 +0.0122。这说明直接 descriptor densification 确实贡献了 unpruned 结果中的一部分质量，也带来了额外点数。
 - 相比 staged 410k 预算对齐，`rgb_only` 多 25,475 个 Gaussians，PSNR 高 +0.0306、SSIM 高 +0.0030、LPIPS 好 -0.0050。它比 staged hard cap 温和，但仍没有超过 cadence control 的 LPIPS/SSIM。
 - 结论是：保守接入能避免 descriptor 点数膨胀到 460k，但也几乎交回了 descriptor 的质量优势。下一步应优先改 `pixel_error_map -> metric_map` 的 mask/aggregation，而不是继续只调接入强度。
+
+## 2026-05-07 Descriptor Top-k / Smoothing 集成验证
+
+代码变更：增加 `vfm_metric_map_mode=threshold|percentile|topk`，并保留 `threshold` 为默认行为。新增 `vfm_metric_topk`、`vfm_metric_percentile` 和 `vfm_descriptor_token_smooth_kernel`，用于把 descriptor cosine error 先在 DINO token grid 上平滑，再选择固定比例或分位数的高误差区域。该实现仍输出二值 `metric_map`，因此不改变 `render_fastgs(..., get_flag=True, metric_map=...) -> accum_metric_counts` 的 CUDA 计数接口。
+
+新增配置：`configs/experiments/0001_vfm_topology_dinov2_descriptor_topk.yaml`，默认使用 `vfm_metric_map_mode=topk`、`vfm_metric_topk=0.15`、`vfm_descriptor_token_smooth_kernel=3`。
+
+| 产物 | Scorer / Backend | Iterations | Metric map | PSNR | SSIM | LPIPS | 训练时间 | Gaussian 数量 | 输出大小 | 备注 |
+|---|---|---:|---|---:|---:|---:|---:|---:|---:|---|
+| `output/0001/vfm_dinov2_descriptor_topk015_smooth3_bicycle_120_r8` | `dinov2_descriptor_cosine` | 120 | top-k 15%, token smooth 3 | 19.3201 | 0.3804 | 0.6716 | 2.00s | 58,605 | 33M | 触发一次 descriptor scoring 和 densification |
+
+解读：
+
+- 120-step train、render 和 metrics 均通过。训练在 iteration 100 触发一次 DINO descriptor scorer，Gaussian 数量从 54,275 增到 58,605，说明新 top-k/smoothing 分支已进入真实 densification 计数链路。
+- 该结果只作为集成健康检查，不作为质量选择依据。前面完整 30k 结果已经说明短跑指标对最终质量指导能力弱；这组的价值是确认下一版 30k 实验入口可用。
+- 下一步应跑 `vfm_dinov2_descriptor_topk015_smooth3_bicycle_30k_r8`，并和 `fastgs_densify100`、默认 descriptor、descriptor `rgb_only`、descriptor staged 410k 做同表对照。

@@ -225,6 +225,32 @@ uv run --active python -m vfm_gs.cli.metrics \
   -m output/0001/vfm_dinov2_descriptor_rgb_only_bicycle_30k_r8
 ```
 
+descriptor mask/aggregation 改进探测使用 token-grid smoothing 加 top-k metric map。默认 descriptor 仍使用 threshold；这组显式设置 `vfm_metric_map_mode=topk`、`vfm_metric_topk=0.15` 和 `vfm_descriptor_token_smooth_kernel=3`，用于避免整幅 cosine error 归一化后直接硬阈值化。
+
+```bash
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_dinov2_descriptor_topk.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0001/vfm_dinov2_descriptor_topk015_smooth3_bicycle_30k_r8 \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  -r 8
+
+uv run --active python -m vfm_gs.cli.render \
+  -m output/0001/vfm_dinov2_descriptor_topk015_smooth3_bicycle_30k_r8 \
+  --iteration -1 \
+  --skip_train \
+  --quiet
+
+uv run --active python -m vfm_gs.cli.metrics \
+  -m output/0001/vfm_dinov2_descriptor_topk015_smooth3_bicycle_30k_r8
+```
+
 ## 30k 匹配消融
 
 220-iteration runs 只作为快速验证。迭代 scorer 行为时，使用这组 30k `-r 8` 作为最低质量门槛：

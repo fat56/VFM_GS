@@ -1,3 +1,5 @@
+import math
+
 import torch
 import torch.nn.functional as F
 
@@ -138,6 +140,17 @@ def _pool_to_patch_grid(value_map, grid_size):
     return F.adaptive_avg_pool2d(value_map.reshape(1, 1, *value_map.shape[-2:]), output_size=grid_size).view(*grid_size)
 
 
+def _smooth_2d_map(value_map, kernel_size, arg_name):
+    kernel_size = int(kernel_size)
+    if kernel_size <= 1:
+        return value_map
+    if kernel_size % 2 == 0:
+        raise ValueError("{} must be odd when it is greater than 1, got {}".format(arg_name, kernel_size))
+    value = value_map.reshape(1, 1, *value_map.shape[-2:])
+    value = F.pad(value, (kernel_size // 2,) * 4, mode="replicate")
+    return F.avg_pool2d(value, kernel_size=kernel_size, stride=1).view(*value_map.shape[-2:])
+
+
 def _mock_l1_error(rendered_image, gt_image):
     return torch.mean(torch.abs(rendered_image[:3] - gt_image[:3]), dim=0)
 
@@ -173,7 +186,14 @@ def _dinov2_token_edge_l1_error(rendered_image, viewpoint_cam, cache_dir):
     ).view(*rendered_image.shape[-2:])
 
 
-def _dinov2_descriptor_cosine_error(rendered_image, viewpoint_cam, cache_dir, dinov2_repo, dinov2_device):
+def _dinov2_descriptor_cosine_error(
+    rendered_image,
+    viewpoint_cam,
+    cache_dir,
+    dinov2_repo,
+    dinov2_device,
+    descriptor_token_smooth_kernel=1,
+):
     cache = _get_cache(cache_dir)
     gt_tokens = cache.get_feature_map(viewpoint_cam.image_name, rendered_image.device)
     if gt_tokens.ndim != 3:
@@ -198,6 +218,11 @@ def _dinov2_descriptor_cosine_error(rendered_image, viewpoint_cam, cache_dir, di
         min=0.0,
         max=2.0,
     )
+    patch_error = _smooth_2d_map(
+        patch_error,
+        descriptor_token_smooth_kernel,
+        "vfm_descriptor_token_smooth_kernel",
+    )
     return F.interpolate(
         patch_error.view(1, 1, *patch_error.shape[-2:]),
         size=rendered_image.shape[-2:],
@@ -206,7 +231,15 @@ def _dinov2_descriptor_cosine_error(rendered_image, viewpoint_cam, cache_dir, di
     ).view(*rendered_image.shape[-2:])
 
 
-def _compute_pixel_error_map(rendered_image, viewpoint_cam, backend, cache_dir, dinov2_repo="", dinov2_device="cuda"):
+def _compute_pixel_error_map(
+    rendered_image,
+    viewpoint_cam,
+    backend,
+    cache_dir,
+    dinov2_repo="",
+    dinov2_device="cuda",
+    descriptor_token_smooth_kernel=1,
+):
     if backend in ("mock_l1", "photometric_l1"):
         gt_image = viewpoint_cam.original_image.to(rendered_image.device)
         return _mock_l1_error(rendered_image, gt_image)
@@ -218,11 +251,68 @@ def _compute_pixel_error_map(rendered_image, viewpoint_cam, backend, cache_dir, 
     if backend == "dinov2_token_edge_l1":
         return _dinov2_token_edge_l1_error(rendered_image, viewpoint_cam, cache_dir)
     if backend in ("dinov2_descriptor_cosine", "dinov2_descriptor_cosine_l1"):
-        return _dinov2_descriptor_cosine_error(rendered_image, viewpoint_cam, cache_dir, dinov2_repo, dinov2_device)
+        return _dinov2_descriptor_cosine_error(
+            rendered_image,
+            viewpoint_cam,
+            cache_dir,
+            dinov2_repo,
+            dinov2_device,
+            descriptor_token_smooth_kernel=descriptor_token_smooth_kernel,
+        )
     raise ValueError(
         "Unsupported vfm_backend {!r}. Available backends: mock_l1, mock_edge_l1, cached_edge_l1, "
         "dinov2_token_edge_l1, dinov2_descriptor_cosine.".format(backend)
     )
+
+
+def _topk_metric_map(normalized_error, topk_fraction):
+    topk_fraction = min(max(float(topk_fraction), 0.0), 1.0)
+    metric_flat = torch.zeros(normalized_error.numel(), dtype=torch.int, device=normalized_error.device)
+    if topk_fraction <= 0.0 or normalized_error.numel() == 0:
+        return metric_flat.view_as(normalized_error)
+
+    flat_error = normalized_error.reshape(-1)
+    positive_count = int(torch.count_nonzero(flat_error > 0).item())
+    if positive_count == 0:
+        return metric_flat.view_as(normalized_error)
+
+    k = min(max(1, int(math.ceil(flat_error.numel() * topk_fraction))), positive_count)
+    _, indices = torch.topk(flat_error, k=k, largest=True, sorted=False)
+    metric_flat[indices] = 1
+    return metric_flat.view_as(normalized_error)
+
+
+def _percentile_metric_map(normalized_error, percentile):
+    percentile = min(max(float(percentile), 0.0), 1.0)
+    flat_error = normalized_error.reshape(-1)
+    if flat_error.numel() == 0 or torch.max(flat_error) <= 0:
+        return torch.zeros_like(normalized_error, dtype=torch.int)
+
+    kth_index = min(max(1, int(math.ceil(flat_error.numel() * percentile))), flat_error.numel())
+    threshold = torch.kthvalue(flat_error, kth_index).values
+    return (normalized_error > threshold).int()
+
+
+def _build_vfm_metric_map(pixel_error_map, args):
+    normalized_error = normalize01(pixel_error_map.detach())
+    mode = getattr(args, "vfm_metric_map_mode", "threshold").lower()
+    if mode == "threshold":
+        metric_map = (normalized_error > getattr(args, "vfm_loss_thresh", 0.5)).int()
+    elif mode == "percentile":
+        metric_map = _percentile_metric_map(
+            normalized_error,
+            getattr(args, "vfm_metric_percentile", 0.85),
+        )
+    elif mode == "topk":
+        metric_map = _topk_metric_map(
+            normalized_error,
+            getattr(args, "vfm_metric_topk", 0.15),
+        )
+    else:
+        raise ValueError(
+            "Unsupported vfm_metric_map_mode {!r}. Available: threshold, percentile, topk.".format(mode)
+        )
+    return metric_map.reshape(-1).contiguous()
 
 
 def compute_gaussian_score_fastgs_with_vfm(camlist, gaussians, pipe, bg, args, DENSIFY=False):
@@ -241,7 +331,6 @@ def compute_gaussian_score_fastgs_with_vfm(camlist, gaussians, pipe, bg, args, D
     vfm_counts_total = None
     vfm_pruning_total = None
     backend = getattr(args, "vfm_backend", "mock_l1")
-    loss_thresh = getattr(args, "vfm_loss_thresh", 0.5)
     vfm_weight = getattr(args, "vfm_weight", 0.25)
     vfm_importance_weight = max(0.0, getattr(args, "vfm_importance_weight", 1.0))
     vfm_importance_mode = getattr(args, "vfm_importance_mode", "max").lower()
@@ -249,6 +338,7 @@ def compute_gaussian_score_fastgs_with_vfm(camlist, gaussians, pipe, bg, args, D
     cache_dir = getattr(args, "vfm_cache_dir", "")
     dinov2_repo = getattr(args, "vfm_dinov2_repo", "")
     dinov2_device = getattr(args, "vfm_dinov2_device", "cuda")
+    descriptor_token_smooth_kernel = getattr(args, "vfm_descriptor_token_smooth_kernel", 1)
 
     for viewpoint_cam in camlist:
         if use_albedo_sh0:
@@ -263,8 +353,9 @@ def compute_gaussian_score_fastgs_with_vfm(camlist, gaussians, pipe, bg, args, D
             cache_dir,
             dinov2_repo=dinov2_repo,
             dinov2_device=dinov2_device,
+            descriptor_token_smooth_kernel=descriptor_token_smooth_kernel,
         )
-        metric_map = (normalize01(pixel_error_map) > loss_thresh).int().reshape(-1).contiguous()
+        metric_map = _build_vfm_metric_map(pixel_error_map, args)
         render_pkg = render_fastgs(
             viewpoint_cam,
             gaussians,
