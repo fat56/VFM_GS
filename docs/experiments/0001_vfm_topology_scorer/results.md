@@ -492,6 +492,7 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 | `output/0001/vfm_dinov2_token_edge_topk015_bicycle_620_r8` | `dinov2_token_edge_l1` | top-k 15% | 620 | 20.8432 | 0.4752 | 0.5460 | 2.74s | 61,555 | 17M | 触发 token-edge top-k scoring 和 densification |
 | `output/0001/vfm_dinov2_token_edge_topk015_bicycle_30k_r8` | `dinov2_token_edge_l1` | top-k 15% | 30,000 | 27.0223 | 0.8322 | 0.1810 | 140.40s | 464,998 | 136M | 完整对照，质量低于默认 DINO token-edge，但更省点更快 |
 | `output/0001/vfm_dinov2_token_edge_topk025_bicycle_30k_r8` | `dinov2_token_edge_l1` | top-k 25% | 30,000 | 27.0636 | 0.8354 | 0.1748 | 146.76s | 497,328 | 144M | 当前 bicycle 30k 质量最佳 |
+| `output/0001/vfm_dinov2_token_edge_topk025_budget490832_staged105_bicycle_30k_r8` | `dinov2_token_edge_l1` | top-k 25%, staged 490,832 | 30,000 | 27.0001 | 0.8286 | 0.1887 | 146.81s | 453,505 | 133M | 预算更低，但质量明显回落 |
 
 解读：
 
@@ -500,7 +501,9 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 - 相比 `fastgs_densify100` cadence control，token-edge top-k 15% 提升 +0.0936 PSNR、+0.0081 SSIM、LPIPS 改善 -0.0154，同时多 52,920 个 Gaussians，训练少 25.49s。
 - 相比默认 DINO token-edge，top-k 15% 少 25,834 个 Gaussians，训练少 25.71s，但质量下降 -0.0354 PSNR、-0.0023 SSIM、LPIPS 差 +0.0043。它是更高效的 DINO token-edge 变体，但没有刷新质量上界。
 - top-k 25% 刷新了当前 bicycle 30k 质量上界。相比默认 DINO token-edge，它提升 +0.0059 PSNR、+0.0009 SSIM、LPIPS 改善 -0.0019，但多 6,496 个 Gaussians；相比原始 baseline，它提升 +0.3604 PSNR、+0.0287 SSIM、LPIPS 改善 -0.0530。
-- 这一路径不引入在线 DINO inference，成本明显低于 descriptor 系列。下一步应围绕 top-k 25% 做 staged target 或容量/预算约束，确认质量上界能否在更接近默认 DINO 或 1.42x edge budget 的点数下保住。
+- top-k 25% staged 490,832 从 iteration 7500 到 14500 触发 15 次 staged pruning，最终自然落到 453,505 个 Gaussians，低于 target 因而跳过最终裁剪。它相比 top-k 25% 完整对照少 43,823 个点，但质量下降 -0.0634 PSNR、-0.0068 SSIM、LPIPS 差 +0.0139。
+- staged 490,832 仍优于原始 baseline 和 `fastgs_densify100` cadence control，但不如 top-k 15% 完整对照，也低于默认 DINO token-edge。说明当前 staged pruning 对 DINO token-edge top-k 的中期结构仍有损伤；如果要做预算约束，下一步应采用更晚启动、更大 margin 或容量保护，而不是从 7500 iteration 开始反复压 cap。
+- 这一路径不引入在线 DINO inference，成本明显低于 descriptor 系列。当前 0001 在 bicycle 上的最佳质量结论应定为 top-k 25% 完整对照；预算方向则保留 top-k 15% 作为更高效但略弱的选择。
 
 ## 2026-05-07 DINOv2 Descriptor 打分器快速验证
 
