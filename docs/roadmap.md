@@ -2,18 +2,19 @@
 
 ## 进行中
 
-- `0001_vfm_topology_scorer`: staged/ratio-aware cached edge 已在 bicycle、garden 和 counter 三个 scene 上超过各自 baseline；no-effect/cadence 控制、post-prune fine-tune、cached edge 严格 240k dense recovery、descriptor 30k 完整训练、descriptor staged 预算对齐、descriptor `rgb_only` 保守接入、descriptor top-k/smoothing 30k、top-k 8% 完整对照、top-k 8% staged 对齐、410k staged 对齐、top-k/smoothing `rgb_only`、soft top-k 30k 完整对照、soft top-k staged 410k 和 percentile 90% 完整对照均已完成。当前结论是 descriptor unpruned 可接近 DINO token-edge，top-k 8% 与 percentile 90% 是更均衡的完整对照点，soft top-k 质量正向但成本更高；预算对齐、降低 top-k ratio、只参与 support/pruning、percentile mask、多层 soft 计数或严格 240k dense recovery 后仍低于 cadence control。
+- `0001_vfm_topology_scorer`: 第一版实验进入收束阶段。staged/ratio-aware cached edge 已在 bicycle、garden 和 counter 三个 scene 上超过各自 baseline，是 0001 v1 的正向控制组；DINOv2 descriptor 路径已从 cache、在线 descriptor、top-k/smoothing、soft top-k、percentile、`rgb_only`、staged 预算对齐推进到 dense recovery。当前结论是 descriptor unpruned 有真实质量收益，但接近 410k budget、降低 top-k ratio、只参与 support/pruning、percentile mask、多层 soft 计数、严格 240k dense recovery 或 staged 后 dense recovery 后，仍未稳定超过 `fastgs_densify100` cadence control。
 
 ## 排队
 
-- 将 `cached_edge_l1` 固化为 0001 v1 正向控制组，并整理下一版实验入口。
-- 继续 descriptor 时只做会改变预算行为的方案：验证 descriptor/top-k staged + `post_prune_finetune_trigger=any_prune`。
-- 若 staged 后 dense recovery 仍低于 cadence control，则收束 0001 v1：保留 cached edge staged/ratio-aware 作为正向控制组，把语义 VFM descriptor 的预算高效化转入下一版计划。
+- 更新 0001 复盘与下一版计划：把 `cached_edge_l1` 固化为 v1 正向控制组，把 DINOv2 descriptor 记录为“真实语义路径已打通但预算机制未转正”。
+- 下一版优先设计预算感知 scorer，而不是继续堆叠 descriptor mask ratio：候选方向包括按 Gaussian 支持度归一化 VFM score、把 VFM 用作 prune-protect 而非 densify-amplify、在 staged pruning 后立即短恢复而非训练结束统一恢复。
+- 若继续做 0001 追加验证，只保留跨场景复验或明确改变训练时序的实验，不再追加同类 top-k / percentile / soft-top-k 单点。
 
 ## 阻塞
 
 - DINOv2 token-edge 默认 30k 指标领先但预算过大；350k staged budget 下只在 LPIPS 上超过 baseline，PSNR/SSIM 仍低。当前 DINO token-edge 还不能作为预算高效的主结果。
 - cached edge 严格 240k final-prune + dense recovery 已比 final-only 和 240k staged 更好，但仍低于 baseline 与 350k staged 正向控制组，说明 baseline-sized budget 对当前裁剪路径过紧。
+- descriptor staged 后 dense recovery 只带来轻微 LPIPS/SSIM 修复，PSNR 反而下降，仍低于 `fastgs_densify100`。这说明“训练结束后统一恢复”不能充分修复训练中期 staged pruning 的结构损伤。
 
 ## 已完成
 
@@ -43,6 +44,7 @@
 - 完成 descriptor soft top-k 30k 完整对照；PSNR 26.9875，SSIM 0.8305，LPIPS 0.1844，462,696 个 Gaussians，质量高于 cadence control，但成本和点数仍偏高。
 - 完成 descriptor soft top-k staged 410k；PSNR 26.8848，SSIM 0.8201，LPIPS 0.2029，383,528 个 Gaussians，预算对齐后低于 cadence control。
 - 完成 descriptor percentile 90% / smoothing 30k 完整对照；PSNR 27.0036，SSIM 0.8313，LPIPS 0.1827，464,425 个 Gaussians，质量介于 top-k 15% 和 top-k 8% 之间，但仍高于 cadence control 预算。
+- 完成 descriptor top-k/smoothing staged 410k + dense recovery；PSNR 26.8472，SSIM 0.8223，LPIPS 0.1974，387,109 个 Gaussians，LPIPS 较无恢复 staged 版本小幅改善但整体仍低于 cadence control。
 - 完成 baseline、compact cached edge、DINOv2 token-edge 的 30k `-r 8` matched ablation；DINO token-edge 指标最好，但点数和渲染成本也最高。
 - 完成 t075/w010 budget-control probe；现有阈值/权重 knob 无法充分控制 VFM densification 点数。
 - 增加 `vfm_importance_weight` 并完成 i0.25 30k probe；DINO 点数下降但仍未达成 budget matching。

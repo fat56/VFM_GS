@@ -57,6 +57,8 @@
 - top-k 8% 相比 `fastgs_densify100` cadence control 仍多 44,489 个 Gaussians，但指标更好：+0.0644 PSNR、+0.0060 SSIM、LPIPS 好 -0.0115。下一步需要做 410k staged 对齐，确认这个收益能否在贴近预算时保住。
 - top-k/smoothing 410k staged target 已完成。结果为 PSNR 26.9047，SSIM 0.8219，LPIPS 0.1998，389,250 个 Gaussians，训练时间 160.53s。
 - top-k/smoothing staged 相比 `fastgs_densify100` 低 -0.0240 PSNR、-0.0022 SSIM、LPIPS 差 +0.0034；相比默认 descriptor staged 410k 只小幅改善 LPIPS。这说明 top-k/smoothing 的 unpruned 收益没有经受住预算对齐。
+- top-k/smoothing staged + dense recovery 已完成。`post_prune_finetune_trigger=any_prune` 在训练中期 staged pruning 后触发 4,096 步恢复，最终为 PSNR 26.8472，SSIM 0.8223，LPIPS 0.1974，387,109 个 Gaussians，训练时间 178.91s。
+- 相比无恢复的 top-k/smoothing staged，dense recovery 的 SSIM 高 +0.0004、LPIPS 好 -0.0024，但 PSNR 低 -0.0575；相比 `fastgs_densify100` 仍低 -0.0815 PSNR、-0.0018 SSIM，LPIPS 差 +0.0010。训练结束后统一恢复不能把 descriptor staged 预算结果转正。
 - top-k 8% staged 410k 已完成。结果为 PSNR 26.8783，SSIM 0.8208，LPIPS 0.2013，382,035 个 Gaussians，训练时间 165.01s。
 - top-k 8% staged 相比 `fastgs_densify100` 少 30,043 个 Gaussians，但质量低 -0.0504 PSNR、-0.0033 SSIM、LPIPS 差 +0.0049；相比 top-k 15% staged 也更弱。降低 top-k ratio 没有改善预算对齐结果。
 - top-k/smoothing `rgb_only` 已完成，用于测试“descriptor 只参与 support/pruning，不直接提高 densification importance”。结果为 PSNR 26.9117，SSIM 0.8237，LPIPS 0.1977，412,317 个 Gaussians，训练时间 154.16s。
@@ -93,14 +95,15 @@
 - dense recovery 参数已落地，默认保持旧行为。新增 `post_prune_finetune_step_interval`、`post_prune_finetune_sh_step_interval`、`post_prune_finetune_lr_mode`、`post_prune_finetune_lr_scale` 和 `post_prune_finetune_trigger`，用于让恢复阶段脱离 30k 后的稀疏 optimizer cadence。
 - dense recovery 260-iteration 快速验证已完成。`post_prune_finetune_step_interval=1`、`post_prune_finetune_sh_step_interval=1`、`post_prune_finetune_lr_mode=local`、`post_prune_finetune_lr_scale=0.25` 从 88,194 裁到 65,000，并保存 `ours_280`；render/metrics 达到 PSNR 20.4099，SSIM 0.4310，LPIPS 0.5961。该结果只说明链路可用。
 - bicycle edge 30k 最终裁剪后 4,096 步恢复结果为 PSNR 26.0163，SSIM 0.7760，LPIPS 0.2580，240,394 个 Gaussians。相比 final-only target prune 明显恢复，但仍低于 baseline，也没有超过 240k staged 的 LPIPS。
-- 旧恢复训练沿用原 optimizer cadence；30k 后每 64 步才更新一次，因此 4,096 步只有约 64 次参数更新。这是 post-prune fine-tune 恢复幅度有限的主要可疑因素。dense recovery 已补上调度参数，下一步需要跑完整 30k 对照。
+- cached edge 严格 240k dense recovery 完整对照已完成。`post_prune_finetune_step_interval=1`、`post_prune_finetune_sh_step_interval=16` 和局部 xyz LR x0.25 后达到 PSNR 26.2470，SSIM 0.7813，LPIPS 0.2526，240,394 个 Gaussians。它比默认 cadence 恢复更好，但仍低于 baseline 与 350k staged edge 正向控制组。
+- dense recovery 的结论是：恢复训练能修补 final-prune 或 staged-prune 的一部分损伤，但不能替代健康的预算机制。下一版应把恢复移动到 pruning 发生后的局部时序中，或改变 score 本身，避免先造成大结构损伤再尝试补救。
 
 ## 局限
 
 - `mock_l1` 有意不是一个真实视觉基础模型信号。
 - `cached_edge_l1` 也只是 proxy；它主要测试 cache 机制和 edge-alignment 行为。
 - `dinov2_token_edge_l1` 消费 DINO patch tokens，但比较的是标量 topology projection，而不是完整语义特征向量。
-- `dinov2_descriptor_cosine` 已比较完整 patch descriptor，但目前仍是在线 DINO 推理版本；30k 成本高于 token-edge。top-k/smoothing 已把 unpruned descriptor 质量推进到接近 DINO token-edge，top-k 8% 与 percentile 90% 给出更均衡的完整对照点；soft top-k 30k 质量正向但成本更高。staged 预算对齐、降低 top-k ratio、`rgb_only` support/pruning、percentile mask 和 soft top-k staged 接入后仍低于 cadence control。
+- `dinov2_descriptor_cosine` 已比较完整 patch descriptor，但目前仍是在线 DINO 推理版本；30k 成本高于 token-edge。top-k/smoothing 已把 unpruned descriptor 质量推进到接近 DINO token-edge，top-k 8% 与 percentile 90% 给出更均衡的完整对照点；soft top-k 30k 质量正向但成本更高。staged 预算对齐、降低 top-k ratio、`rgb_only` support/pruning、percentile mask、soft top-k staged 和 staged 后 dense recovery 接入后仍低于 cadence control。
 - 220-iteration 快速验证只验证集成健康，不验证最终重建质量。既然 30k runs 已足够便宜，后续不应用短跑结果选择 scorer。
 - compact storage 有助于节省磁盘，但 `npz_uint8` 尚未证明 metric-neutral。float32 与 compact cache 变体仍应保留用于 ablation。
 - 当前 DINO cache 构建于 `max_width=224`；完整 `max_width=518` 或 `640` 的缓存时间、磁盘占用和 scorer 行为仍需测量。
@@ -110,11 +113,12 @@
 - staged budget control 更健康，edge 已在 bicycle、garden 和 counter 产生正向结果。DINO token-edge 仍需要更好的 projection 或 recovery training，才能成为预算高效方案。
 - garden 与 counter 的 staged edge 在所选目标下自然低于 target，没有真正触发最终预算裁剪；因此严格预算机制的正向证据主要来自 bicycle 350k staged run，跨场景结论应表述为比例感知的正向控制组，而不是所有场景都完成了精确预算匹配。
 - `vfm_enable` 当前没有 CLI 级显式关闭开关；若加载 VFM experiment yaml，就会触发 VFM scorer/preflight。严格 no-effect 需要从 baseline variant 出发手动覆盖非 VFM cadence 参数。
-- post-prune fine-tune 已证明有恢复价值，但严格 240k 预算下仍未转正；它现在更适合作为 staged budget 的补充机制，而不是替代 staged pruning 的主方案。
+- post-prune fine-tune 已证明有恢复价值，但严格 240k 预算和 descriptor staged 410k 预算下都未转正；它现在只能作为局部补救机制，不能作为预算高效化主方案。
 
 ## 下一版计划
 
 1. 固化 `cached_edge_l1` 为 0001 v1 正向控制组：保留 bicycle/garden/counter 三场景结果，说明它是稳定 proxy，而不是最终语义 VFM scorer。
-2. 继续 descriptor 只做能改变预算行为的方案：转向 staged pruning 后 dense recovery。`rgb_only` support/pruning、降低 top-k ratio、percentile mask 与 soft top-k staged 已完成且未转正，不再作为优先方向。
-3. 评估 descriptor 训练成本优化：减少 scorer 采样视角数，或缓存同一 densification 节点内的 rendered descriptors。
-4. 跑完整 dense recovery 对照：先复测 cached edge 240k final-prune + `post_prune_finetune_step_interval=1` / `post_prune_finetune_lr_mode=local`，再测 descriptor/top-k staged + `post_prune_finetune_trigger=any_prune`，判断恢复调度是否能把预算对齐结果推回 cadence control 之上。
+2. 将 DINOv2 descriptor 收束为“真实语义特征路径已打通但预算机制未转正”。下一版不再优先增加 top-k、percentile 或 soft-top-k 单点，而是设计预算感知 score：按 Gaussian 支持度归一化 VFM 分数，削弱大面积重复命中的 densification 放大效应。
+3. 改造 VFM 的角色：优先测试 prune-protect 或 prune-reorder，让语义信号保护结构性点，而不是直接扩大 densification；必要时把 VFM importance 与 RGB gradient gate 做更强的 AND/ratio 约束。
+4. 重做恢复时序：不再只在训练结束后统一 dense recovery，而是在 staged pruning 发生后立即执行短局部恢复，观察是否能减少中期结构损伤。
+5. 评估 descriptor 训练成本优化：减少 scorer 采样视角数，或缓存同一 densification 节点内的 rendered descriptors；成本优化应排在预算机制转正之后。
