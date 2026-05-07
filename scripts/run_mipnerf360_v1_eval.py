@@ -96,7 +96,7 @@ def latest_point_count(run_dir: Path) -> int | None:
     return None
 
 
-def train_baseline(scene: str, args: argparse.Namespace, repo: Path, run_dir: Path, log_dir: Path) -> None:
+def train_baseline(scene_path: Path, args: argparse.Namespace, repo: Path, run_dir: Path, log_dir: Path) -> None:
     if run_dir.exists() and latest_point_count(run_dir) is not None:
         return
     cmd = [
@@ -109,9 +109,9 @@ def train_baseline(scene: str, args: argparse.Namespace, repo: Path, run_dir: Pa
         "--variant",
         "fastgs_baseline",
         "-s",
-        str(args.dataset_root / scene),
+        str(scene_path),
         "-i",
-        "images",
+        args.train_images,
         "-m",
         str(run_dir),
         "--eval",
@@ -129,7 +129,7 @@ def train_baseline(scene: str, args: argparse.Namespace, repo: Path, run_dir: Pa
     require_success(run_command(cmd, log_dir / "train.log", repo), log_dir / "train.log")
 
 
-def build_edge_cache(scene: str, args: argparse.Namespace, repo: Path, cache_dir: Path, log_dir: Path) -> None:
+def build_edge_cache(scene_path: Path, args: argparse.Namespace, repo: Path, cache_dir: Path, log_dir: Path) -> None:
     if (cache_dir / "manifest.json").exists():
         return
     cmd = [
@@ -140,9 +140,9 @@ def build_edge_cache(scene: str, args: argparse.Namespace, repo: Path, cache_dir
         "-m",
         "vfm_gs.cli.build_vfm_cache",
         "-s",
-        str(args.dataset_root / scene),
+        str(scene_path),
         "-i",
-        "images_8",
+        args.cache_images,
         "-o",
         str(cache_dir),
         "--max_width",
@@ -153,7 +153,7 @@ def build_edge_cache(scene: str, args: argparse.Namespace, repo: Path, cache_dir
     require_success(run_command(cmd, log_dir / "build_cache.log", repo), log_dir / "build_cache.log")
 
 
-def validate_edge_cache(scene: str, args: argparse.Namespace, repo: Path, cache_dir: Path, log_dir: Path) -> None:
+def validate_edge_cache(scene_path: Path, args: argparse.Namespace, repo: Path, cache_dir: Path, log_dir: Path) -> None:
     marker = log_dir / "validate_cache.ok"
     if marker.exists():
         return
@@ -167,9 +167,9 @@ def validate_edge_cache(scene: str, args: argparse.Namespace, repo: Path, cache_
         "-c",
         str(cache_dir),
         "-s",
-        str(args.dataset_root / scene),
+        str(scene_path),
         "-i",
-        "images_8",
+        args.cache_images,
         "--backend",
         "cached_edge_l1",
     ]
@@ -177,7 +177,7 @@ def validate_edge_cache(scene: str, args: argparse.Namespace, repo: Path, cache_
     marker.write_text("ok\n", encoding="utf-8")
 
 
-def train_edge(scene: str, args: argparse.Namespace, repo: Path, run_dir: Path, log_dir: Path, cache_dir: Path, target: int) -> None:
+def train_edge(scene_path: Path, args: argparse.Namespace, repo: Path, run_dir: Path, log_dir: Path, cache_dir: Path, target: int) -> None:
     if run_dir.exists() and latest_point_count(run_dir) is not None:
         return
     cmd = [
@@ -192,9 +192,9 @@ def train_edge(scene: str, args: argparse.Namespace, repo: Path, run_dir: Path, 
         "--config",
         "configs/experiments/0001_vfm_topology_cached_edge_compact.yaml",
         "-s",
-        str(args.dataset_root / scene),
+        str(scene_path),
         "-i",
-        "images",
+        args.train_images,
         "-m",
         str(run_dir),
         "--eval",
@@ -252,12 +252,13 @@ def render_and_metrics(run_dir: Path, log_dir: Path, repo: Path) -> None:
         require_success(run_command(cmd, log_dir / "metrics.log", repo), log_dir / "metrics.log")
 
 
-def collect_row(scene: str, method: str, run_dir: Path, log_dir: Path, target: int | None = None) -> dict[str, object]:
+def collect_row(dataset: str, scene: str, method: str, run_dir: Path, log_dir: Path, target: int | None = None) -> dict[str, object]:
     gs_num, train_time = parse_train_log(log_dir / "train.log")
     if gs_num is None:
         gs_num = latest_point_count(run_dir)
     metrics = parse_metrics(run_dir)
     row: dict[str, object] = {
+        "dataset": dataset,
         "scene": scene,
         "method": method,
         "target_gaussian_count": target or "",
@@ -275,6 +276,7 @@ def write_summary(rows: list[dict[str, object]], output_dir: Path) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     csv_path = output_dir / "summary.csv"
     fields = [
+        "dataset",
         "scene",
         "method",
         "target_gaussian_count",
@@ -309,10 +311,13 @@ def write_summary(rows: list[dict[str, object]], output_dir: Path) -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run full MipNeRF360 baseline and cached-edge v1 evaluation.")
+    parser = argparse.ArgumentParser(description="Run baseline and cached-edge v1 evaluation for a scene group.")
+    parser.add_argument("--dataset-name", default="mipnerf360")
     parser.add_argument("--dataset-root", type=Path, default=Path("datasets/mipnerf360"))
     parser.add_argument("--output-root", type=Path, default=Path("output/0001/full_mipnerf360_v1"))
     parser.add_argument("--scenes", nargs="*", default=SCENES)
+    parser.add_argument("--train-images", default="images")
+    parser.add_argument("--cache-images", default="images_8")
     parser.add_argument("--iterations", type=int, default=30000)
     parser.add_argument("--resolution", type=int, default=8)
     return parser.parse_args()
@@ -334,9 +339,9 @@ def main() -> int:
         cache_dir = args.output_root / scene / "cache" / "edge_u8"
 
         print("[{}] baseline train/render/metrics".format(scene), flush=True)
-        train_baseline(scene, args, repo, baseline_run, baseline_logs)
+        train_baseline(scene_dir, args, repo, baseline_run, baseline_logs)
         render_and_metrics(baseline_run, baseline_logs, repo)
-        baseline_row = collect_row(scene, "baseline", baseline_run, baseline_logs)
+        baseline_row = collect_row(args.dataset_name, scene, "baseline", baseline_run, baseline_logs)
         rows.append(baseline_row)
 
         baseline_gs = baseline_row["gs_num"]
@@ -345,11 +350,11 @@ def main() -> int:
         edge_target = int(round(float(baseline_gs) * EDGE_RATIO))
 
         print("[{}] cached-edge cache/train/render/metrics target={}".format(scene, edge_target), flush=True)
-        build_edge_cache(scene, args, repo, cache_dir, edge_logs)
-        validate_edge_cache(scene, args, repo, cache_dir, edge_logs)
-        train_edge(scene, args, repo, edge_run, edge_logs, cache_dir, edge_target)
+        build_edge_cache(scene_dir, args, repo, cache_dir, edge_logs)
+        validate_edge_cache(scene_dir, args, repo, cache_dir, edge_logs)
+        train_edge(scene_dir, args, repo, edge_run, edge_logs, cache_dir, edge_target)
         render_and_metrics(edge_run, edge_logs, repo)
-        rows.append(collect_row(scene, "cached_edge_staged142", edge_run, edge_logs, target=edge_target))
+        rows.append(collect_row(args.dataset_name, scene, "cached_edge_staged142", edge_run, edge_logs, target=edge_target))
 
         write_summary(rows, args.output_root)
 
