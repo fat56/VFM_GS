@@ -428,6 +428,7 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 |---|---|---:|---|---:|---:|---:|---:|---:|---:|---|
 | `output/0001/vfm_dinov2_descriptor_topk015_smooth3_bicycle_120_r8` | `dinov2_descriptor_cosine` | 120 | top-k 15%, token smooth 3 | 19.3201 | 0.3804 | 0.6716 | 2.00s | 58,605 | 33M | 触发一次 descriptor scoring 和 densification |
 | `output/0001/vfm_dinov2_descriptor_topk015_smooth3_bicycle_30k_r8` | `dinov2_descriptor_cosine` | 30,000 | top-k 15%, token smooth 3 | 27.0274 | 0.8330 | 0.1805 | 191.30s | 484,229 | 140M | 完整 30k 对照，接近 DINO token-edge |
+| `output/0001/vfm_dinov2_descriptor_topk008_smooth3_bicycle_30k_r8` | `dinov2_descriptor_cosine` | 30,000 | top-k 8%, token smooth 3 | 26.9931 | 0.8301 | 0.1849 | 150.34s | 456,567 | 133M | 降低 top-k 比例，质量接近默认 descriptor |
 | `output/0001/vfm_dinov2_descriptor_topk015_smooth3_budget410000_staged105_bicycle_30k_r8` | `dinov2_descriptor_cosine` | 30,000 | top-k 15%, token smooth 3, staged 410k | 26.9047 | 0.8219 | 0.1998 | 160.53s | 389,250 | 117M | 预算对齐后低于 cadence control |
 | `output/0001/vfm_dinov2_descriptor_topk015_smooth3_rgb_only_bicycle_30k_r8` | `dinov2_descriptor_cosine` | 30,000 | top-k 15%, token smooth 3, `rgb_only` | 26.9117 | 0.8237 | 0.1977 | 154.16s | 412,317 | 123M | 只保留 descriptor support/pruning，仍低于 cadence control |
 
@@ -440,6 +441,10 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 - 相比 `fastgs_densify100` cadence control，top-k/smoothing 提升 +0.0987 PSNR、+0.0089 SSIM、LPIPS 好 -0.0159，但多 72,151 个 Gaussians，训练多 25.41s。它是 descriptor 方向目前最强完整结果，但不是预算受控结果。
 - 相比 DINO token-edge，top-k/smoothing 少 6,603 个 Gaussians，PSNR 低 -0.0303、SSIM 低 -0.0015、LPIPS 差 +0.0038。它已经接近 token-edge 上界，但仍未超过。
 - 相比 descriptor `rgb_only`，top-k/smoothing 三项指标明显更好，但点数多 77,028。说明这版 top-k mask 主要通过更强 densification 换取质量，下一步必须做 staged budget 对齐，不能直接把它作为预算高效结论。
+- top-k 8% 完成 train、render 和 metrics，`iteration_30000` 点云约 108M，包含 test renders 后目录约 133M。
+- 相比 top-k 15%，top-k 8% 减少 27,662 个 Gaussians，训练少 40.96s，但质量下降 -0.0343 PSNR、-0.0029 SSIM、LPIPS 差 +0.0045。这说明降低 top-k 比例确实能缓解过密重建，但也会交回一部分 top-k 15% 的质量收益。
+- 相比默认 descriptor，top-k 8% 少 5,279 个 Gaussians，训练少 40.25s，同时 PSNR 高 +0.0161、SSIM 高 +0.0003、LPIPS 基本持平。这是 descriptor mask 方向里更好的完整对照点。
+- 相比 `fastgs_densify100` cadence control，top-k 8% 仍多 44,489 个 Gaussians，但指标更好：+0.0644 PSNR、+0.0060 SSIM、LPIPS 好 -0.0115。它是质量正向但预算未贴合的结果。
 - top-k/smoothing staged 410k 完成 train、render 和 metrics；从 iteration 4500 到 14500 共触发 21 次 staged pruning，把中期点数压到 430,500 cap，训练结束时自然低于 410,000，因此 final target prune 跳过。`iteration_30000` 点云约 93M，包含 test renders 后目录约 117M。
 - 相比 unpruned top-k/smoothing，staged 版本减少 94,979 个 Gaussians，训练少 30.77s，但质量下降 -0.1227 PSNR、-0.0111 SSIM、LPIPS 差 +0.0193。
 - 相比 `fastgs_densify100` cadence control，staged top-k/smoothing 少 22,828 个 Gaussians、训练少 5.36s，但指标也更低：-0.0240 PSNR、-0.0022 SSIM、LPIPS 差 +0.0034。
@@ -447,4 +452,4 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 - top-k/smoothing `rgb_only` 完成 train、render 和 metrics；它保留 descriptor top-k mask 对 pruning/support 的影响，但 densification importance 使用 RGB/FastGS 计数。最终点数为 412,317，`iteration_30000` 点云约 98M，包含 test renders 后目录约 123M。
 - 相比 `fastgs_densify100` cadence control，top-k/smoothing `rgb_only` 多 239 个 Gaussians，训练少 11.73s，但质量更低：-0.0170 PSNR、-0.0004 SSIM、LPIPS 差 +0.0014。它是一个预算贴合的负例。
 - 相比普通 descriptor `rgb_only`，top-k/smoothing `rgb_only` 多 5,116 个 Gaussians、训练少 37.38s，但质量略低：-0.0253 PSNR、-0.0002 SSIM、LPIPS 差 +0.0006。说明 top-k mask 单独用于 support/pruning 时没有保住质量收益。
-- 结论是：top-k/smoothing 能改善 unpruned descriptor 质量，但在接近 410k budget 或关闭直接 descriptor densification 后收益都没有保住。下一步若继续 descriptor，应换更强的预算行为机制，例如 percentile/lower-ratio mask 的完整 30k 对照，或给 staged pruning 后增加更密集的恢复训练。
+- 结论是：top-k/smoothing 能改善 unpruned descriptor 质量；top-k 8% 比默认 descriptor 更均衡，但仍高于 cadence control 预算。在接近 410k budget 或关闭直接 descriptor densification 后，top-k 15% 的收益没有保住。下一步若继续 descriptor，应优先跑 top-k 8% 的 staged 410k 对齐；如果仍低于 cadence control，再转向 percentile mask 或给 staged pruning 后增加更密集的恢复训练。
