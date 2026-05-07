@@ -307,7 +307,7 @@ uv run --active python -m vfm_gs.cli.metrics \
   -m output/0001/vfm_dinov2_descriptor_soft_topk015_l3_smooth3_budget410000_staged105_bicycle_30k_r8
 ```
 
-percentile mask 探测使用每张 descriptor error map 的分位点阈值。当前实现与 top-k 固定比例很接近：`vfm_metric_percentile=0.90` 约等价于保留最高 10% 误差像素，但阈值由每张图自身误差分布给出。该 run 用来验证 percentile 表达是否比 top-k ratio 更稳定，而不是新的预算控制机制。
+percentile mask 探测使用每张 descriptor error map 的分位点阈值。当前实现与 top-k 固定比例很接近：`vfm_metric_percentile=0.90` 约等价于保留最高 10% 误差像素，但阈值由每张图自身误差分布给出。该 run 已完成完整 30k，对应 PSNR 27.0036、SSIM 0.8313、LPIPS 0.1827、464,425 个 Gaussians；结果介于 top-k 15% 和 top-k 8% 之间，不能作为新的预算控制机制。
 
 ```bash
 uv run --active python -m vfm_gs.cli.train \

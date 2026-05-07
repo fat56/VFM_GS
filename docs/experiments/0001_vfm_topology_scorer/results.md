@@ -422,7 +422,7 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 
 代码变更：增加 `vfm_metric_map_mode=threshold|percentile|topk|soft_topk`，并保留 `threshold` 为默认行为。新增 `vfm_metric_topk`、`vfm_metric_percentile`、`vfm_metric_soft_levels` 和 `vfm_descriptor_token_smooth_kernel`，用于把 descriptor cosine error 先在 DINO token grid 上平滑，再选择固定比例、分位数或多层 top-k 高误差区域。`soft_topk` 仍复用现有整数 CUDA 计数接口：它生成多层嵌套二值 masks，并按层权重累加 per-Gaussian counts。
 
-新增配置：`configs/experiments/0001_vfm_topology_dinov2_descriptor_topk.yaml`，默认使用 `vfm_metric_map_mode=topk`、`vfm_metric_topk=0.15`、`vfm_descriptor_token_smooth_kernel=3`。另新增 `configs/experiments/0001_vfm_topology_dinov2_descriptor_soft_topk.yaml`，默认使用 `vfm_metric_map_mode=soft_topk`、`vfm_metric_topk=0.15`、`vfm_metric_soft_levels=3`。
+新增配置：`configs/experiments/0001_vfm_topology_dinov2_descriptor_topk.yaml`，默认使用 `vfm_metric_map_mode=topk`、`vfm_metric_topk=0.15`、`vfm_descriptor_token_smooth_kernel=3`。另新增 `configs/experiments/0001_vfm_topology_dinov2_descriptor_soft_topk.yaml`，默认使用 `vfm_metric_map_mode=soft_topk`、`vfm_metric_topk=0.15`、`vfm_metric_soft_levels=3`。`configs/experiments/0001_vfm_topology_dinov2_descriptor_percentile.yaml` 使用 `vfm_metric_map_mode=percentile`、`vfm_metric_percentile=0.90` 和同样的 token-grid smoothing。
 
 | 产物 | Scorer / Backend | Iterations | Metric map | PSNR | SSIM | LPIPS | 训练时间 | Gaussian 数量 | 输出大小 | 备注 |
 |---|---|---:|---|---:|---:|---:|---:|---:|---:|---|
@@ -432,6 +432,7 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 | `output/0001/vfm_dinov2_descriptor_topk015_smooth3_budget410000_staged105_bicycle_30k_r8` | `dinov2_descriptor_cosine` | 30,000 | top-k 15%, token smooth 3, staged 410k | 26.9047 | 0.8219 | 0.1998 | 160.53s | 389,250 | 117M | 预算对齐后低于 cadence control |
 | `output/0001/vfm_dinov2_descriptor_topk008_smooth3_budget410000_staged105_bicycle_30k_r8` | `dinov2_descriptor_cosine` | 30,000 | top-k 8%, token smooth 3, staged 410k | 26.8783 | 0.8208 | 0.2013 | 165.01s | 382,035 | 116M | 更低 top-k 的预算对齐负例 |
 | `output/0001/vfm_dinov2_descriptor_topk015_smooth3_rgb_only_bicycle_30k_r8` | `dinov2_descriptor_cosine` | 30,000 | top-k 15%, token smooth 3, `rgb_only` | 26.9117 | 0.8237 | 0.1977 | 154.16s | 412,317 | 123M | 只保留 descriptor support/pruning，仍低于 cadence control |
+| `output/0001/vfm_dinov2_descriptor_percentile090_smooth3_bicycle_30k_r8` | `dinov2_descriptor_cosine` | 30,000 | percentile 90%, token smooth 3 | 27.0036 | 0.8313 | 0.1827 | 206.60s | 464,425 | 135M | 分位点表达完整对照，质量介于 top-k 15% 和 top-k 8% 之间 |
 | `output/0001/vfm_dinov2_descriptor_soft_topk015_l3_smooth3_bicycle_620_r8` | `dinov2_descriptor_cosine` | 620 | soft top-k 15%, 3 levels, token smooth 3 | 20.8610 | 0.4747 | 0.5481 | 4.47s | 61,344 | 35M | 触发真实 descriptor scoring 和多层计数 |
 | `output/0001/vfm_dinov2_descriptor_soft_topk015_l3_smooth3_bicycle_30k_r8` | `dinov2_descriptor_cosine` | 30,000 | soft top-k 15%, 3 levels, token smooth 3 | 26.9875 | 0.8305 | 0.1844 | 212.26s | 462,696 | 135M | 完整 30k 对照，质量正向但成本偏高 |
 | `output/0001/vfm_dinov2_descriptor_soft_topk015_l3_smooth3_budget410000_staged105_bicycle_30k_r8` | `dinov2_descriptor_cosine` | 30,000 | soft top-k 15%, 3 levels, token smooth 3, staged 410k | 26.8848 | 0.8201 | 0.2029 | 231.87s | 383,528 | 116M | 预算对齐负例 |
@@ -452,6 +453,12 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 - 相比 top-k 15% staged，soft top-k staged 少 5,722 个 Gaussians，但质量更低：-0.0199 PSNR、-0.0018 SSIM、LPIPS 差 +0.0031，训练多 71.34s。多层 soft 计数没有改善 staged 预算结果。
 - 相比 top-k 8% staged，soft top-k staged 多 1,493 个 Gaussians，PSNR 高 +0.0065，但 SSIM 低 -0.0007、LPIPS 差 +0.0016，训练多 66.86s。它只是一个更慢、质量近似的 staged 负例。
 - 相比 `fastgs_densify100` cadence control，soft top-k staged 少 28,550 个 Gaussians，但指标低 -0.0439 PSNR、-0.0040 SSIM、LPIPS 差 +0.0065，训练多 65.98s。因此它不是预算高效方案。
+- percentile 90% 完整对照完成 train、render 和 metrics，最终写出 464,425 个 Gaussians；`iteration_30000` 点云约 110M，包含 test renders 后目录约 135M。
+- 当前 percentile 实现按每张归一化 error map 的第 90 分位点取 `>` 阈值，本质上仍接近固定比例 high-error mask。它验证了配置和代码路径，但不构成新的预算控制机制。
+- 相比 top-k 15%，percentile 90% 少 19,804 个 Gaussians，但质量低 -0.0238 PSNR、-0.0017 SSIM、LPIPS 差 +0.0022，训练多 15.30s；它没有超过 top-k 15% 的完整上界。
+- 相比 top-k 8%，percentile 90% 多 7,858 个 Gaussians，质量高 +0.0105 PSNR、+0.0012 SSIM、LPIPS 好 -0.0023，但训练多 56.27s。它基本落在 top-k 8% 和 top-k 15% 之间。
+- 相比 `fastgs_densify100` cadence control，percentile 90% 提升 +0.0749 PSNR、+0.0072 SSIM、LPIPS 好 -0.0137，但多 52,347 个 Gaussians，训练多 40.71s。它是质量正向结果，不是预算高效结果。
+- 相比 soft top-k 30k，percentile 90% 多 1,729 个 Gaussians，但 PSNR 高 +0.0161、SSIM 高 +0.0007、LPIPS 好 -0.0017，训练少 5.66s。因此如果只看 unpruned descriptor，percentile 90% 优于 soft top-k，但没有改变预算结论。
 - top-k/smoothing 30k 完成 train、render 和 metrics，`iteration_30000` 点云约 115M，包含 test renders 后目录约 140M。
 - 相比默认 descriptor，top-k/smoothing 提升 +0.0504 PSNR、+0.0032 SSIM、LPIPS 好 -0.0045，但多 22,383 个 Gaussians，训练时间基本持平。这说明 mask/aggregation 改动确实改善了 descriptor scorer 质量。
 - 相比 `fastgs_densify100` cadence control，top-k/smoothing 提升 +0.0987 PSNR、+0.0089 SSIM、LPIPS 好 -0.0159，但多 72,151 个 Gaussians，训练多 25.41s。它是 descriptor 方向目前最强完整结果，但不是预算受控结果。
@@ -472,4 +479,4 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 - top-k/smoothing `rgb_only` 完成 train、render 和 metrics；它保留 descriptor top-k mask 对 pruning/support 的影响，但 densification importance 使用 RGB/FastGS 计数。最终点数为 412,317，`iteration_30000` 点云约 98M，包含 test renders 后目录约 123M。
 - 相比 `fastgs_densify100` cadence control，top-k/smoothing `rgb_only` 多 239 个 Gaussians，训练少 11.73s，但质量更低：-0.0170 PSNR、-0.0004 SSIM、LPIPS 差 +0.0014。它是一个预算贴合的负例。
 - 相比普通 descriptor `rgb_only`，top-k/smoothing `rgb_only` 多 5,116 个 Gaussians、训练少 37.38s，但质量略低：-0.0253 PSNR、-0.0002 SSIM、LPIPS 差 +0.0006。说明 top-k mask 单独用于 support/pruning 时没有保住质量收益。
-- 结论是：top-k/smoothing 能改善 unpruned descriptor 质量；top-k 8% 比默认 descriptor 更均衡，但仍高于 cadence control 预算。soft top-k 30k 质量正向，但基本落在 top-k 8% 附近且成本更高。在接近 410k budget、降低 top-k ratio、关闭直接 descriptor densification、或 soft top-k 多层计数后，收益都没有保住。下一步应转向 percentile mask 或 staged pruning 后 dense recovery，而不是继续围绕 top-k ratio 增加变体。
+- 结论是：top-k/smoothing 能改善 unpruned descriptor 质量；top-k 8% 与 percentile 90% 都比默认 descriptor 更均衡，但仍高于 cadence control 预算。soft top-k 30k 质量正向，但基本落在 top-k 8% 附近且成本更高。在接近 410k budget、降低 top-k ratio、关闭直接 descriptor densification、percentile mask 或 soft top-k 多层计数后，收益都没有保住。下一步应转向 staged pruning 后 dense recovery，而不是继续围绕 mask ratio 增加变体。

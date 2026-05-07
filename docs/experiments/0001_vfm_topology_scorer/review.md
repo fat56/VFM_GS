@@ -48,6 +48,8 @@
 - soft top-k 相比 `fastgs_densify100` cadence control 质量正向：+0.0589 PSNR、+0.0064 SSIM、LPIPS 好 -0.0120，但多 50,618 个点、训练多 46.37s；相比 top-k 8% 几乎打平但更慢。因此它还不是预算高效结论。
 - soft top-k staged 410k 已完成。结果为 PSNR 26.8848，SSIM 0.8201，LPIPS 0.2029，383,528 个 Gaussians，训练时间 231.87s。相比 `fastgs_densify100` cadence control 少 28,550 个点，但质量低 -0.0439 PSNR、-0.0040 SSIM、LPIPS 差 +0.0065，且训练更慢。
 - soft top-k staged 相比 top-k 15% staged 更弱、相比 top-k 8% staged 近似但更慢。多层 soft 计数没有解决 descriptor 收益在预算对齐后消失的问题。
+- percentile 90% 完整对照已完成。`vfm_metric_map_mode=percentile`、`vfm_metric_percentile=0.90`、`vfm_descriptor_token_smooth_kernel=3` 达到 PSNR 27.0036，SSIM 0.8313，LPIPS 0.1827，464,425 个 Gaussians，训练时间 206.60s。
+- percentile 90% 质量介于 top-k 15% 和 top-k 8% 之间，优于 soft top-k 30k，但仍比 `fastgs_densify100` 多 52,347 个点、训练多 40.71s。由于当前 percentile 实现接近固定比例 high-error mask，它没有带来新的预算行为。
 - top-k/smoothing 30k 对照已完成。`vfm_metric_map_mode=topk`、`vfm_metric_topk=0.15`、`vfm_descriptor_token_smooth_kernel=3` 达到 PSNR 27.0274，SSIM 0.8330，LPIPS 0.1805，484,229 个 Gaussians，训练时间 191.30s。
 - top-k/smoothing 相比默认 descriptor 提升 +0.0504 PSNR、+0.0032 SSIM、LPIPS 好 -0.0045，并接近 DINO token-edge；但它比 `fastgs_densify100` 多 72,151 个点，因此还不是预算受控结论。
 - top-k/smoothing 8% 完整对照已完成。结果为 PSNR 26.9931，SSIM 0.8301，LPIPS 0.1849，456,567 个 Gaussians，训练时间 150.34s。
@@ -96,7 +98,7 @@
 - `mock_l1` 有意不是一个真实视觉基础模型信号。
 - `cached_edge_l1` 也只是 proxy；它主要测试 cache 机制和 edge-alignment 行为。
 - `dinov2_token_edge_l1` 消费 DINO patch tokens，但比较的是标量 topology projection，而不是完整语义特征向量。
-- `dinov2_descriptor_cosine` 已比较完整 patch descriptor，但目前仍是在线 DINO 推理版本；30k 成本高于 token-edge。top-k/smoothing 已把 unpruned descriptor 质量推进到接近 DINO token-edge，top-k 8% 又给出更均衡的完整对照点；soft top-k 30k 质量正向但成本更高。staged 预算对齐、降低 top-k ratio、`rgb_only` support/pruning 和 soft top-k staged 接入后仍低于 cadence control。
+- `dinov2_descriptor_cosine` 已比较完整 patch descriptor，但目前仍是在线 DINO 推理版本；30k 成本高于 token-edge。top-k/smoothing 已把 unpruned descriptor 质量推进到接近 DINO token-edge，top-k 8% 与 percentile 90% 给出更均衡的完整对照点；soft top-k 30k 质量正向但成本更高。staged 预算对齐、降低 top-k ratio、`rgb_only` support/pruning、percentile mask 和 soft top-k staged 接入后仍低于 cadence control。
 - 220-iteration 快速验证只验证集成健康，不验证最终重建质量。既然 30k runs 已足够便宜，后续不应用短跑结果选择 scorer。
 - compact storage 有助于节省磁盘，但 `npz_uint8` 尚未证明 metric-neutral。float32 与 compact cache 变体仍应保留用于 ablation。
 - 当前 DINO cache 构建于 `max_width=224`；完整 `max_width=518` 或 `640` 的缓存时间、磁盘占用和 scorer 行为仍需测量。
@@ -111,6 +113,6 @@
 ## 下一版计划
 
 1. 固化 `cached_edge_l1` 为 0001 v1 正向控制组：保留 bicycle/garden/counter 三场景结果，说明它是稳定 proxy，而不是最终语义 VFM scorer。
-2. 继续 descriptor 只做能改变预算行为的方案：转向 percentile mask 或 staged pruning 后 dense recovery。`rgb_only` support/pruning、降低 top-k ratio 与 soft top-k staged 已完成且为负例，不再作为优先方向。
+2. 继续 descriptor 只做能改变预算行为的方案：转向 staged pruning 后 dense recovery。`rgb_only` support/pruning、降低 top-k ratio、percentile mask 与 soft top-k staged 已完成且未转正，不再作为优先方向。
 3. 评估 descriptor 训练成本优化：减少 scorer 采样视角数，或缓存同一 densification 节点内的 rendered descriptors。
-4. 设计 dense post-prune recovery schedule，避免 30k 后每 64 步才更新一次导致恢复训练实际更新过少。
+4. 设计 dense post-prune recovery schedule，避免 30k 后每 64 步才更新一次导致恢复训练实际更新过少。最小改动是为恢复阶段增加独立 optimizer step interval 和可选 xyz LR scale；staged pruning 场景还需要记录中期裁剪是否发生，避免最终自然低于 target 时跳过恢复训练。
