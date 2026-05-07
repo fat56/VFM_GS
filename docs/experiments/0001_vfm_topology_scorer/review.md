@@ -29,6 +29,8 @@
 - `dinov2_descriptor_cosine` 已落地。它在 scorer 节点对 SH0 渲染图在线运行 DINOv2，再与 GT cache patch tokens 做 cosine distance，并上采样为 pixel error map。
 - descriptor 快速验证完成 80-step 和 220-step train/render/metrics。220-step bicycle 结果为 PSNR 20.0193，SSIM 0.4233，LPIPS 0.6018，77,060 个 Gaussians，训练时间 2.55s。
 - descriptor 快速验证指标略低于 token-edge 快速验证，但它是更贴近 proposal 语义特征误差的真实路径。下一步不应仅看短跑质量，而应先调 descriptor 阈值和 cache 分辨率，再进入 30k。
+- descriptor 阈值小网格已完成。`vfm_loss_thresh=0.35` 达到 PSNR 20.2897，SSIM 0.4287，LPIPS 0.5993，79,120 个 Gaussians；`0.65` 达到 PSNR 20.2162，SSIM 0.4253，LPIPS 0.6034，77,037 个 Gaussians。
+- `vfm_loss_thresh=0.35` 是当前 descriptor 最优短跑点，明显优于默认 0.50，并在 LPIPS 上略优于 token-edge 快速验证。
 - matched 30k `-r 8` ablation 已成为主质量信号。baseline 达到 PSNR 26.7032，SSIM 0.8067，LPIPS 0.2278，240,394 个 Gaussians，334.36 FPS。
 - compact cached edge 将 30k run 提升到 PSNR 26.8864，SSIM 0.8229，LPIPS 0.1972，但点数增长到 408,925，FPS 为 196.43。
 - DINO token-edge 给出最佳 30k 指标：PSNR 27.0577，SSIM 0.8345，LPIPS 0.1767，但点数达到 490,832，FPS 为 193.46。
@@ -80,7 +82,7 @@
 
 ## 下一版计划
 
-1. 对 `dinov2_descriptor_cosine` 做阈值和 cache width 探测，优先补 `max_width=518` 或 `640` 的 DINO ViT-S/14 cache build/validate。
+1. 围绕 `dinov2_descriptor_cosine` 的 `vfm_loss_thresh=0.35` 继续细扫 0.30-0.40，或直接补 `max_width=518`/`640` cache build/validate 后复测。
 2. 如果 descriptor scorer 的短跑阈值稳定，再跑 30k `-r 8`，并与 token-edge、edge 正向控制组、no-effect/cadence 控制同表比较。
 3. 评估 descriptor scorer 的训练成本，必要时减少 scorer 采样视角数，或缓存同一 densification 节点的 rendered descriptors。
 4. 设计 dense post-prune recovery schedule，避免 30k 后每 64 步才更新一次导致恢复训练实际更新过少。
