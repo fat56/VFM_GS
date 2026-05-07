@@ -139,6 +139,33 @@ uv run --active python -m vfm_gs.cli.metrics -m output/0001/vfm_dinov2_descripto
 
 如果本地 `output/0001/external/dinov2` 不存在，先按上一节 clone 官方 DINOv2 仓库，或用命令行覆盖 `--vfm_dinov2_repo <path>`。
 
+完整 30k 评估使用短跑细扫后的 `vfm_loss_thresh=0.35`，并显式用 `--iteration -1` 渲染最新保存结果：
+
+```bash
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_dinov2_descriptor.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0001/vfm_dinov2_descriptor_t035_bicycle_30k_r8 \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_loss_thresh 0.35 \
+  -r 8
+
+uv run --active python -m vfm_gs.cli.render \
+  -m output/0001/vfm_dinov2_descriptor_t035_bicycle_30k_r8 \
+  --iteration -1 \
+  --skip_train \
+  --quiet
+
+uv run --active python -m vfm_gs.cli.metrics \
+  -m output/0001/vfm_dinov2_descriptor_t035_bicycle_30k_r8
+```
+
 ## 30k 匹配消融
 
 220-iteration runs 只作为快速验证。迭代 scorer 行为时，使用这组 30k `-r 8` 作为最低质量门槛：

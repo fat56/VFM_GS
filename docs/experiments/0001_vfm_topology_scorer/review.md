@@ -34,6 +34,9 @@
 - `vfm_loss_thresh=0.35` 是当前 descriptor 最优短跑点，明显优于默认 0.50，并在 LPIPS 上略优于 token-edge 快速验证。继续扩大低分辨率阈值网格的收益预计有限。
 - `max_width=518` DINO ViT-S/14 cache 已构建并校验通过。cache 大小 127M，构建耗时 9.90s，首个 entry 为 `24x37x384`。
 - `max_width=518` + `vfm_loss_thresh=0.35` 快速验证为 PSNR 20.3059，SSIM 0.4272，LPIPS 0.5999，78,927 个 Gaussians，训练时间 2.69s。它只在 PSNR 上略优于 224-cache 0.35，SSIM/LPIPS 没有同步提升。
+- descriptor 30k 完整训练已完成。`dinov2_descriptor_cosine`、`vfm_loss_thresh=0.35`、`max_width=224` cache 达到 PSNR 26.9770，SSIM 0.8298，LPIPS 0.1850，461,846 个 Gaussians，训练时间 190.59s。
+- descriptor 30k 相比原始 baseline 提升 +0.2738 PSNR、+0.0231 SSIM、-0.0428 LPIPS；相比 `fastgs_densify100` cadence control 提升 +0.0483 PSNR、+0.0057 SSIM、-0.0114 LPIPS。
+- descriptor 30k 低于默认 DINO token-edge：-0.0807 PSNR、-0.0047 SSIM、LPIPS 差 +0.0083；但点数少 28,986。当前 descriptor 是可用的真实语义路径，还不是 DINO 主结果。
 - matched 30k `-r 8` ablation 已成为主质量信号。baseline 达到 PSNR 26.7032，SSIM 0.8067，LPIPS 0.2278，240,394 个 Gaussians，334.36 FPS。
 - compact cached edge 将 30k run 提升到 PSNR 26.8864，SSIM 0.8229，LPIPS 0.1972，但点数增长到 408,925，FPS 为 196.43。
 - DINO token-edge 给出最佳 30k 指标：PSNR 27.0577，SSIM 0.8345，LPIPS 0.1767，但点数达到 490,832，FPS 为 193.46。
@@ -71,7 +74,7 @@
 - `mock_l1` 有意不是一个真实视觉基础模型信号。
 - `cached_edge_l1` 也只是 proxy；它主要测试 cache 机制和 edge-alignment 行为。
 - `dinov2_token_edge_l1` 消费 DINO patch tokens，但比较的是标量 topology projection，而不是完整语义特征向量。
-- `dinov2_descriptor_cosine` 已比较完整 patch descriptor，但目前仍是在线 DINO 推理的朴素版本；需要评估 30k 成本、cache width、scorer 采样视角数和阈值。
+- `dinov2_descriptor_cosine` 已比较完整 patch descriptor，但目前仍是在线 DINO 推理的朴素版本；30k 成本高于 token-edge，且完整训练质量尚未超过 token-edge。
 - 220-iteration 快速验证只验证集成健康，不验证最终重建质量。既然 30k runs 已足够便宜，后续不应用短跑结果选择 scorer。
 - compact storage 有助于节省磁盘，但 `npz_uint8` 尚未证明 metric-neutral。float32 与 compact cache 变体仍应保留用于 ablation。
 - 当前 DINO cache 构建于 `max_width=224`；完整 `max_width=518` 或 `640` 的缓存时间、磁盘占用和 scorer 行为仍需测量。
@@ -85,8 +88,8 @@
 
 ## 下一版计划
 
-1. 用 `dinov2_descriptor_cosine`、`vfm_loss_thresh=0.35`、`max_width=224` cache 跑 30k `-r 8`，先确认 descriptor 完整训练曲线，而不是继续扩展短跑网格。
-2. 若 30k descriptor 有希望，再用 `max_width=518` cache 复跑或做预算控制；如果 30k 失效，则优先回到 scorer 采样和投影设计。
-3. 评估 descriptor scorer 的训练成本，必要时减少 scorer 采样视角数，或缓存同一 densification 节点的 rendered descriptors。
-4. 设计 dense post-prune recovery schedule，避免 30k 后每 64 步才更新一次导致恢复训练实际更新过少。
-5. 保持 30k `-r 8` 作为最小质量门槛；220 iteration 只用于代码变更后的快速验证。
+1. 固化 `cached_edge_l1` 为 0001 v1 正向控制组：保留 bicycle/garden/counter 三场景结果，说明它是稳定 proxy，而不是最终语义 VFM scorer。
+2. 对 descriptor 做预算对齐探测：优先使用 `target_gaussian_count=410000` 左右的 staged target，判断它相对 `fastgs_densify100` 的收益是否仍存在。
+3. 改进 descriptor scorer 设计：比较 raw cosine error、top-k/percentile mask、token-grid smoothing 或 multi-view aggregation，避免把整幅 descriptor 差异直接阈值化为 densification mask。
+4. 评估 descriptor 训练成本优化：减少 scorer 采样视角数，或缓存同一 densification 节点内的 rendered descriptors。
+5. 设计 dense post-prune recovery schedule，避免 30k 后每 64 步才更新一次导致恢复训练实际更新过少。

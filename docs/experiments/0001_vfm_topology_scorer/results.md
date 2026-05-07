@@ -357,5 +357,26 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 - `vfm_loss_thresh=0.65` 的 PSNR/SSIM 也优于默认，但 LPIPS 变差。下一轮应优先补高分辨率 DINO cache 或直接用 0.35 跑 30k，而不是继续扩大低分辨率阈值网格。
 - `max_width=518` DINO cache 构建耗时 9.90s，194 entries，大小 127M，首个 entry 形状为 `24x37x384`，并通过 `validate_vfm_cache`。相比 `max_width=224` 的 24M cache，它带来更密的 descriptor grid。
 - `max_width=518` + `vfm_loss_thresh=0.35` 的 PSNR 比 `224` cache 高 +0.0162，但 SSIM 低 -0.0015，LPIPS 差 +0.0007。高分辨率 cache 没有在短跑中形成全面优势，但训练时间保持接近，说明 30k 成本风险不大。
-- 当前实现每个 scorer 视角都在线运行 DINOv2。短跑训练时间从 token-edge 的 1.72s 增到 2.55s，仍可接受；30k 之前应先评估更高 cache width 和较少 scorer 视角/缓存 rendered descriptor 的折中。
+- 当前实现每个 scorer 视角都在线运行 DINOv2。短跑训练时间从 token-edge 的 1.72s 增到 2.55s，仍可接受，但完整训练还需要单独记录成本。
 - DINOv2 import 继续提示 `xformers` 不可用，但官方实现能 fallback，训练未失败。
+
+## 2026-05-07 DINOv2 Descriptor 30k 完整训练
+
+数据集：`datasets/mipnerf360/bicycle`，test split，`-r 8`，30,000 iterations。配置使用 `configs/experiments/0001_vfm_topology_dinov2_descriptor.yaml`，并覆盖 `vfm_loss_thresh=0.35`；cache 使用 `output/0001/vfm_cache/bicycle_dinov2_vits14`，即 `max_width=224`、194 entries、24M 的 DINOv2 ViT-S/14 patch-token cache。该配置的 `densification_interval=100`，因此应优先与 cadence control 和 DINO token-edge 对比，而不是只与原始 baseline 对比。
+
+| 产物 | Scorer / Backend | PSNR | SSIM | LPIPS | 训练时间 | Gaussian 数量 | 输出大小 | 备注 |
+|---|---|---:|---:|---:|---:|---:|---:|---|
+| `output/0001/baseline_bicycle_30k_r8` | `fastgs_photometric` | 26.7032 | 0.8067 | 0.2278 | 116.92s | 240,394 | 82M | 原始 baseline |
+| `output/0001/fastgs_densify100_bicycle_30k_r8` | `fastgs_photometric`, `densification_interval=100` | 26.9287 | 0.8241 | 0.1964 | 165.89s | 412,078 | 123M | cadence control |
+| `output/0001/vfm_cached_edge_compact_bicycle_30k_r8` | `cached_edge_l1` / `npz_uint8` | 26.8864 | 0.8229 | 0.1972 | 159.77s | 408,925 | 122M | edge proxy |
+| `output/0001/vfm_dinov2_token_edge_bicycle_30k_r8` | `dinov2_token_edge_l1` | 27.0577 | 0.8345 | 0.1767 | 166.11s | 490,832 | 142M | 当前 DINO token-edge 最强完整 run |
+| `output/0001/vfm_dinov2_descriptor_t035_bicycle_30k_r8` | `dinov2_descriptor_cosine`, `vfm_loss_thresh=0.35` | 26.9770 | 0.8298 | 0.1850 | 190.59s | 461,846 | 135M | 完整 descriptor 语义特征路径 |
+
+解读：
+
+- descriptor 30k 完整训练通过 train、render 和 metrics，最终写出 `iteration_30000`，点云 PLY 约 110M；包含 25 个 test renders 后目录约 135M。
+- 相比原始 baseline，descriptor 提升 +0.2738 PSNR、+0.0231 SSIM、-0.0428 LPIPS，但 Gaussian 数量增加约 92.1%。这说明它有正向信号，但不能作为严格同预算结论。
+- 相比更公平的 `fastgs_densify100` cadence control，descriptor 提升 +0.0483 PSNR、+0.0057 SSIM、-0.0114 LPIPS，同时多 49,768 个 Gaussians，训练多约 24.70s。
+- 相比 `cached_edge_l1`，descriptor 三项指标更好，但训练更慢、点数更多。它比 edge proxy 更贴近 proposal 语义特征误差，但首版并不更省预算。
+- 相比默认 DINO token-edge，descriptor 少 28,986 个 Gaussians，却低 -0.0807 PSNR、-0.0047 SSIM、LPIPS 差 +0.0083，并且训练更慢。当前实现中，在线 DINO descriptor 还没有超过更简单的 token-edge projection。
+- 结论是：`dinov2_descriptor_cosine` 已完成第一版真实 descriptor 路径验证，并在完整训练中优于 cadence/no-effect 控制；但它暂时不应取代 `cached_edge_l1` v1 正向控制组，也不应取代 `dinov2_token_edge_l1` 作为 DINO 完整训练上界。下一步若继续 descriptor，应优先做 410k 左右的 staged budget 对齐和 scorer 设计改进，而不是继续扩大短跑阈值网格。
