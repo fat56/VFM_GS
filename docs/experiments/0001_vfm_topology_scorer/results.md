@@ -485,17 +485,20 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 
 代码变更：新增 `configs/experiments/0001_vfm_topology_dinov2_token_edge_topk.yaml`。它复用 `dinov2_token_edge_l1` 后端和 `output/0001/vfm_cache/bicycle_dinov2_vits14`，但把 metric map 从固定阈值改为 `vfm_metric_map_mode=topk`、`vfm_metric_topk=0.15`。目标是把 descriptor 分支中已经验证可用的 top-k 高误差区域选择迁移到当前最强的 DINO token-edge 路径上。
 
-数据集：`datasets/mipnerf360/bicycle`，test split，`-r 8`，620 iterations，`densify_from_iter=500`，`densification_interval=100`。该 run 只验证链路健康，不作为质量结论。
+数据集：`datasets/mipnerf360/bicycle`，test split，`-r 8`。先用 620-step 验证链路健康，再跑 30,000 iterations 完整对照。
 
-| 产物 | Backend | Metric map | PSNR | SSIM | LPIPS | 训练时间 | Gaussian 数量 | 输出大小 | 备注 |
-|---|---|---|---:|---:|---:|---:|---:|---:|---|
-| `output/0001/vfm_dinov2_token_edge_topk015_bicycle_620_r8` | `dinov2_token_edge_l1` | top-k 15% | 20.8432 | 0.4752 | 0.5460 | 2.74s | 61,555 | 17M | 触发 token-edge top-k scoring 和 densification |
+| 产物 | Backend | Metric map | Iterations | PSNR | SSIM | LPIPS | 训练时间 | Gaussian 数量 | 输出大小 | 备注 |
+|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|
+| `output/0001/vfm_dinov2_token_edge_topk015_bicycle_620_r8` | `dinov2_token_edge_l1` | top-k 15% | 620 | 20.8432 | 0.4752 | 0.5460 | 2.74s | 61,555 | 17M | 触发 token-edge top-k scoring 和 densification |
+| `output/0001/vfm_dinov2_token_edge_topk015_bicycle_30k_r8` | `dinov2_token_edge_l1` | top-k 15% | 30,000 | 27.0223 | 0.8322 | 0.1810 | 140.40s | 464,998 | 136M | 完整对照，质量低于默认 DINO token-edge，但更省点更快 |
 
 解读：
 
 - 训练预检、train、render 和 metrics 均通过，说明 token-edge top-k 配置可直接进入 30k 完整对照。
-- 620-step 指标只说明集成健康。真正判断标准仍是 bicycle 30k `-r 8`，并优先与原始 baseline、`fastgs_densify100` cadence control、默认 DINO token-edge 以及 descriptor top-k 对比。
-- 这一路径不引入在线 DINO inference，预计训练成本接近默认 DINO token-edge，而低于 descriptor 系列。
+- 620-step 指标只说明集成健康；30k 完整结果相对原始 baseline 提升 +0.3191 PSNR、+0.0255 SSIM、LPIPS 改善 -0.0468，属于清晰正向。
+- 相比 `fastgs_densify100` cadence control，token-edge top-k 15% 提升 +0.0936 PSNR、+0.0081 SSIM、LPIPS 改善 -0.0154，同时多 52,920 个 Gaussians，训练少 25.49s。
+- 相比默认 DINO token-edge，top-k 15% 少 25,834 个 Gaussians，训练少 25.71s，但质量下降 -0.0354 PSNR、-0.0023 SSIM、LPIPS 差 +0.0043。它是更高效的 DINO token-edge 变体，但没有刷新质量上界。
+- 这一路径不引入在线 DINO inference，成本明显低于 descriptor 系列。下一步若继续追求质量上界，应尝试更宽的 top-k ratio 或回到默认 threshold；若追求预算效率，应围绕 top-k 15% 做 staged target 或容量/预算约束。
 
 ## 2026-05-07 DINOv2 Descriptor 打分器快速验证
 
