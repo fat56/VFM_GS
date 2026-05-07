@@ -256,6 +256,7 @@ Dense recovery 快速验证：`output/0001/post_prune_dense_finetune_smoke_bicyc
 |---|---|---|---:|---:|---:|---:|---:|---:|---:|---|
 | `output/0001/post_prune_dense_finetune_smoke_bicycle_260_r8` | `fastgs_photometric` | 最终裁剪最低分后 dense recovery | 20 | 20.4099 | 0.4310 | 0.5961 | 1.60s | 65,000 | 51M | 快速验证，88,194 -> 65,000，保存 `ours_280` |
 | `output/0001/vfm_cached_edge_budget240394_lowscore_finetune4096_bicycle_30k_r8` | `cached_edge_l1` | 最终裁剪最低分后恢复 | 4,096 | 26.0163 | 0.7760 | 0.2580 | 156.29s | 240,394 | 138M | 411,345 -> 240,394，保存 `ours_34096` |
+| `output/0001/vfm_cached_edge_budget240394_lowscore_denseft4096_s1_lr025_bicycle_30k_r8` | `cached_edge_l1` | 最终裁剪最低分后 dense recovery | 4,096 | 26.2470 | 0.7813 | 0.2526 | 156.92s | 240,394 | 138M | 411,319 -> 240,394，保存 `ours_34096`；step interval 1，SH interval 16，局部 xyz LR x0.25 |
 
 对比：
 
@@ -263,9 +264,11 @@ Dense recovery 快速验证：`output/0001/post_prune_dense_finetune_smoke_bicyc
 - 相比 final-only low-score target prune，恢复训练提升 +2.2434 PSNR、+0.0453 SSIM、-0.0105 LPIPS，说明最终裁剪后的结构损伤可以被一部分恢复。
 - 相比 240k staged edge，post-prune fine-tune 的 PSNR/SSIM 更高：+0.2184 PSNR、+0.0013 SSIM；但 LPIPS 更差 +0.0043。
 - 相比 baseline 30k，仍低 -0.6869 PSNR、-0.0307 SSIM、+0.0302 LPIPS。严格 240k 预算下，单次最终裁剪加 4,096 步恢复还不能构成正向结果。
-- 由于默认 `optimizer_step` 在 20k 之后每 64 iteration 才更新一次，4,096 步恢复实际只有约 64 次参数更新。这可能解释了恢复有限；下一版若继续这条路，应增加专门的 dense recovery step schedule 或在裁剪前后采用更平滑的 staged+fine-tune 组合。
-- dense recovery 参数已经补齐；下一步应跑完整 30k 对照，优先使用 cached edge 240k final-prune + dense recovery 和 descriptor/top-k staged + `post_prune_finetune_trigger=any_prune` 两类设置。
-- 本组输出包含 `iteration_30000` 和 `iteration_34096` 两份 PLY，因此目录大小为 138M；只看恢复后 PLY 约 57M。
+- dense recovery 完整版验证了上面的猜测：将恢复阶段主 optimizer 改为每步更新、SH optimizer 每 16 步更新，并用局部 xyz LR 后，相比默认 cadence 的 4,096 步恢复提升 +0.2307 PSNR、+0.0053 SSIM、-0.0054 LPIPS。
+- 相比 final-only low-score target prune，dense recovery 完整版提升 +2.4741 PSNR、+0.0506 SSIM、-0.0159 LPIPS；相比 240k staged edge，提升 +0.4491 PSNR、+0.0066 SSIM、-0.0011 LPIPS。
+- 但严格 240k 下 dense recovery 仍低于 baseline 30k：-0.4562 PSNR、-0.0254 SSIM、+0.0248 LPIPS；也低于 350k staged edge 正向控制组：-0.5318 PSNR、-0.0276 SSIM、+0.0320 LPIPS。
+- 因此，单次最终裁剪再恢复不是足够的预算高效方案。下一步应把 dense recovery 放到 staged pruning 后，优先验证 descriptor/top-k staged + `post_prune_finetune_trigger=any_prune`，因为这类 run 的结构损伤发生在训练中期，更可能被后续恢复吸收。
+- dense recovery 完整版输出包含 `iteration_30000` 和 `iteration_34096` 两份 PLY，因此目录大小为 138M；render/metrics 使用 `ours_34096`。
 
 ## 2026-04-28 Cache 预检
 

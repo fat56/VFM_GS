@@ -2,17 +2,18 @@
 
 ## 进行中
 
-- `0001_vfm_topology_scorer`: staged/ratio-aware cached edge 已在 bicycle、garden 和 counter 三个 scene 上超过各自 baseline；no-effect/cadence 控制、post-prune fine-tune、descriptor 30k 完整训练、descriptor staged 预算对齐、descriptor `rgb_only` 保守接入、descriptor top-k/smoothing 30k、top-k 8% 完整对照、top-k 8% staged 对齐、410k staged 对齐、top-k/smoothing `rgb_only`、soft top-k 30k 完整对照、soft top-k staged 410k 和 percentile 90% 完整对照均已完成。当前结论是 descriptor unpruned 可接近 DINO token-edge，top-k 8% 与 percentile 90% 是更均衡的完整对照点，soft top-k 质量正向但成本更高；预算对齐、降低 top-k ratio、只参与 support/pruning、percentile mask 或多层 soft 计数后仍低于 cadence control。
+- `0001_vfm_topology_scorer`: staged/ratio-aware cached edge 已在 bicycle、garden 和 counter 三个 scene 上超过各自 baseline；no-effect/cadence 控制、post-prune fine-tune、cached edge 严格 240k dense recovery、descriptor 30k 完整训练、descriptor staged 预算对齐、descriptor `rgb_only` 保守接入、descriptor top-k/smoothing 30k、top-k 8% 完整对照、top-k 8% staged 对齐、410k staged 对齐、top-k/smoothing `rgb_only`、soft top-k 30k 完整对照、soft top-k staged 410k 和 percentile 90% 完整对照均已完成。当前结论是 descriptor unpruned 可接近 DINO token-edge，top-k 8% 与 percentile 90% 是更均衡的完整对照点，soft top-k 质量正向但成本更高；预算对齐、降低 top-k ratio、只参与 support/pruning、percentile mask、多层 soft 计数或严格 240k dense recovery 后仍低于 cadence control。
 
 ## 排队
 
 - 将 `cached_edge_l1` 固化为 0001 v1 正向控制组，并整理下一版实验入口。
-- 继续 descriptor 时只做会改变预算行为的方案：转向 staged pruning 后 dense recovery。
-- 跑完整 dense recovery 对照，优先验证 cached edge 240k final-prune + dense fine-tune，以及 descriptor/top-k staged + `post_prune_finetune_trigger=any_prune`。
+- 继续 descriptor 时只做会改变预算行为的方案：验证 descriptor/top-k staged + `post_prune_finetune_trigger=any_prune`。
+- 若 staged 后 dense recovery 仍低于 cadence control，则收束 0001 v1：保留 cached edge staged/ratio-aware 作为正向控制组，把语义 VFM descriptor 的预算高效化转入下一版计划。
 
 ## 阻塞
 
 - DINOv2 token-edge 默认 30k 指标领先但预算过大；350k staged budget 下只在 LPIPS 上超过 baseline，PSNR/SSIM 仍低。当前 DINO token-edge 还不能作为预算高效的主结果。
+- cached edge 严格 240k final-prune + dense recovery 已比 final-only 和 240k staged 更好，但仍低于 baseline 与 350k staged 正向控制组，说明 baseline-sized budget 对当前裁剪路径过紧。
 
 ## 已完成
 
@@ -57,3 +58,4 @@
 - 完成 no-effect/cadence control；`fastgs_photometric + densification_interval=100` 与 zero-weight VFM runs 都在约 410k Gaussians，说明此前 no-effect 高点数主要来自 densification cadence。
 - 增加 `post_prune_finetune_iterations` 并完成 final-prune-plus-fine-tune 探测；严格 240k 预算下质量明显优于 final-only，但仍低于 baseline 与 350k staged 正向控制组。
 - 增加 dense recovery 调度参数；支持恢复阶段独立 optimizer step interval、SH step interval、局部 xyz LR 和 staged/any-prune 触发。260-step 快速验证已完成，能从 88,194 裁到 65,000 并保存 `ours_280`。
+- 完成 cached edge 严格 240k final-prune + dense recovery 完整对照；PSNR 26.2470，SSIM 0.7813，LPIPS 0.2526，优于默认 cadence 恢复但仍低于 baseline。
