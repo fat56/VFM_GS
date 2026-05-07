@@ -342,7 +342,9 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
 | `output/0001/vfm_dinov2_descriptor_smoke_bicycle_80_r8` | `dinov2_descriptor_cosine` | 80 | 18.5433 | 0.3634 | 0.6927 | 1.66s | 57,709 | 16M | 最小链路验证，触发一次 descriptor scoring |
 | `output/0001/vfm_dinov2_descriptor_bicycle_smoke` | `dinov2_descriptor_cosine` | 220 | 20.0193 | 0.4233 | 0.6018 | 2.55s | 77,060 | 20M | 与历史快速验证 schedule 对齐 |
+| `output/0001/vfm_dinov2_descriptor_t030_bicycle_smoke` | `dinov2_descriptor_cosine`, `vfm_loss_thresh=0.30` | 220 | 20.2853 | 0.4276 | 0.6011 | 2.58s | 78,935 | 39M | 接近 0.35，但 LPIPS 较差 |
 | `output/0001/vfm_dinov2_descriptor_t035_bicycle_smoke` | `dinov2_descriptor_cosine`, `vfm_loss_thresh=0.35` | 220 | 20.2897 | 0.4287 | 0.5993 | 2.65s | 79,120 | 39M | 三个阈值点中最好 |
+| `output/0001/vfm_dinov2_descriptor_t040_bicycle_smoke` | `dinov2_descriptor_cosine`, `vfm_loss_thresh=0.40` | 220 | 20.2550 | 0.4267 | 0.6008 | 2.64s | 76,773 | 39M | 低于 0.35 |
 | `output/0001/vfm_dinov2_descriptor_t065_bicycle_smoke` | `dinov2_descriptor_cosine`, `vfm_loss_thresh=0.65` | 220 | 20.2162 | 0.4253 | 0.6034 | 2.46s | 77,037 | 39M | PSNR/SSIM 好于默认，LPIPS 较差 |
 
 解读：
@@ -350,6 +352,7 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 - descriptor scorer 已完成 train、render 和 metrics，证明“渲染图在线 DINO descriptor vs GT cache descriptor”的真实语义特征路径可以接入现有 `pixel_error_map -> metric_map -> accum_metric_counts` 管线。
 - 220-iteration 指标低于 token-edge 快速验证：PSNR -0.2720、SSIM -0.0039、LPIPS +0.0012。这个差距不能直接否定 descriptor 路径，因为短跑主要验证集成健康，且 descriptor 后端的阈值、cache 分辨率和投影策略尚未调参。
 - 阈值小网格显示 `vfm_loss_thresh=0.35` 明显优于默认 0.50：+0.2704 PSNR、+0.0054 SSIM、-0.0025 LPIPS。它也接近 token-edge 快速验证的 PSNR/SSIM，并在 LPIPS 上略优。
-- `vfm_loss_thresh=0.65` 的 PSNR/SSIM 也优于默认，但 LPIPS 变差。下一轮可把 descriptor 阈值细化到 0.30-0.40，再决定是否跑 30k。
+- 细扫 0.30 和 0.40 后，0.35 仍是当前最优短跑阈值。0.30 的 PSNR 接近 0.35，但 SSIM/LPIPS 更弱；0.40 三项指标都低于 0.35。
+- `vfm_loss_thresh=0.65` 的 PSNR/SSIM 也优于默认，但 LPIPS 变差。下一轮应优先补高分辨率 DINO cache 或直接用 0.35 跑 30k，而不是继续扩大低分辨率阈值网格。
 - 当前实现每个 scorer 视角都在线运行 DINOv2。短跑训练时间从 token-edge 的 1.72s 增到 2.55s，仍可接受；30k 之前应先评估更高 cache width 和较少 scorer 视角/缓存 rendered descriptor 的折中。
 - DINOv2 import 继续提示 `xformers` 不可用，但官方实现能 fallback，训练未失败。
