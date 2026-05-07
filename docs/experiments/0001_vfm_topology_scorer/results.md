@@ -429,6 +429,7 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 | `output/0001/vfm_dinov2_descriptor_topk015_smooth3_bicycle_120_r8` | `dinov2_descriptor_cosine` | 120 | top-k 15%, token smooth 3 | 19.3201 | 0.3804 | 0.6716 | 2.00s | 58,605 | 33M | 触发一次 descriptor scoring 和 densification |
 | `output/0001/vfm_dinov2_descriptor_topk015_smooth3_bicycle_30k_r8` | `dinov2_descriptor_cosine` | 30,000 | top-k 15%, token smooth 3 | 27.0274 | 0.8330 | 0.1805 | 191.30s | 484,229 | 140M | 完整 30k 对照，接近 DINO token-edge |
 | `output/0001/vfm_dinov2_descriptor_topk015_smooth3_budget410000_staged105_bicycle_30k_r8` | `dinov2_descriptor_cosine` | 30,000 | top-k 15%, token smooth 3, staged 410k | 26.9047 | 0.8219 | 0.1998 | 160.53s | 389,250 | 117M | 预算对齐后低于 cadence control |
+| `output/0001/vfm_dinov2_descriptor_topk015_smooth3_rgb_only_bicycle_30k_r8` | `dinov2_descriptor_cosine` | 30,000 | top-k 15%, token smooth 3, `rgb_only` | 26.9117 | 0.8237 | 0.1977 | 154.16s | 412,317 | 123M | 只保留 descriptor support/pruning，仍低于 cadence control |
 
 解读：
 
@@ -443,4 +444,7 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 - 相比 unpruned top-k/smoothing，staged 版本减少 94,979 个 Gaussians，训练少 30.77s，但质量下降 -0.1227 PSNR、-0.0111 SSIM、LPIPS 差 +0.0193。
 - 相比 `fastgs_densify100` cadence control，staged top-k/smoothing 少 22,828 个 Gaussians、训练少 5.36s，但指标也更低：-0.0240 PSNR、-0.0022 SSIM、LPIPS 差 +0.0034。
 - 相比默认 descriptor staged 410k，top-k/smoothing staged 多 7,524 个 Gaussians，PSNR 低 -0.0017，SSIM 高 +0.0011，LPIPS 好 -0.0023。它只是在 descriptor staged 负例上小幅改善感知指标，没有改变预算对齐结论。
-- 结论是：top-k/smoothing 能改善 unpruned descriptor 质量，但在接近 410k budget 时收益没有保住。下一步若继续 descriptor，应换 mask 形态或恢复策略，例如 percentile mask、降低 top-k ratio、只把 descriptor 用于 support/pruning，或给 staged pruning 后增加 dense recovery。
+- top-k/smoothing `rgb_only` 完成 train、render 和 metrics；它保留 descriptor top-k mask 对 pruning/support 的影响，但 densification importance 使用 RGB/FastGS 计数。最终点数为 412,317，`iteration_30000` 点云约 98M，包含 test renders 后目录约 123M。
+- 相比 `fastgs_densify100` cadence control，top-k/smoothing `rgb_only` 多 239 个 Gaussians，训练少 11.73s，但质量更低：-0.0170 PSNR、-0.0004 SSIM、LPIPS 差 +0.0014。它是一个预算贴合的负例。
+- 相比普通 descriptor `rgb_only`，top-k/smoothing `rgb_only` 多 5,116 个 Gaussians、训练少 37.38s，但质量略低：-0.0253 PSNR、-0.0002 SSIM、LPIPS 差 +0.0006。说明 top-k mask 单独用于 support/pruning 时没有保住质量收益。
+- 结论是：top-k/smoothing 能改善 unpruned descriptor 质量，但在接近 410k budget 或关闭直接 descriptor densification 后收益都没有保住。下一步若继续 descriptor，应换更强的预算行为机制，例如 percentile/lower-ratio mask 的完整 30k 对照，或给 staged pruning 后增加更密集的恢复训练。

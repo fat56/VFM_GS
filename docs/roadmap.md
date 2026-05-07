@@ -2,12 +2,12 @@
 
 ## 进行中
 
-- `0001_vfm_topology_scorer`: staged/ratio-aware cached edge 已在 bicycle、garden 和 counter 三个 scene 上超过各自 baseline；no-effect/cadence 控制、post-prune fine-tune、descriptor 30k 完整训练、descriptor staged 预算对齐、descriptor `rgb_only` 保守接入、descriptor top-k/smoothing 30k 与 410k staged 对齐均已完成。当前结论是 descriptor unpruned 可接近 DINO token-edge，但预算对齐后仍低于 cadence control。
+- `0001_vfm_topology_scorer`: staged/ratio-aware cached edge 已在 bicycle、garden 和 counter 三个 scene 上超过各自 baseline；no-effect/cadence 控制、post-prune fine-tune、descriptor 30k 完整训练、descriptor staged 预算对齐、descriptor `rgb_only` 保守接入、descriptor top-k/smoothing 30k、410k staged 对齐和 top-k/smoothing `rgb_only` 均已完成。当前结论是 descriptor unpruned 可接近 DINO token-edge，但预算对齐或只参与 support/pruning 后仍低于 cadence control。
 
 ## 排队
 
 - 将 `cached_edge_l1` 固化为 0001 v1 正向控制组，并整理下一版实验入口。
-- 继续 descriptor 时只做会改变预算行为的方案：percentile mask、降低 top-k ratio、descriptor 只参与 support/pruning，或 staged pruning 后 dense recovery。
+- 继续 descriptor 时只做会改变预算行为的方案：percentile mask、降低 top-k ratio，或 staged pruning 后 dense recovery。
 - 设计 dense post-prune recovery schedule，避免 30k 后恢复训练实际更新次数过少。
 
 ## 阻塞
@@ -35,6 +35,7 @@
 - 增加 descriptor metric-map 策略参数，支持 threshold、percentile、top-k 和 DINO token-grid smoothing；120-step top-k/smoothing 集成验证已触发真实 descriptor scoring 和 densification。
 - 完成 descriptor top-k/smoothing 30k 对照；PSNR 27.0274，SSIM 0.8330，LPIPS 0.1805，484,229 个 Gaussians，质量接近 DINO token-edge 但预算偏高。
 - 完成 descriptor top-k/smoothing 410k staged target；PSNR 26.9047，SSIM 0.8219，LPIPS 0.1998，389,250 个 Gaussians，预算对齐后仍低于 cadence control。
+- 完成 descriptor top-k/smoothing `rgb_only`；PSNR 26.9117，SSIM 0.8237，LPIPS 0.1977，412,317 个 Gaussians，与 cadence control 点数贴合但质量略低。
 - 完成 baseline、compact cached edge、DINOv2 token-edge 的 30k `-r 8` matched ablation；DINO token-edge 指标最好，但点数和渲染成本也最高。
 - 完成 t075/w010 budget-control probe；现有阈值/权重 knob 无法充分控制 VFM densification 点数。
 - 增加 `vfm_importance_weight` 并完成 i0.25 30k probe；DINO 点数下降但仍未达成 budget matching。
