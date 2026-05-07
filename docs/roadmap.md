@@ -2,12 +2,12 @@
 
 ## 进行中
 
-- `0001_vfm_topology_scorer`: staged/ratio-aware cached edge 已在 bicycle、garden 和 counter 三个 scene 上超过各自 baseline；no-effect/cadence 控制、post-prune fine-tune、descriptor 30k 完整训练、descriptor staged 预算对齐、descriptor `rgb_only` 保守接入、descriptor top-k/smoothing 30k、top-k 8% 完整对照、top-k 8% staged 对齐、410k staged 对齐、top-k/smoothing `rgb_only` 和 soft top-k 集成验证均已完成。当前结论是 descriptor unpruned 可接近 DINO token-edge，top-k 8% 是更均衡的完整对照点，但预算对齐、降低 top-k ratio 或只参与 support/pruning 后仍低于 cadence control。
+- `0001_vfm_topology_scorer`: staged/ratio-aware cached edge 已在 bicycle、garden 和 counter 三个 scene 上超过各自 baseline；no-effect/cadence 控制、post-prune fine-tune、descriptor 30k 完整训练、descriptor staged 预算对齐、descriptor `rgb_only` 保守接入、descriptor top-k/smoothing 30k、top-k 8% 完整对照、top-k 8% staged 对齐、410k staged 对齐、top-k/smoothing `rgb_only` 和 soft top-k 30k 完整对照均已完成。当前结论是 descriptor unpruned 可接近 DINO token-edge，top-k 8% 是更均衡的完整对照点，soft top-k 质量正向但成本更高；预算对齐、降低 top-k ratio 或只参与 support/pruning 后仍低于 cadence control。
 
 ## 排队
 
 - 将 `cached_edge_l1` 固化为 0001 v1 正向控制组，并整理下一版实验入口。
-- 继续 descriptor 时只做会改变预算行为的方案：优先跑 soft top-k 30k 完整对照；若仍低于 cadence control，再转向 percentile mask 或 staged pruning 后 dense recovery。
+- 继续 descriptor 时只做会改变预算行为的方案：先跑 soft top-k staged 410k 预算对齐；若仍低于 cadence control，再转向 percentile mask 或 staged pruning 后 dense recovery。
 - 设计 dense post-prune recovery schedule，避免 30k 后恢复训练实际更新次数过少。
 
 ## 阻塞
@@ -39,6 +39,7 @@
 - 完成 descriptor top-k 8% / smoothing 410k staged target；PSNR 26.8783，SSIM 0.8208，LPIPS 0.2013，382,035 个 Gaussians，低于 top-k 15% staged 和 cadence control。
 - 完成 descriptor top-k/smoothing `rgb_only`；PSNR 26.9117，SSIM 0.8237，LPIPS 0.1977，412,317 个 Gaussians，与 cadence control 点数贴合但质量略低。
 - 增加 descriptor `soft_topk` 多层近似 metric map；620-step 集成验证已触发真实 descriptor scoring、3 层嵌套 top-k 计数和 densification。
+- 完成 descriptor soft top-k 30k 完整对照；PSNR 26.9875，SSIM 0.8305，LPIPS 0.1844，462,696 个 Gaussians，质量高于 cadence control，但成本和点数仍偏高。
 - 完成 baseline、compact cached edge、DINOv2 token-edge 的 30k `-r 8` matched ablation；DINO token-edge 指标最好，但点数和渲染成本也最高。
 - 完成 t075/w010 budget-control probe；现有阈值/权重 knob 无法充分控制 VFM densification 点数。
 - 增加 `vfm_importance_weight` 并完成 i0.25 30k probe；DINO 点数下降但仍未达成 budget matching。
