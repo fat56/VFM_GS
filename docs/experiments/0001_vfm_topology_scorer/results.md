@@ -1,5 +1,56 @@
 # 0001 实验结果
 
+## 2026-05-07 MipNeRF360 全场景 v1 评估
+
+评估范围：`datasets/mipnerf360` 全 9 个场景，`-r 8`，30,000 iterations，`--eval`。每个场景统一重跑 `fastgs_baseline` 与当前 v1 正向版本 `cached_edge_l1 + npz_uint8 cache + staged target`。v1 的 `target_gaussian_count` 设为该场景 baseline Gaussian 数量的 `1.42x`，`target_gaussian_stage_margin=1.10`，`target_gaussian_stage_interval=500`。测试指标来自 test split render 后的 `metrics`，原始汇总产物在 `output/0001/full_mipnerf360_v1/summary.csv`。
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| bicycle | baseline | 26.6987 | 0.8061 | 0.2284 | 241,383 | 125.44s |
+| bicycle | cached edge v1 | 26.7886 | 0.8069 | 0.2240 | 333,974 | 142.03s |
+| bonsai | baseline | 32.3574 | 0.9596 | 0.0623 | 123,342 | 129.53s |
+| bonsai | cached edge v1 | 32.2266 | 0.9600 | 0.0588 | 111,795 | 139.83s |
+| counter | baseline | 29.5411 | 0.9311 | 0.0806 | 113,023 | 124.27s |
+| counter | cached edge v1 | 29.6428 | 0.9321 | 0.0787 | 111,125 | 132.12s |
+| flowers | baseline | 22.7542 | 0.6723 | 0.3187 | 208,647 | 123.97s |
+| flowers | cached edge v1 | 22.9676 | 0.6890 | 0.2862 | 294,533 | 142.26s |
+| garden | baseline | 28.7256 | 0.8893 | 0.1132 | 196,507 | 128.93s |
+| garden | cached edge v1 | 28.9003 | 0.8962 | 0.1002 | 248,404 | 135.03s |
+| kitchen | baseline | 33.0920 | 0.9672 | 0.0379 | 168,976 | 132.09s |
+| kitchen | cached edge v1 | 33.3102 | 0.9691 | 0.0350 | 158,780 | 141.51s |
+| room | baseline | 32.9776 | 0.9597 | 0.0612 | 91,314 | 121.77s |
+| room | cached edge v1 | 32.9685 | 0.9620 | 0.0578 | 98,899 | 135.43s |
+| stump | baseline | 27.1756 | 0.7934 | 0.2327 | 170,759 | 121.11s |
+| stump | cached edge v1 | 27.2475 | 0.7932 | 0.2302 | 242,478 | 143.60s |
+| treehill | baseline | 24.5517 | 0.7175 | 0.3228 | 246,117 | 121.30s |
+| treehill | cached edge v1 | 24.4394 | 0.7126 | 0.3253 | 342,829 | 142.14s |
+| **平均** | **baseline** | **28.6527** | **0.8551** | **0.1620** | **173,341** | **125.38s** |
+| **平均** | **cached edge v1** | **28.7213** | **0.8579** | **0.1551** | **215,869** | **139.33s** |
+
+逐场景差值：
+
+| 场景 | ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 |
+|---|---:|---:|---:|---:|---:|
+| bicycle | +0.0899 | +0.0009 | -0.0044 | +92,591 | +16.59s |
+| bonsai | -0.1308 | +0.0004 | -0.0035 | -11,547 | +10.30s |
+| counter | +0.1017 | +0.0010 | -0.0018 | -1,898 | +7.85s |
+| flowers | +0.2134 | +0.0167 | -0.0325 | +85,886 | +18.29s |
+| garden | +0.1747 | +0.0069 | -0.0130 | +51,897 | +6.10s |
+| kitchen | +0.2182 | +0.0019 | -0.0029 | -10,196 | +9.41s |
+| room | -0.0091 | +0.0023 | -0.0034 | +7,585 | +13.66s |
+| stump | +0.0718 | -0.0002 | -0.0026 | +71,719 | +22.49s |
+| treehill | -0.1123 | -0.0048 | +0.0025 | +96,712 | +20.84s |
+
+解读：
+
+- 全 9 场景平均结果为正向：PSNR +0.0686、SSIM +0.0028、LPIPS -0.0068。
+- 平均 Gaussian 数量从 173,341 增加到 215,869，约 +24.5%；平均训练时间从 125.38s 增加到 139.33s，约 +11.1%。
+- 6/9 场景 PSNR 提升；8/9 场景 SSIM 提升；8/9 场景 LPIPS 改善。`treehill` 是三项指标同时变差的主要负例，`bonsai` 与 `room` 的 PSNR 小幅下降但 SSIM/LPIPS 改善。
+- `counter` 与 `kitchen` 在 Gaussian 数量少于 baseline 的情况下仍提升三项指标，说明 v1 的正向结果不完全依赖更大点数预算。
+- `flowers` 和 `garden` 收益最明显，尤其 LPIPS 分别改善 -0.0325 和 -0.0130，说明 edge-alignment proxy 对复杂植被/纹理边界有稳定帮助。
+- `treehill` 同时增加约 96,712 个 Gaussians 但质量下降，说明固定 `1.42x` ratio target 并非所有场景稳健。下一版应引入场景自适应 budget 或把 edge/VFM 信号改为 prune-protect，而不是直接推动更多 densification。
+- 因此，`cached_edge_l1` 可以作为 0001 v1 的 MipNeRF360 全场景正向控制组，但它仍是边缘代理，不是最终语义 VFM scorer；更进一步的研究应解决场景自适应预算和语义 descriptor 预算高效化。
+
 ## 2026-04-28 Mock v1 快速验证
 
 数据集：`datasets/mipnerf360/bicycle`，test split，`-r 8`，220 iterations，`densify_from_iter=50`，`densification_interval=50`。

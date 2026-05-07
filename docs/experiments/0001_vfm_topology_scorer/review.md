@@ -88,6 +88,10 @@
 - edge 正向结果已在 garden 复验。garden baseline 为 PSNR 28.7051，SSIM 0.8889，LPIPS 0.1134，196,201 个 Gaussians；staged edge 为 PSNR 28.9411，SSIM 0.8964，LPIPS 0.1007，248,471 个 Gaussians。
 - edge 正向结果已在 counter 完成第三场景复验。counter baseline 为 PSNR 29.5346，SSIM 0.9304，LPIPS 0.0815，113,168 个 Gaussians；staged edge 为 PSNR 29.6316，SSIM 0.9319，LPIPS 0.0791，111,116 个 Gaussians。
 - counter edge 的点数比 baseline 少 2,052 个，约少 1.8%。这说明至少在这个室内场景上，`cached_edge_l1` 的正向指标不是由更大的 Gaussian budget 解释的。
+- MipNeRF360 全 9 场景统一重跑已完成。`cached_edge_l1 + staged target ~= 1.42x baseline count` 平均达到 PSNR 28.7213，SSIM 0.8579，LPIPS 0.1551；对应 baseline 平均为 PSNR 28.6527，SSIM 0.8551，LPIPS 0.1620。
+- 全场景平均提升为 +0.0686 PSNR、+0.0028 SSIM、-0.0068 LPIPS；平均 Gaussian 数量从 173,341 增到 215,869，平均训练时间从 125.38s 增到 139.33s。
+- 全场景中 6/9 场景 PSNR 提升，8/9 场景 SSIM 提升，8/9 场景 LPIPS 改善。`treehill` 是明确负例，三项指标同时变差；`bonsai` 和 `room` 的 PSNR 小幅下降但 SSIM/LPIPS 改善。
+- `counter` 与 `kitchen` 在 Gaussian 数量少于 baseline 的情况下仍三项指标提升，说明 edge v1 并不只是靠更大点数预算取胜。`flowers` 与 `garden` 的感知指标收益最大，说明边缘代理对复杂纹理/植被边界有帮助。
 - no-effect 控制已补齐。`fastgs_photometric + densification_interval=100` 达到 PSNR 26.9287，SSIM 0.8241，LPIPS 0.1964，412,078 个 Gaussians；zero-weight cached edge 和 zero-weight DINO 分别为 410,330 与 412,037 个 Gaussians，指标也基本一致。
 - 这说明 410k 级别点数主要由 `densification_interval=100` 的 cadence 改变驱动，而不是 VFM zero-weight scorer/cache 本身。后续预算归因必须固定或显式报告 densification cadence。
 - `post_prune_finetune_iterations` 已落地，默认关闭。训练会在最终 target prune 真的删除 Gaussians 后清空残留梯度，继续纯光度恢复训练，并保存到新的迭代号。
@@ -110,14 +114,14 @@
 - 最好的 30k DINO 结果不是预算受控结果：它使用了约 2.04x baseline Gaussian count。下一步必须把特征信号质量和允许更密 reconstruction 的收益拆开。
 - 现有 knobs 不能提供完整 budget control。`vfm_weight` 影响 pruning fusion，`vfm_importance_weight` 影响直接 VFM densification 强度，`vfm_importance_mode=rgb_only` 可以关闭直接 VFM densification，但都不能匹配 baseline point count。
 - `target_gaussian_count` 适合作为 count-control 诊断，但 baseline-sized budget 下的一次性 final pruning 破坏性太强。
-- staged budget control 更健康，edge 已在 bicycle、garden 和 counter 产生正向结果。DINO token-edge 仍需要更好的 projection 或 recovery training，才能成为预算高效方案。
-- garden 与 counter 的 staged edge 在所选目标下自然低于 target，没有真正触发最终预算裁剪；因此严格预算机制的正向证据主要来自 bicycle 350k staged run，跨场景结论应表述为比例感知的正向控制组，而不是所有场景都完成了精确预算匹配。
+- staged budget control 更健康，edge 已在 MipNeRF360 全 9 场景平均转正，但 `treehill` 仍是负例。DINO token-edge 仍需要更好的 projection 或 recovery training，才能成为预算高效方案。
+- 全场景 edge 评估使用 `1.42x baseline count` 的比例感知 target；部分场景自然低于 target，没有真正触发最终预算裁剪。因此结论应表述为比例感知的 v1 正向控制组，而不是所有场景都完成了精确预算匹配。
 - `vfm_enable` 当前没有 CLI 级显式关闭开关；若加载 VFM experiment yaml，就会触发 VFM scorer/preflight。严格 no-effect 需要从 baseline variant 出发手动覆盖非 VFM cadence 参数。
 - post-prune fine-tune 已证明有恢复价值，但严格 240k 预算和 descriptor staged 410k 预算下都未转正；它现在只能作为局部补救机制，不能作为预算高效化主方案。
 
 ## 下一版计划
 
-1. 固化 `cached_edge_l1` 为 0001 v1 正向控制组：保留 bicycle/garden/counter 三场景结果，说明它是稳定 proxy，而不是最终语义 VFM scorer。
+1. 固化 `cached_edge_l1` 为 0001 v1 正向控制组：保留 MipNeRF360 全 9 场景平均结果，同时明确 `treehill` 负例和平均点数/训练时间成本。它是稳定 proxy，而不是最终语义 VFM scorer。
 2. 将 DINOv2 descriptor 收束为“真实语义特征路径已打通但预算机制未转正”。下一版不再优先增加 top-k、percentile 或 soft-top-k 单点，而是设计预算感知 score：按 Gaussian 支持度归一化 VFM 分数，削弱大面积重复命中的 densification 放大效应。
 3. 改造 VFM 的角色：优先测试 prune-protect 或 prune-reorder，让语义信号保护结构性点，而不是直接扩大 densification；必要时把 VFM importance 与 RGB gradient gate 做更强的 AND/ratio 约束。
 4. 重做恢复时序：不再只在训练结束后统一 dense recovery，而是在 staged pruning 发生后立即执行短局部恢复，观察是否能减少中期结构损伤。

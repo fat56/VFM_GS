@@ -8,6 +8,23 @@ uv run --active python -m vfm_gs.cli.render -m output/0001_baseline/<scene> --sk
 uv run --active python -m vfm_gs.cli.metrics -m output/0001_baseline/<scene>
 ```
 
+## MipNeRF360 全场景 v1 评估
+
+统一批次脚本会对 9 个 MipNeRF360 场景依次运行 baseline 与 `cached_edge_l1 + staged target ~= 1.42x baseline count`，并为每个 run 保存 train/render/metrics 日志。脚本可重复执行；已完成的训练、渲染和指标会跳过。
+
+```bash
+uv run --active python scripts/run_mipnerf360_v1_eval.py
+```
+
+主要产物：
+
+- `output/0001/full_mipnerf360_v1/summary.csv`
+- `output/0001/full_mipnerf360_v1/summary.json`
+- `output/0001/full_mipnerf360_v1/averages.json`
+- `output/0001/full_mipnerf360_v1/<scene>/logs/<method>/train.log`
+- `output/0001/full_mipnerf360_v1/<scene>/logs/<method>/render.log`
+- `output/0001/full_mipnerf360_v1/<scene>/logs/<method>/metrics.log`
+
 ## 模拟 VFM 拓扑 v1
 
 ```bash
