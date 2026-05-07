@@ -2,13 +2,13 @@
 
 ## 进行中
 
-- `0001_vfm_topology_scorer`: staged/ratio-aware cached edge 已在 bicycle、garden 和 counter 三个 scene 上超过各自 baseline；no-effect/cadence 控制、post-prune fine-tune、descriptor 30k 完整训练和 descriptor staged 预算对齐已完成。当前进入 v1 结果固化与 descriptor scorer 改进阶段。
+- `0001_vfm_topology_scorer`: staged/ratio-aware cached edge 已在 bicycle、garden 和 counter 三个 scene 上超过各自 baseline；no-effect/cadence 控制、post-prune fine-tune、descriptor 30k 完整训练、descriptor staged 预算对齐和 descriptor `rgb_only` 保守接入已完成。当前进入 v1 结果固化与 descriptor scorer mask/aggregation 改进阶段。
 
 ## 排队
 
 - 将 `cached_edge_l1` 固化为 0001 v1 正向控制组，并整理下一版实验入口。
 - 改进 descriptor scorer 的 mask/aggregation 设计，避免直接阈值化全图 cosine error。
-- 为 descriptor 增加更保守的接入方式，例如只影响 pruning/support score 或降低 densification 权重。
+- 基于新的 descriptor mask/aggregation 做 30k 对照，优先与 cadence control、默认 descriptor、descriptor `rgb_only` 和 staged 410k 四组比较。
 - 设计 dense post-prune recovery schedule，避免 30k 后恢复训练实际更新次数过少。
 
 ## 阻塞
@@ -32,6 +32,7 @@
 - 完成 `max_width=518` DINO ViT-S/14 cache build/validate；cache 为 127M，构建 9.90s，descriptor 快速验证只在 PSNR 上略优于 224-cache。
 - 完成 `dinov2_descriptor_cosine`、`vfm_loss_thresh=0.35`、`max_width=224` cache 的 30k 完整训练；结果为 PSNR 26.9770，SSIM 0.8298，LPIPS 0.1850，461,846 个 Gaussians，优于 cadence control 但低于 DINO token-edge。
 - 完成 descriptor staged 预算对齐；`target_gaussian_count=410000`、`stage_margin=1.05` 后自然结束在 381,726 个 Gaussians，PSNR 26.9064，SSIM 0.8208，LPIPS 0.2021，低于 `fastgs_densify100`。
+- 完成 descriptor `rgb_only` 保守接入；禁用直接 descriptor densification 后达到 PSNR 26.9370，SSIM 0.8239，LPIPS 0.1972，407,201 个 Gaussians，与 cadence control 基本持平但不是清晰正向。
 - 完成 baseline、compact cached edge、DINOv2 token-edge 的 30k `-r 8` matched ablation；DINO token-edge 指标最好，但点数和渲染成本也最高。
 - 完成 t075/w010 budget-control probe；现有阈值/权重 knob 无法充分控制 VFM densification 点数。
 - 增加 `vfm_importance_weight` 并完成 i0.25 30k probe；DINO 点数下降但仍未达成 budget matching。

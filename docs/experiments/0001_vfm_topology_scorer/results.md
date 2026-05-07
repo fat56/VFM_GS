@@ -398,3 +398,22 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 - 相比 `fastgs_densify100` cadence control，staged descriptor 少 30,352 个 Gaussians、训练少 4.16s，但指标也更低：-0.0223 PSNR、-0.0033 SSIM、LPIPS 差 +0.0057。
 - 因此，descriptor 在 unpruned 30k 中相对 cadence control 的小幅收益没有经受住 staged budget 对齐。当前瓶颈更像 scorer mask/aggregation 设计，而不是继续调 target count。
 - 下一步不应继续在同一个 `dinov2_descriptor_cosine` 阈值形态上做更多短跑或单点 target；更有价值的是改 descriptor error map 的构造方式，例如 percentile/top-k token mask、token-grid smoothing、多视角聚合，或把 descriptor 信号只用于 pruning 而不直接驱动 densification。
+
+## 2026-05-07 DINOv2 Descriptor `rgb_only` 保守接入
+
+数据集和 schedule 与 descriptor 30k 完整训练一致。这组只覆盖 `vfm_importance_mode=rgb_only`，即 descriptor 仍以 `vfm_weight=0.25` 参与 pruning-score fusion，但 densification importance 回到 RGB/FastGS importance counts。它用于检查 unpruned descriptor 的收益是否来自直接 VFM densification，还是来自 pruning/support score 的保守重排。
+
+| 产物 | Scorer / Backend | PSNR | SSIM | LPIPS | 训练时间 | Gaussian 数量 | 输出大小 | 备注 |
+|---|---|---:|---:|---:|---:|---:|---:|---|
+| `output/0001/fastgs_densify100_bicycle_30k_r8` | `fastgs_photometric`, `densification_interval=100` | 26.9287 | 0.8241 | 0.1964 | 165.89s | 412,078 | 123M | cadence control |
+| `output/0001/vfm_dinov2_descriptor_t035_bicycle_30k_r8` | `dinov2_descriptor_cosine`, `max` importance | 26.9770 | 0.8298 | 0.1850 | 190.59s | 461,846 | 135M | 完整 descriptor 结果 |
+| `output/0001/vfm_dinov2_descriptor_budget410000_staged105_bicycle_30k_r8` | `dinov2_descriptor_cosine`, staged target | 26.9064 | 0.8208 | 0.2021 | 161.73s | 381,726 | 116M | 预算对齐负例 |
+| `output/0001/vfm_dinov2_descriptor_rgb_only_bicycle_30k_r8` | `dinov2_descriptor_cosine`, `rgb_only` | 26.9370 | 0.8239 | 0.1972 | 191.54s | 407,201 | 122M | 禁用直接 descriptor densification |
+
+解读：
+
+- `rgb_only` run 完成 train、render 和 metrics，最终写出 407,201 个 Gaussians；`iteration_30000` 点云约 97M，包含 test renders 后目录约 122M。
+- 相比 `fastgs_densify100` cadence control，descriptor `rgb_only` 少 4,877 个 Gaussians，PSNR 高 +0.0083，但 SSIM 低 -0.0002，LPIPS 差 +0.0008，训练多 25.65s。整体只能视为基本持平或轻微混合结果，不能作为清晰正向。
+- 相比默认 descriptor，它少 54,645 个 Gaussians，但指标退回 -0.0400 PSNR、-0.0059 SSIM、LPIPS 差 +0.0122。这说明直接 descriptor densification 确实贡献了 unpruned 结果中的一部分质量，也带来了额外点数。
+- 相比 staged 410k 预算对齐，`rgb_only` 多 25,475 个 Gaussians，PSNR 高 +0.0306、SSIM 高 +0.0030、LPIPS 好 -0.0050。它比 staged hard cap 温和，但仍没有超过 cadence control 的 LPIPS/SSIM。
+- 结论是：保守接入能避免 descriptor 点数膨胀到 460k，但也几乎交回了 descriptor 的质量优势。下一步应优先改 `pixel_error_map -> metric_map` 的 mask/aggregation，而不是继续只调接入强度。

@@ -197,6 +197,34 @@ uv run --active python -m vfm_gs.cli.metrics \
   -m output/0001/vfm_dinov2_descriptor_budget410000_staged105_bicycle_30k_r8
 ```
 
+descriptor 保守接入探测使用 `vfm_importance_mode=rgb_only`。该 run 会禁用直接 descriptor densification，但保留 descriptor pruning-score fusion，用于判断默认 descriptor 的收益是否依赖直接 VFM importance。
+
+```bash
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_dinov2_descriptor.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0001/vfm_dinov2_descriptor_rgb_only_bicycle_30k_r8 \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_loss_thresh 0.35 \
+  --vfm_importance_mode rgb_only \
+  -r 8
+
+uv run --active python -m vfm_gs.cli.render \
+  -m output/0001/vfm_dinov2_descriptor_rgb_only_bicycle_30k_r8 \
+  --iteration -1 \
+  --skip_train \
+  --quiet
+
+uv run --active python -m vfm_gs.cli.metrics \
+  -m output/0001/vfm_dinov2_descriptor_rgb_only_bicycle_30k_r8
+```
+
 ## 30k 匹配消融
 
 220-iteration runs 只作为快速验证。迭代 scorer 行为时，使用这组 30k `-r 8` 作为最低质量门槛：
