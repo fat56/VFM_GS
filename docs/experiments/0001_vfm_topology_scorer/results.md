@@ -380,3 +380,21 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 - 相比 `cached_edge_l1`，descriptor 三项指标更好，但训练更慢、点数更多。它比 edge proxy 更贴近 proposal 语义特征误差，但首版并不更省预算。
 - 相比默认 DINO token-edge，descriptor 少 28,986 个 Gaussians，却低 -0.0807 PSNR、-0.0047 SSIM、LPIPS 差 +0.0083，并且训练更慢。当前实现中，在线 DINO descriptor 还没有超过更简单的 token-edge projection。
 - 结论是：`dinov2_descriptor_cosine` 已完成第一版真实 descriptor 路径验证，并在完整训练中优于 cadence/no-effect 控制；但它暂时不应取代 `cached_edge_l1` v1 正向控制组，也不应取代 `dinov2_token_edge_l1` 作为 DINO 完整训练上界。下一步若继续 descriptor，应优先做 410k 左右的 staged budget 对齐和 scorer 设计改进，而不是继续扩大短跑阈值网格。
+
+## 2026-05-07 DINOv2 Descriptor Staged 预算对齐
+
+数据集和 schedule 与上一节一致。这组使用 `target_gaussian_count=410000`、`target_gaussian_staged=true`、`target_gaussian_stage_margin=1.05` 和 `target_gaussian_stage_interval=500`。staged cap 为 430,500 个 Gaussians；该 target 约等于 `fastgs_densify100` 的 412,078 个点，用于检查 descriptor 相对 cadence control 的收益能否在接近预算时保留。
+
+| 产物 | Scorer / Backend | PSNR | SSIM | LPIPS | 训练时间 | Gaussian 数量 | 输出大小 | Staged 裁剪 | 最终裁剪 | 备注 |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---|---|
+| `output/0001/fastgs_densify100_bicycle_30k_r8` | `fastgs_photometric`, `densification_interval=100` | 26.9287 | 0.8241 | 0.1964 | 165.89s | 412,078 | 123M | n/a | n/a | cadence control |
+| `output/0001/vfm_dinov2_descriptor_t035_bicycle_30k_r8` | `dinov2_descriptor_cosine`, no target | 26.9770 | 0.8298 | 0.1850 | 190.59s | 461,846 | 135M | 0 | 跳过 | 完整 descriptor 结果 |
+| `output/0001/vfm_dinov2_descriptor_budget410000_staged105_bicycle_30k_r8` | `dinov2_descriptor_cosine`, staged target | 26.9064 | 0.8208 | 0.2021 | 161.73s | 381,726 | 116M | 21 | 跳过，381,726 <= 410,000 | 预算对齐后低于 cadence control |
+
+解读：
+
+- 该 run 从 iteration 4500 到 14500 共触发 21 次 staged pruning，把中期点数压到 430,500 cap 附近；训练结束时自然低于 410,000，因此 final target prune 跳过。
+- 相比 unpruned descriptor，staged 版本减少 80,120 个 Gaussians，训练少 28.86s，目录小 19M，但质量下降 -0.0706 PSNR、-0.0089 SSIM、LPIPS 差 +0.0171。
+- 相比 `fastgs_densify100` cadence control，staged descriptor 少 30,352 个 Gaussians、训练少 4.16s，但指标也更低：-0.0223 PSNR、-0.0033 SSIM、LPIPS 差 +0.0057。
+- 因此，descriptor 在 unpruned 30k 中相对 cadence control 的小幅收益没有经受住 staged budget 对齐。当前瓶颈更像 scorer mask/aggregation 设计，而不是继续调 target count。
+- 下一步不应继续在同一个 `dinov2_descriptor_cosine` 阈值形态上做更多短跑或单点 target；更有价值的是改 descriptor error map 的构造方式，例如 percentile/top-k token mask、token-grid smoothing、多视角聚合，或把 descriptor 信号只用于 pruning 而不直接驱动 densification。

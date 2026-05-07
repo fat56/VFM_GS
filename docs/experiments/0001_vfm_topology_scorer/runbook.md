@@ -166,6 +166,37 @@ uv run --active python -m vfm_gs.cli.metrics \
   -m output/0001/vfm_dinov2_descriptor_t035_bicycle_30k_r8
 ```
 
+descriptor 预算对齐探测使用接近 `fastgs_densify100` 点数的 target。该 run 是边界/负向结果：staged pruning 后自然结束在 410k 以下，需要和 cadence control 一起解读。
+
+```bash
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_dinov2_descriptor.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0001/vfm_dinov2_descriptor_budget410000_staged105_bicycle_30k_r8 \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_loss_thresh 0.35 \
+  --target_gaussian_count 410000 \
+  --target_gaussian_staged \
+  --target_gaussian_stage_margin 1.05 \
+  --target_gaussian_stage_interval 500 \
+  -r 8
+
+uv run --active python -m vfm_gs.cli.render \
+  -m output/0001/vfm_dinov2_descriptor_budget410000_staged105_bicycle_30k_r8 \
+  --iteration -1 \
+  --skip_train \
+  --quiet
+
+uv run --active python -m vfm_gs.cli.metrics \
+  -m output/0001/vfm_dinov2_descriptor_budget410000_staged105_bicycle_30k_r8
+```
+
 ## 30k 匹配消融
 
 220-iteration runs 只作为快速验证。迭代 scorer 行为时，使用这组 30k `-r 8` 作为最低质量门槛：
