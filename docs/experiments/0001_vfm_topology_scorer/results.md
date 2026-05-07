@@ -420,9 +420,9 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 
 ## 2026-05-07 Descriptor Top-k / Smoothing 集成验证
 
-代码变更：增加 `vfm_metric_map_mode=threshold|percentile|topk`，并保留 `threshold` 为默认行为。新增 `vfm_metric_topk`、`vfm_metric_percentile` 和 `vfm_descriptor_token_smooth_kernel`，用于把 descriptor cosine error 先在 DINO token grid 上平滑，再选择固定比例或分位数的高误差区域。该实现仍输出二值 `metric_map`，因此不改变 `render_fastgs(..., get_flag=True, metric_map=...) -> accum_metric_counts` 的 CUDA 计数接口。
+代码变更：增加 `vfm_metric_map_mode=threshold|percentile|topk|soft_topk`，并保留 `threshold` 为默认行为。新增 `vfm_metric_topk`、`vfm_metric_percentile`、`vfm_metric_soft_levels` 和 `vfm_descriptor_token_smooth_kernel`，用于把 descriptor cosine error 先在 DINO token grid 上平滑，再选择固定比例、分位数或多层 top-k 高误差区域。`soft_topk` 仍复用现有整数 CUDA 计数接口：它生成多层嵌套二值 masks，并按层权重累加 per-Gaussian counts。
 
-新增配置：`configs/experiments/0001_vfm_topology_dinov2_descriptor_topk.yaml`，默认使用 `vfm_metric_map_mode=topk`、`vfm_metric_topk=0.15`、`vfm_descriptor_token_smooth_kernel=3`。
+新增配置：`configs/experiments/0001_vfm_topology_dinov2_descriptor_topk.yaml`，默认使用 `vfm_metric_map_mode=topk`、`vfm_metric_topk=0.15`、`vfm_descriptor_token_smooth_kernel=3`。另新增 `configs/experiments/0001_vfm_topology_dinov2_descriptor_soft_topk.yaml`，默认使用 `vfm_metric_map_mode=soft_topk`、`vfm_metric_topk=0.15`、`vfm_metric_soft_levels=3`。
 
 | 产物 | Scorer / Backend | Iterations | Metric map | PSNR | SSIM | LPIPS | 训练时间 | Gaussian 数量 | 输出大小 | 备注 |
 |---|---|---:|---|---:|---:|---:|---:|---:|---:|---|
@@ -432,11 +432,14 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 | `output/0001/vfm_dinov2_descriptor_topk015_smooth3_budget410000_staged105_bicycle_30k_r8` | `dinov2_descriptor_cosine` | 30,000 | top-k 15%, token smooth 3, staged 410k | 26.9047 | 0.8219 | 0.1998 | 160.53s | 389,250 | 117M | 预算对齐后低于 cadence control |
 | `output/0001/vfm_dinov2_descriptor_topk008_smooth3_budget410000_staged105_bicycle_30k_r8` | `dinov2_descriptor_cosine` | 30,000 | top-k 8%, token smooth 3, staged 410k | 26.8783 | 0.8208 | 0.2013 | 165.01s | 382,035 | 116M | 更低 top-k 的预算对齐负例 |
 | `output/0001/vfm_dinov2_descriptor_topk015_smooth3_rgb_only_bicycle_30k_r8` | `dinov2_descriptor_cosine` | 30,000 | top-k 15%, token smooth 3, `rgb_only` | 26.9117 | 0.8237 | 0.1977 | 154.16s | 412,317 | 123M | 只保留 descriptor support/pruning，仍低于 cadence control |
+| `output/0001/vfm_dinov2_descriptor_soft_topk015_l3_smooth3_bicycle_620_r8` | `dinov2_descriptor_cosine` | 620 | soft top-k 15%, 3 levels, token smooth 3 | 20.8610 | 0.4747 | 0.5481 | 4.47s | 61,344 | 35M | 触发真实 descriptor scoring 和多层计数 |
 
 解读：
 
 - 120-step train、render 和 metrics 均通过。训练在 iteration 100 触发一次 DINO descriptor scorer，Gaussian 数量从 54,275 增到 58,605，说明新 top-k/smoothing 分支已进入真实 densification 计数链路。
 - 该结果只作为集成健康检查，不作为质量选择依据。前面完整 30k 结果已经说明短跑指标对最终质量指导能力弱；这组的价值是确认下一版 30k 实验入口可用。
+- soft top-k 620-step train、render 和 metrics 均通过。训练在 iteration 600 触发一次 DINO descriptor scorer 和 3 层嵌套 top-k 计数，Gaussian 数量从 54,275 增到 61,344，说明多层计数路径已进入真实 densification 链路。
+- 620-step soft top-k 指标只说明评估链路健康，不作为质量结论。它的下一步判断门槛仍是 bicycle 30k `-r 8`，并且要优先与 top-k 15%、top-k 8% 和 `fastgs_densify100` cadence control 对比。
 - top-k/smoothing 30k 完成 train、render 和 metrics，`iteration_30000` 点云约 115M，包含 test renders 后目录约 140M。
 - 相比默认 descriptor，top-k/smoothing 提升 +0.0504 PSNR、+0.0032 SSIM、LPIPS 好 -0.0045，但多 22,383 个 Gaussians，训练时间基本持平。这说明 mask/aggregation 改动确实改善了 descriptor scorer 质量。
 - 相比 `fastgs_densify100` cadence control，top-k/smoothing 提升 +0.0987 PSNR、+0.0089 SSIM、LPIPS 好 -0.0159，但多 72,151 个 Gaussians，训练多 25.41s。它是 descriptor 方向目前最强完整结果，但不是预算受控结果。

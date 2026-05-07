@@ -41,8 +41,9 @@
 - 预算对齐后的 descriptor 低于 `fastgs_densify100` cadence control：-0.0223 PSNR、-0.0033 SSIM、LPIPS 差 +0.0057。这说明 unpruned descriptor 的小幅收益没有在接近预算下保住。
 - descriptor `rgb_only` 保守接入已完成。禁用直接 descriptor densification 后，结果为 PSNR 26.9370，SSIM 0.8239，LPIPS 0.1972，407,201 个 Gaussians，训练时间 191.54s。
 - descriptor `rgb_only` 相比 `fastgs_densify100` 只高 +0.0083 PSNR，但 SSIM 低 -0.0002，LPIPS 差 +0.0008；它能控制点数，却没有保住默认 descriptor 的主要质量收益。
-- descriptor mask/aggregation 第一版改进已实现。`vfm_metric_map_mode` 支持 `threshold`、`percentile` 和 `topk`，descriptor 还可用 `vfm_descriptor_token_smooth_kernel` 在 DINO token grid 上平滑 patch error。
+- descriptor mask/aggregation 第一版改进已实现。`vfm_metric_map_mode` 支持 `threshold`、`percentile`、`topk` 和 `soft_topk`，descriptor 还可用 `vfm_descriptor_token_smooth_kernel` 在 DINO token grid 上平滑 patch error。
 - top-k/smoothing 集成验证已完成。120-step bicycle run 触发一次 descriptor scoring 和 densification，达到 PSNR 19.3201，SSIM 0.3804，LPIPS 0.6716，58,605 个 Gaussians，训练时间 2.00s。该结果只说明链路可用，不作为质量判断。
+- soft top-k 集成验证已完成。620-step bicycle run 触发一次 descriptor scoring、3 层嵌套 top-k 计数和 densification，达到 PSNR 20.8610，SSIM 0.4747，LPIPS 0.5481，61,344 个 Gaussians，训练时间 4.47s。该结果只说明链路可用，不作为质量判断。
 - top-k/smoothing 30k 对照已完成。`vfm_metric_map_mode=topk`、`vfm_metric_topk=0.15`、`vfm_descriptor_token_smooth_kernel=3` 达到 PSNR 27.0274，SSIM 0.8330，LPIPS 0.1805，484,229 个 Gaussians，训练时间 191.30s。
 - top-k/smoothing 相比默认 descriptor 提升 +0.0504 PSNR、+0.0032 SSIM、LPIPS 好 -0.0045，并接近 DINO token-edge；但它比 `fastgs_densify100` 多 72,151 个点，因此还不是预算受控结论。
 - top-k/smoothing 8% 完整对照已完成。结果为 PSNR 26.9931，SSIM 0.8301，LPIPS 0.1849，456,567 个 Gaussians，训练时间 150.34s。
@@ -91,7 +92,7 @@
 - `mock_l1` 有意不是一个真实视觉基础模型信号。
 - `cached_edge_l1` 也只是 proxy；它主要测试 cache 机制和 edge-alignment 行为。
 - `dinov2_token_edge_l1` 消费 DINO patch tokens，但比较的是标量 topology projection，而不是完整语义特征向量。
-- `dinov2_descriptor_cosine` 已比较完整 patch descriptor，但目前仍是在线 DINO 推理版本；30k 成本高于 token-edge。top-k/smoothing 已把 unpruned descriptor 质量推进到接近 DINO token-edge，top-k 8% 又给出更均衡的完整对照点，但 staged 预算对齐、降低 top-k ratio 和 `rgb_only` support/pruning 接入后仍低于 cadence control。
+- `dinov2_descriptor_cosine` 已比较完整 patch descriptor，但目前仍是在线 DINO 推理版本；30k 成本高于 token-edge。top-k/smoothing 已把 unpruned descriptor 质量推进到接近 DINO token-edge，top-k 8% 又给出更均衡的完整对照点，但 staged 预算对齐、降低 top-k ratio 和 `rgb_only` support/pruning 接入后仍低于 cadence control。`soft_topk` 已完成集成验证，质量结论还需 30k run。
 - 220-iteration 快速验证只验证集成健康，不验证最终重建质量。既然 30k runs 已足够便宜，后续不应用短跑结果选择 scorer。
 - compact storage 有助于节省磁盘，但 `npz_uint8` 尚未证明 metric-neutral。float32 与 compact cache 变体仍应保留用于 ablation。
 - 当前 DINO cache 构建于 `max_width=224`；完整 `max_width=518` 或 `640` 的缓存时间、磁盘占用和 scorer 行为仍需测量。
@@ -106,6 +107,6 @@
 ## 下一版计划
 
 1. 固化 `cached_edge_l1` 为 0001 v1 正向控制组：保留 bicycle/garden/counter 三场景结果，说明它是稳定 proxy，而不是最终语义 VFM scorer。
-2. 继续 descriptor 只做能改变预算行为的方案：转向 percentile/soft metric map，或 staged pruning 后 dense recovery。`rgb_only` support/pruning 与降低 top-k ratio 已完成且为负例，不再作为优先方向。
+2. 继续 descriptor 只做能改变预算行为的方案：优先跑 `soft_topk` 30k 完整对照；若仍低于 cadence control，再转向 percentile mask 或 staged pruning 后 dense recovery。`rgb_only` support/pruning 与降低 top-k ratio 已完成且为负例，不再作为优先方向。
 3. 评估 descriptor 训练成本优化：减少 scorer 采样视角数，或缓存同一 densification 节点内的 rendered descriptors。
 4. 设计 dense post-prune recovery schedule，避免 30k 后每 64 步才更新一次导致恢复训练实际更新过少。

@@ -251,6 +251,32 @@ uv run --active python -m vfm_gs.cli.metrics \
   -m output/0001/vfm_dinov2_descriptor_topk015_smooth3_bicycle_30k_r8
 ```
 
+soft top-k 近似使用多层嵌套 top-k 二值图来模拟连续 metric map。当前 CUDA 计数接口仍是整数命中计数，因此该模式不改 rasterizer；它会对同一个 descriptor error map 生成 `vfm_metric_soft_levels` 层 top-k masks，并把每层 per-Gaussian 命中按 `1 / levels` 累加。620-step 集成验证已确认 iteration 600 会触发真实 descriptor scoring 和多层计数。
+
+```bash
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_dinov2_descriptor_soft_topk.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0001/vfm_dinov2_descriptor_soft_topk015_l3_smooth3_bicycle_30k_r8 \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  -r 8
+
+uv run --active python -m vfm_gs.cli.render \
+  -m output/0001/vfm_dinov2_descriptor_soft_topk015_l3_smooth3_bicycle_30k_r8 \
+  --iteration -1 \
+  --skip_train \
+  --quiet
+
+uv run --active python -m vfm_gs.cli.metrics \
+  -m output/0001/vfm_dinov2_descriptor_soft_topk015_l3_smooth3_bicycle_30k_r8
+```
+
 ## 30k 匹配消融
 
 220-iteration runs 只作为快速验证。迭代 scorer 行为时，使用这组 30k `-r 8` 作为最低质量门槛：

@@ -293,26 +293,48 @@ def _percentile_metric_map(normalized_error, percentile):
     return (normalized_error > threshold).int()
 
 
+def _soft_topk_metric_map_layers(normalized_error, topk_fraction, levels):
+    levels = max(1, int(levels))
+    layers = []
+    for level in range(1, levels + 1):
+        layer_fraction = float(topk_fraction) * level / levels
+        layers.append((_topk_metric_map(normalized_error, layer_fraction), 1.0 / levels))
+    return layers
+
+
 def _build_vfm_metric_map(pixel_error_map, args):
+    return _build_vfm_metric_map_layers(pixel_error_map, args)[0][0]
+
+
+def _build_vfm_metric_map_layers(pixel_error_map, args):
     normalized_error = normalize01(pixel_error_map.detach())
     mode = getattr(args, "vfm_metric_map_mode", "threshold").lower()
     if mode == "threshold":
         metric_map = (normalized_error > getattr(args, "vfm_loss_thresh", 0.5)).int()
+        layers = [(metric_map, 1.0)]
     elif mode == "percentile":
         metric_map = _percentile_metric_map(
             normalized_error,
             getattr(args, "vfm_metric_percentile", 0.85),
         )
+        layers = [(metric_map, 1.0)]
     elif mode == "topk":
         metric_map = _topk_metric_map(
             normalized_error,
             getattr(args, "vfm_metric_topk", 0.15),
         )
+        layers = [(metric_map, 1.0)]
+    elif mode == "soft_topk":
+        layers = _soft_topk_metric_map_layers(
+            normalized_error,
+            getattr(args, "vfm_metric_topk", 0.15),
+            getattr(args, "vfm_metric_soft_levels", 3),
+        )
     else:
         raise ValueError(
-            "Unsupported vfm_metric_map_mode {!r}. Available: threshold, percentile, topk.".format(mode)
+            "Unsupported vfm_metric_map_mode {!r}. Available: threshold, percentile, topk, soft_topk.".format(mode)
         )
-    return metric_map.reshape(-1).contiguous()
+    return [(metric_map.reshape(-1).contiguous(), float(weight)) for metric_map, weight in layers]
 
 
 def compute_gaussian_score_fastgs_with_vfm(camlist, gaussians, pipe, bg, args, DENSIFY=False):
@@ -355,17 +377,25 @@ def compute_gaussian_score_fastgs_with_vfm(camlist, gaussians, pipe, bg, args, D
             dinov2_device=dinov2_device,
             descriptor_token_smooth_kernel=descriptor_token_smooth_kernel,
         )
-        metric_map = _build_vfm_metric_map(pixel_error_map, args)
-        render_pkg = render_fastgs(
-            viewpoint_cam,
-            gaussians,
-            pipe,
-            bg,
-            args.mult,
-            get_flag=True,
-            metric_map=metric_map,
-        )
-        counts = render_pkg["accum_metric_counts"]
+        metric_layers = _build_vfm_metric_map_layers(pixel_error_map, args)
+        counts = None
+        for metric_map, layer_weight in metric_layers:
+            render_pkg = render_fastgs(
+                viewpoint_cam,
+                gaussians,
+                pipe,
+                bg,
+                args.mult,
+                get_flag=True,
+                metric_map=metric_map,
+            )
+            layer_counts = render_pkg["accum_metric_counts"]
+            if layer_weight != 1.0:
+                layer_counts = layer_counts.to(torch.float32) * layer_weight
+            if counts is None:
+                counts = layer_counts.clone()
+            else:
+                counts += layer_counts
 
         if DENSIFY:
             if vfm_counts_total is None:
@@ -383,20 +413,18 @@ def compute_gaussian_score_fastgs_with_vfm(camlist, gaussians, pipe, bg, args, D
     pruning_score = normalize01(rgb_pruning + vfm_weight * vfm_pruning)
 
     if DENSIFY:
-        vfm_importance = torch.div(vfm_counts_total, len(camlist), rounding_mode="floor")
+        vfm_importance = torch.floor(vfm_counts_total.to(torch.float32) / len(camlist))
         if vfm_importance_mode == "rgb_only":
             importance_score = rgb_importance
         elif vfm_importance_mode == "weighted":
             blend = min(vfm_importance_weight, 1.0)
             importance_score = torch.floor(
                 (1.0 - blend) * rgb_importance.to(torch.float32) + blend * vfm_importance.to(torch.float32)
-            ).to(dtype=rgb_importance.dtype)
+            )
         elif vfm_importance_mode == "max":
             if vfm_importance_weight != 1.0:
-                vfm_importance = torch.floor(vfm_importance.to(torch.float32) * vfm_importance_weight).to(
-                    dtype=rgb_importance.dtype
-                )
-            importance_score = torch.maximum(rgb_importance, vfm_importance)
+                vfm_importance = torch.floor(vfm_importance.to(torch.float32) * vfm_importance_weight)
+            importance_score = torch.maximum(rgb_importance.to(torch.float32), vfm_importance)
         else:
             raise ValueError(
                 "Unsupported vfm_importance_mode {!r}. Available: max, weighted, rgb_only.".format(

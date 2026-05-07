@@ -109,6 +109,7 @@ class OptimizationParams(ParamGroup):
         self.vfm_metric_map_mode = "threshold"
         self.vfm_metric_percentile = 0.85
         self.vfm_metric_topk = 0.15
+        self.vfm_metric_soft_levels = 3
         self.vfm_descriptor_token_smooth_kernel = 1
         self.vfm_weight = 0.25
         self.vfm_importance_weight = 1.0
