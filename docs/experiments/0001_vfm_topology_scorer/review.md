@@ -2,7 +2,7 @@
 
 ## 当前决策
 
-继续保留 `vfm_topology_scorer` 作为 v1 集成路径。`mock_l1` 验证打分链路，`cached_edge_l1` 已固化为第一版正向控制组，`dinov2_token_edge_l1` 验证训练可以消费真实 DINOv2 patch-token cache，`dinov2_descriptor_cosine` 则打通了在线渲染图 descriptor 与 GT cache descriptor 的语义比较路径。后续决策门槛以 30k 完整 run 为准，不再用短跑快速验证指标判断质量。
+继续保留 `vfm_topology_scorer` 作为 v1 集成路径。`mock_l1` 验证打分链路，`cached_edge_l1` 已固化为第一版正向控制组，但新完成的 Tandt/DB 全场景评估显示它存在明显跨数据集差异：`db` 正向，`tandt` 负向。`dinov2_token_edge_l1` 验证训练可以消费真实 DINOv2 patch-token cache，`dinov2_descriptor_cosine` 则打通了在线渲染图 descriptor 与 GT cache descriptor 的语义比较路径。后续决策门槛以 30k 完整 run 为准，不再用短跑快速验证指标判断质量。
 
 ## 发现
 
@@ -116,13 +116,16 @@
 - `target_gaussian_count` 适合作为 count-control 诊断，但 baseline-sized budget 下的一次性 final pruning 破坏性太强。
 - staged budget control 更健康，edge 已在 MipNeRF360 全 9 场景平均转正，但 `treehill` 仍是负例。DINO token-edge 仍需要更好的 projection 或 recovery training，才能成为预算高效方案。
 - 全场景 edge 评估使用 `1.42x baseline count` 的比例感知 target；部分场景自然低于 target，没有真正触发最终预算裁剪。因此结论应表述为比例感知的 v1 正向控制组，而不是所有场景都完成了精确预算匹配。
+- Tandt/DB 全场景评估已完成。`db` 的 `drjohnson` 和 `playroom` 均正向，平均提升 +0.4451 PSNR、+0.0037 SSIM、LPIPS 改善 -0.0021，平均 Gaussian 数量增加约 13.5%。
+- `tandt` 的 `train` 和 `truck` 均负向，平均下降 -0.3752 PSNR、-0.0061 SSIM、LPIPS 变差 +0.0067，同时平均 Gaussian 数量下降约 37.3%。这说明 v1 在该数据集上的问题不是点数膨胀，而更像 edge/pruning 组合过度压低结构容量。
+- 新增四场景合并后 PSNR 只微幅正向（+0.0350），但 SSIM/LPIPS 负向。因此 `cached_edge_l1` 可以作为 MipNeRF360 与 DB 的正向 proxy 控制组，但还不能视为跨数据集稳健方案。
 - `vfm_enable` 当前没有 CLI 级显式关闭开关；若加载 VFM experiment yaml，就会触发 VFM scorer/preflight。严格 no-effect 需要从 baseline variant 出发手动覆盖非 VFM cadence 参数。
 - post-prune fine-tune 已证明有恢复价值，但严格 240k 预算和 descriptor staged 410k 预算下都未转正；它现在只能作为局部补救机制，不能作为预算高效化主方案。
 
 ## 下一版计划
 
-1. 固化 `cached_edge_l1` 为 0001 v1 正向控制组：保留 MipNeRF360 全 9 场景平均结果，同时明确 `treehill` 负例和平均点数/训练时间成本。它是稳定 proxy，而不是最终语义 VFM scorer。
-2. 将 DINOv2 descriptor 收束为“真实语义特征路径已打通但预算机制未转正”。下一版不再优先增加 top-k、percentile 或 soft-top-k 单点，而是设计预算感知 score：按 Gaussian 支持度归一化 VFM 分数，削弱大面积重复命中的 densification 放大效应。
-3. 改造 VFM 的角色：优先测试 prune-protect 或 prune-reorder，让语义信号保护结构性点，而不是直接扩大 densification；必要时把 VFM importance 与 RGB gradient gate 做更强的 AND/ratio 约束。
-4. 重做恢复时序：不再只在训练结束后统一 dense recovery，而是在 staged pruning 发生后立即执行短局部恢复，观察是否能减少中期结构损伤。
-5. 评估 descriptor 训练成本优化：减少 scorer 采样视角数，或缓存同一 densification 节点内的 rendered descriptors；成本优化应排在预算机制转正之后。
+1. 固化 `cached_edge_l1` 为 0001 v1 正向控制组，但结论边界改为：MipNeRF360 全 9 场景平均正向，DB 两场景正向，Tandt 两场景负向。它是有价值的 proxy，不是跨数据集稳健的最终 scorer。
+2. 为下一版增加场景自适应保护：当 edge v1 自然结束 Gaussian 数量显著低于 baseline 或 staged target 时，降低 pruning fusion 强度、回退到 baseline pruning，或触发容量保护，避免 Tandt 这类场景被压得过稀。
+3. 将 DINOv2 descriptor 收束为“真实语义特征路径已打通但预算机制未转正”。下一版不再优先增加 top-k、percentile 或 soft-top-k 单点，而是设计预算感知 score：按 Gaussian 支持度归一化 VFM 分数，削弱大面积重复命中的 densification 放大效应。
+4. 改造 VFM 的角色：优先测试 prune-protect 或 prune-reorder，让语义信号保护结构性点，而不是直接扩大 densification；必要时把 VFM importance 与 RGB gradient gate 做更强的 AND/ratio 约束。
+5. 重做恢复时序：不再只在训练结束后统一 dense recovery，而是在 staged pruning 发生后立即执行短局部恢复，观察是否能减少中期结构损伤。

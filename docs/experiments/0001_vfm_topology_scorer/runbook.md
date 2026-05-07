@@ -25,6 +25,38 @@ uv run --active python scripts/run_mipnerf360_v1_eval.py
 - `output/0001/full_mipnerf360_v1/<scene>/logs/<method>/render.log`
 - `output/0001/full_mipnerf360_v1/<scene>/logs/<method>/metrics.log`
 
+## Tandt/DB 全场景 v1 评估
+
+同一个批次脚本也支持指定数据集根目录、场景列表和 cache 图像目录。`datasets/tandt_db/db` 与 `datasets/tandt_db/tandt` 没有 `images_8`，因此这里显式使用 `--cache-images images`。训练仍使用 `-i images`、`--eval`、`-r 8`、30,000 iterations，并对每个场景运行 baseline 与 `cached_edge_l1 + staged target ~= 1.42x baseline count`。
+
+```bash
+uv run --active python scripts/run_mipnerf360_v1_eval.py \
+  --dataset-name db \
+  --dataset-root datasets/tandt_db/db \
+  --output-root output/0001/full_tandt_db_v1/db \
+  --scenes drjohnson playroom \
+  --cache-images images
+
+uv run --active python scripts/run_mipnerf360_v1_eval.py \
+  --dataset-name tandt \
+  --dataset-root datasets/tandt_db/tandt \
+  --output-root output/0001/full_tandt_db_v1/tandt \
+  --scenes train truck \
+  --cache-images images
+```
+
+主要产物：
+
+- `output/0001/full_tandt_db_v1/db/summary.csv`
+- `output/0001/full_tandt_db_v1/db/summary.json`
+- `output/0001/full_tandt_db_v1/db/averages.json`
+- `output/0001/full_tandt_db_v1/tandt/summary.csv`
+- `output/0001/full_tandt_db_v1/tandt/summary.json`
+- `output/0001/full_tandt_db_v1/tandt/averages.json`
+- `output/0001/full_tandt_db_v1/<dataset>/<scene>/logs/<method>/train.log`
+- `output/0001/full_tandt_db_v1/<dataset>/<scene>/logs/<method>/render.log`
+- `output/0001/full_tandt_db_v1/<dataset>/<scene>/logs/<method>/metrics.log`
+
 ## 模拟 VFM 拓扑 v1
 
 ```bash

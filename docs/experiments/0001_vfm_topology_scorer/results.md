@@ -51,6 +51,56 @@
 - `treehill` 同时增加约 96,712 个 Gaussians 但质量下降，说明固定 `1.42x` ratio target 并非所有场景稳健。下一版应引入场景自适应 budget 或把 edge/VFM 信号改为 prune-protect，而不是直接推动更多 densification。
 - 因此，`cached_edge_l1` 可以作为 0001 v1 的 MipNeRF360 全场景正向控制组，但它仍是边缘代理，不是最终语义 VFM scorer；更进一步的研究应解决场景自适应预算和语义 descriptor 预算高效化。
 
+## 2026-05-07 Tandt/DB 全场景 v1 评估
+
+评估范围：`datasets/tandt_db/db` 的 `drjohnson`、`playroom`，以及 `datasets/tandt_db/tandt` 的 `train`、`truck`。训练设置与 MipNeRF360 全场景评估保持一致：`-r 8`，30,000 iterations，`--eval`，每个场景重跑 `fastgs_baseline` 与 `cached_edge_l1 + npz_uint8 cache + staged target`。这两个数据集没有 `images_8` 目录，因此训练仍用 `-i images`，edge cache 也从 `images` 构建。测试指标来自 test split render 后的 `metrics`；原始汇总产物在 `output/0001/full_tandt_db_v1/db/summary.csv` 和 `output/0001/full_tandt_db_v1/tandt/summary.csv`。
+
+`db` 结果：
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| drjohnson | baseline | 30.4978 | 0.9265 | 0.0755 | 70,962 | 122.48s |
+| drjohnson | cached edge v1 | 30.6034 | 0.9283 | 0.0726 | 78,899 | 130.54s |
+| playroom | baseline | 29.7381 | 0.9384 | 0.0561 | 38,408 | 119.96s |
+| playroom | cached edge v1 | 30.5228 | 0.9439 | 0.0548 | 45,286 | 137.03s |
+| **平均** | **baseline** | **30.1179** | **0.9324** | **0.0658** | **54,685** | **121.22s** |
+| **平均** | **cached edge v1** | **30.5631** | **0.9361** | **0.0637** | **62,092** | **133.78s** |
+
+`tandt` 结果：
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| train | baseline | 23.6772 | 0.9154 | 0.0752 | 58,788 | 145.92s |
+| train | cached edge v1 | 23.4054 | 0.9081 | 0.0837 | 35,322 | 148.42s |
+| truck | baseline | 28.2330 | 0.9601 | 0.0330 | 41,952 | 134.59s |
+| truck | cached edge v1 | 27.7543 | 0.9550 | 0.0379 | 27,802 | 141.28s |
+| **平均** | **baseline** | **25.9551** | **0.9377** | **0.0541** | **50,370** | **140.26s** |
+| **平均** | **cached edge v1** | **25.5799** | **0.9316** | **0.0608** | **31,562** | **144.85s** |
+
+逐场景差值：
+
+| 数据集 | 场景 | ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| db | drjohnson | +0.1055 | +0.0018 | -0.0029 | +7,937 | +8.06s |
+| db | playroom | +0.7847 | +0.0055 | -0.0013 | +6,878 | +17.07s |
+| tandt | train | -0.2718 | -0.0072 | +0.0085 | -23,466 | +2.50s |
+| tandt | truck | -0.4787 | -0.0051 | +0.0049 | -14,150 | +6.68s |
+
+数据集平均差值：
+
+| 数据集 | ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 |
+|---|---:|---:|---:|---:|---:|
+| db | +0.4451 | +0.0037 | -0.0021 | +7,407.5 | +12.56s |
+| tandt | -0.3752 | -0.0061 | +0.0067 | -18,808.0 | +4.59s |
+| db+tandt | +0.0350 | -0.0012 | +0.0023 | -5,700.3 | +8.58s |
+
+解读：
+
+- `db` 两个场景均为正向，平均提升 +0.4451 PSNR、+0.0037 SSIM、LPIPS 改善 -0.0021；平均 Gaussian 数量增加约 13.5%，训练时间增加约 10.4%。
+- `tandt` 两个场景均为负向，平均下降 -0.3752 PSNR、-0.0061 SSIM、LPIPS 变差 +0.0067；同时平均 Gaussian 数量下降约 37.3%，说明负向结果不是由点数膨胀导致，而更可能是当前 edge/pruning 组合在这两个场景上过度抑制了结构。
+- 四个新增场景合并后，PSNR 只微幅正向（+0.0350），但 SSIM 和 LPIPS 负向，不能把 `cached_edge_l1` 简单推广为 Tandt/DB 的稳定正向方案。
+- 与 MipNeRF360 全场景结果对比，`db` 更接近室内重建收益模式，而 `tandt` 暴露出跨数据集泛化风险。下一版应加入场景自适应 target 或 pruning 强度控制，特别是当 edge v1 的自然结束点数显著低于 baseline 时，应触发保护机制或回退到 baseline pruning。
+
 ## 2026-04-28 Mock v1 快速验证
 
 数据集：`datasets/mipnerf360/bicycle`，test split，`-r 8`，220 iterations，`densify_from_iter=50`，`densification_interval=50`。
