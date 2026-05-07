@@ -434,6 +434,7 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 | `output/0001/vfm_dinov2_descriptor_topk015_smooth3_rgb_only_bicycle_30k_r8` | `dinov2_descriptor_cosine` | 30,000 | top-k 15%, token smooth 3, `rgb_only` | 26.9117 | 0.8237 | 0.1977 | 154.16s | 412,317 | 123M | 只保留 descriptor support/pruning，仍低于 cadence control |
 | `output/0001/vfm_dinov2_descriptor_soft_topk015_l3_smooth3_bicycle_620_r8` | `dinov2_descriptor_cosine` | 620 | soft top-k 15%, 3 levels, token smooth 3 | 20.8610 | 0.4747 | 0.5481 | 4.47s | 61,344 | 35M | 触发真实 descriptor scoring 和多层计数 |
 | `output/0001/vfm_dinov2_descriptor_soft_topk015_l3_smooth3_bicycle_30k_r8` | `dinov2_descriptor_cosine` | 30,000 | soft top-k 15%, 3 levels, token smooth 3 | 26.9875 | 0.8305 | 0.1844 | 212.26s | 462,696 | 135M | 完整 30k 对照，质量正向但成本偏高 |
+| `output/0001/vfm_dinov2_descriptor_soft_topk015_l3_smooth3_budget410000_staged105_bicycle_30k_r8` | `dinov2_descriptor_cosine` | 30,000 | soft top-k 15%, 3 levels, token smooth 3, staged 410k | 26.8848 | 0.8201 | 0.2029 | 231.87s | 383,528 | 116M | 预算对齐负例 |
 
 解读：
 
@@ -446,6 +447,11 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 - 相比 top-k 8% 完整对照，soft top-k 多 6,129 个 Gaussians、训练多 61.93s，PSNR 低 -0.0056，SSIM 高 +0.0004，LPIPS 好 -0.0006。它基本落在 top-k 8% 附近，但计算成本明显更高。
 - 相比 `fastgs_densify100` cadence control，soft top-k 提升 +0.0589 PSNR、+0.0064 SSIM、LPIPS 好 -0.0120，但多 50,618 个 Gaussians，训练多 46.37s。它是质量正向结果，不是预算高效结果。
 - 相比默认 DINO token-edge，soft top-k 少 28,136 个 Gaussians，但 PSNR 低 -0.0702、SSIM 低 -0.0040、LPIPS 差 +0.0077。soft top-k 没有改变 descriptor 仍低于 token-edge 上界的判断。
+- soft top-k staged 410k 完成 train、render 和 metrics；从 iteration 5000 到 14500 共触发 20 次 staged pruning，把中期点数压到 430,500 cap，训练结束时自然低于 410,000，因此 final target prune 跳过。`iteration_30000` 点云约 91M，包含 test renders 后目录约 116M。
+- 相比 soft top-k 完整对照，staged 版本减少 79,168 个 Gaussians，但质量下降 -0.1027 PSNR、-0.0104 SSIM、LPIPS 差 +0.0186，训练反而多 19.60s。说明 soft top-k 的完整训练收益同样没有经受住 staged 预算约束。
+- 相比 top-k 15% staged，soft top-k staged 少 5,722 个 Gaussians，但质量更低：-0.0199 PSNR、-0.0018 SSIM、LPIPS 差 +0.0031，训练多 71.34s。多层 soft 计数没有改善 staged 预算结果。
+- 相比 top-k 8% staged，soft top-k staged 多 1,493 个 Gaussians，PSNR 高 +0.0065，但 SSIM 低 -0.0007、LPIPS 差 +0.0016，训练多 66.86s。它只是一个更慢、质量近似的 staged 负例。
+- 相比 `fastgs_densify100` cadence control，soft top-k staged 少 28,550 个 Gaussians，但指标低 -0.0439 PSNR、-0.0040 SSIM、LPIPS 差 +0.0065，训练多 65.98s。因此它不是预算高效方案。
 - top-k/smoothing 30k 完成 train、render 和 metrics，`iteration_30000` 点云约 115M，包含 test renders 后目录约 140M。
 - 相比默认 descriptor，top-k/smoothing 提升 +0.0504 PSNR、+0.0032 SSIM、LPIPS 好 -0.0045，但多 22,383 个 Gaussians，训练时间基本持平。这说明 mask/aggregation 改动确实改善了 descriptor scorer 质量。
 - 相比 `fastgs_densify100` cadence control，top-k/smoothing 提升 +0.0987 PSNR、+0.0089 SSIM、LPIPS 好 -0.0159，但多 72,151 个 Gaussians，训练多 25.41s。它是 descriptor 方向目前最强完整结果，但不是预算受控结果。
@@ -466,4 +472,4 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 - top-k/smoothing `rgb_only` 完成 train、render 和 metrics；它保留 descriptor top-k mask 对 pruning/support 的影响，但 densification importance 使用 RGB/FastGS 计数。最终点数为 412,317，`iteration_30000` 点云约 98M，包含 test renders 后目录约 123M。
 - 相比 `fastgs_densify100` cadence control，top-k/smoothing `rgb_only` 多 239 个 Gaussians，训练少 11.73s，但质量更低：-0.0170 PSNR、-0.0004 SSIM、LPIPS 差 +0.0014。它是一个预算贴合的负例。
 - 相比普通 descriptor `rgb_only`，top-k/smoothing `rgb_only` 多 5,116 个 Gaussians、训练少 37.38s，但质量略低：-0.0253 PSNR、-0.0002 SSIM、LPIPS 差 +0.0006。说明 top-k mask 单独用于 support/pruning 时没有保住质量收益。
-- 结论是：top-k/smoothing 能改善 unpruned descriptor 质量；top-k 8% 比默认 descriptor 更均衡，但仍高于 cadence control 预算。soft top-k 30k 质量正向，但基本落在 top-k 8% 附近且成本更高。在接近 410k budget、降低 top-k ratio、或关闭直接 descriptor densification 后，收益都没有保住。下一步先跑 soft top-k staged 410k，若仍低于 cadence control，再转向 percentile mask 或 staged pruning 后 dense recovery。
+- 结论是：top-k/smoothing 能改善 unpruned descriptor 质量；top-k 8% 比默认 descriptor 更均衡，但仍高于 cadence control 预算。soft top-k 30k 质量正向，但基本落在 top-k 8% 附近且成本更高。在接近 410k budget、降低 top-k ratio、关闭直接 descriptor densification、或 soft top-k 多层计数后，收益都没有保住。下一步应转向 percentile mask 或 staged pruning 后 dense recovery，而不是继续围绕 top-k ratio 增加变体。

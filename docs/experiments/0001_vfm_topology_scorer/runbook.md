@@ -253,7 +253,7 @@ uv run --active python -m vfm_gs.cli.metrics \
 
 soft top-k 近似使用多层嵌套 top-k 二值图来模拟连续 metric map。当前 CUDA 计数接口仍是整数命中计数，因此该模式不改 rasterizer；它会对同一个 descriptor error map 生成 `vfm_metric_soft_levels` 层 top-k masks，并把每层 per-Gaussian 命中按 `1 / levels` 累加。620-step 集成验证已确认 iteration 600 会触发真实 descriptor scoring 和多层计数。
 
-完整 30k 对照已完成，质量高于 cadence control，但点数和训练成本仍偏高。下一步预算诊断使用同一配置加 staged 410k target，检查 soft top-k 的质量收益能否在接近 cadence budget 时保住。
+完整 30k 对照已完成，质量高于 cadence control，但点数和训练成本仍偏高。staged 410k 预算诊断也已完成；该设置能把最终点数压到 383,528，但质量低于 cadence control，因此 soft top-k 不能作为预算高效方案。
 
 ```bash
 uv run --active python -m vfm_gs.cli.train \
