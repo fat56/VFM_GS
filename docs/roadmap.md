@@ -2,13 +2,13 @@
 
 ## 进行中
 
-- `0001_vfm_topology_scorer`: staged/ratio-aware cached edge 已在 bicycle、garden 和 counter 三个 scene 上超过各自 baseline；no-effect/cadence 控制、post-prune fine-tune、descriptor 30k 完整训练、descriptor staged 预算对齐和 descriptor `rgb_only` 保守接入已完成。descriptor top-k/smoothing mask 入口已实现并通过 120-step 集成验证，下一步进入 30k 对照。
+- `0001_vfm_topology_scorer`: staged/ratio-aware cached edge 已在 bicycle、garden 和 counter 三个 scene 上超过各自 baseline；no-effect/cadence 控制、post-prune fine-tune、descriptor 30k 完整训练、descriptor staged 预算对齐和 descriptor `rgb_only` 保守接入已完成。descriptor top-k/smoothing 30k 已接近 DINO token-edge，但点数仍偏高，下一步做 staged budget 对齐。
 
 ## 排队
 
 - 将 `cached_edge_l1` 固化为 0001 v1 正向控制组，并整理下一版实验入口。
-- 跑完 descriptor top-k/smoothing 30k 对照，并和 cadence control、默认 descriptor、descriptor `rgb_only`、staged 410k 四组同表比较。
-- 若 top-k 15% 不转正，再比较 percentile mask 或调整 token smoothing kernel。
+- 跑完 descriptor top-k/smoothing 410k staged target，并和 cadence control、默认 descriptor staged 410k、descriptor `rgb_only` 同表比较。
+- 若 top-k/smoothing staged 不转正，再比较 percentile mask 或调整 token smoothing kernel。
 - 设计 dense post-prune recovery schedule，避免 30k 后恢复训练实际更新次数过少。
 
 ## 阻塞
@@ -34,6 +34,7 @@
 - 完成 descriptor staged 预算对齐；`target_gaussian_count=410000`、`stage_margin=1.05` 后自然结束在 381,726 个 Gaussians，PSNR 26.9064，SSIM 0.8208，LPIPS 0.2021，低于 `fastgs_densify100`。
 - 完成 descriptor `rgb_only` 保守接入；禁用直接 descriptor densification 后达到 PSNR 26.9370，SSIM 0.8239，LPIPS 0.1972，407,201 个 Gaussians，与 cadence control 基本持平但不是清晰正向。
 - 增加 descriptor metric-map 策略参数，支持 threshold、percentile、top-k 和 DINO token-grid smoothing；120-step top-k/smoothing 集成验证已触发真实 descriptor scoring 和 densification。
+- 完成 descriptor top-k/smoothing 30k 对照；PSNR 27.0274，SSIM 0.8330，LPIPS 0.1805，484,229 个 Gaussians，质量接近 DINO token-edge 但预算偏高。
 - 完成 baseline、compact cached edge、DINOv2 token-edge 的 30k `-r 8` matched ablation；DINO token-edge 指标最好，但点数和渲染成本也最高。
 - 完成 t075/w010 budget-control probe；现有阈值/权重 knob 无法充分控制 VFM densification 点数。
 - 增加 `vfm_importance_weight` 并完成 i0.25 30k probe；DINO 点数下降但仍未达成 budget matching。
