@@ -346,6 +346,7 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 | `output/0001/vfm_dinov2_descriptor_t035_bicycle_smoke` | `dinov2_descriptor_cosine`, `vfm_loss_thresh=0.35` | 220 | 20.2897 | 0.4287 | 0.5993 | 2.65s | 79,120 | 39M | 三个阈值点中最好 |
 | `output/0001/vfm_dinov2_descriptor_t040_bicycle_smoke` | `dinov2_descriptor_cosine`, `vfm_loss_thresh=0.40` | 220 | 20.2550 | 0.4267 | 0.6008 | 2.64s | 76,773 | 39M | 低于 0.35 |
 | `output/0001/vfm_dinov2_descriptor_t065_bicycle_smoke` | `dinov2_descriptor_cosine`, `vfm_loss_thresh=0.65` | 220 | 20.2162 | 0.4253 | 0.6034 | 2.46s | 77,037 | 39M | PSNR/SSIM 好于默认，LPIPS 较差 |
+| `output/0001/vfm_dinov2_descriptor_w518_t035_bicycle_smoke` | `dinov2_descriptor_cosine`, `max_width=518`, `vfm_loss_thresh=0.35` | 220 | 20.3059 | 0.4272 | 0.5999 | 2.69s | 78,927 | 21M | 高分辨率 DINO cache 复测 |
 
 解读：
 
@@ -354,5 +355,7 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 - 阈值小网格显示 `vfm_loss_thresh=0.35` 明显优于默认 0.50：+0.2704 PSNR、+0.0054 SSIM、-0.0025 LPIPS。它也接近 token-edge 快速验证的 PSNR/SSIM，并在 LPIPS 上略优。
 - 细扫 0.30 和 0.40 后，0.35 仍是当前最优短跑阈值。0.30 的 PSNR 接近 0.35，但 SSIM/LPIPS 更弱；0.40 三项指标都低于 0.35。
 - `vfm_loss_thresh=0.65` 的 PSNR/SSIM 也优于默认，但 LPIPS 变差。下一轮应优先补高分辨率 DINO cache 或直接用 0.35 跑 30k，而不是继续扩大低分辨率阈值网格。
+- `max_width=518` DINO cache 构建耗时 9.90s，194 entries，大小 127M，首个 entry 形状为 `24x37x384`，并通过 `validate_vfm_cache`。相比 `max_width=224` 的 24M cache，它带来更密的 descriptor grid。
+- `max_width=518` + `vfm_loss_thresh=0.35` 的 PSNR 比 `224` cache 高 +0.0162，但 SSIM 低 -0.0015，LPIPS 差 +0.0007。高分辨率 cache 没有在短跑中形成全面优势，但训练时间保持接近，说明 30k 成本风险不大。
 - 当前实现每个 scorer 视角都在线运行 DINOv2。短跑训练时间从 token-edge 的 1.72s 增到 2.55s，仍可接受；30k 之前应先评估更高 cache width 和较少 scorer 视角/缓存 rendered descriptor 的折中。
 - DINOv2 import 继续提示 `xformers` 不可用，但官方实现能 fallback，训练未失败。
