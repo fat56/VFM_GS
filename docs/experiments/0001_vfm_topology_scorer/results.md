@@ -494,6 +494,7 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 | `output/0001/vfm_dinov2_token_edge_topk025_bicycle_30k_r8` | `dinov2_token_edge_l1` | top-k 25% | 30,000 | 27.0636 | 0.8354 | 0.1748 | 146.76s | 497,328 | 144M | 当前 bicycle 30k 质量最佳 |
 | `output/0001/vfm_dinov2_token_edge_topk025_budget490832_staged105_bicycle_30k_r8` | `dinov2_token_edge_l1` | top-k 25%, staged 490,832 | 30,000 | 27.0001 | 0.8286 | 0.1887 | 146.81s | 453,505 | 133M | 预算更低，但质量明显回落 |
 | `output/0001/vfm_dinov2_token_edge_topk025_budget490832_final_bicycle_30k_r8` | `dinov2_token_edge_l1` | top-k 25%, final 490,832 | 30,000 | 26.8466 | 0.8244 | 0.1858 | 141.91s | 490,832 | 142M | 仅最终裁剪 6,723 个点，质量明显回落 |
+| `output/0001/vfm_dinov2_token_edge_topk025_rgb_only_bicycle_30k_r8` | `dinov2_token_edge_l1` | top-k 25%, `rgb_only` | 30,000 | 26.9340 | 0.8236 | 0.1981 | 139.06s | 411,539 | 123M | 预算贴近 cadence control，但质量不构成清晰正向 |
 
 解读：
 
@@ -505,7 +506,8 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 - top-k 25% staged 490,832 从 iteration 7500 到 14500 触发 15 次 staged pruning，最终自然落到 453,505 个 Gaussians，低于 target 因而跳过最终裁剪。它相比 top-k 25% 完整对照少 43,823 个点，但质量下降 -0.0634 PSNR、-0.0068 SSIM、LPIPS 差 +0.0139。
 - top-k 25% final 490,832 不做中期裁剪，训练结束时从 497,555 个 Gaussians 只裁到 490,832，实际删除 6,723 个点。但它相比 top-k 25% 完整对照下降 -0.2170 PSNR、-0.0110 SSIM、LPIPS 差 +0.0110；相比默认 DINO token-edge 也低 -0.2111 PSNR、-0.0101 SSIM、LPIPS 差 +0.0091。
 - final 490,832 仍优于原始 baseline（+0.1434 PSNR、+0.0177 SSIM、LPIPS 改善 -0.0420），但相对 `fastgs_densify100` cadence control 变成 PSNR 更低、SSIM 基本持平、LPIPS 更好。这个负例说明当前 final target-prune 的排序即使只裁约 1.35% Gaussians，也会误删对结构质量敏感的点。
-- staged 490,832 和 final 490,832 分别暴露了两类问题：前者的中期反复压 cap 会损伤结构生长，后者的终局一次性低分裁剪排序不够可靠。因此预算约束下一步不应继续依赖最终硬裁剪，而应改成预算感知 scorer、support-normalized pruning score、或把 VFM 信号用于 prune-protect 而不是直接放大 densification。
+- top-k 25% `rgb_only` 关闭直接 VFM densification，只保留 VFM support/pruning 侧影响。它最终 411,539 个 Gaussians，几乎贴住 `fastgs_densify100` 的 412,078；相比 cadence control，PSNR 只高 +0.0053，SSIM 低 -0.0005，LPIPS 差 +0.0017。因此“只做 prune-protect / support 重排”可以控制预算，但没有保住 top-k 25% 完整对照的质量收益。
+- staged 490,832、final 490,832 和 `rgb_only` 分别暴露了三类问题：中期反复压 cap 会损伤结构生长，终局一次性低分裁剪排序不够可靠，完全关闭 VFM densification 又会交回主要质量收益。因此预算约束下一步不应继续依赖最终硬裁剪，而应探索温和的预算感知 densification，例如 support-normalized score、partial VFM importance，或只保护高置信 VFM 区域而不是全量放大。
 - 这一路径不引入在线 DINO inference，成本明显低于 descriptor 系列。当前 0001 在 bicycle 上的最佳质量结论仍定为 top-k 25% 完整对照；预算方向则保留 top-k 15% 作为更高效但略弱的选择，490,832 staged/final 两个预算 run 均作为负例。
 
 ## 2026-05-07 DINOv2 Descriptor 打分器快速验证
