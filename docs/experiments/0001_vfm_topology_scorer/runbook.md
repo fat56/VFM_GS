@@ -438,6 +438,22 @@ uv run --active python scripts/run_0001_dino_weighted_eval.py \
 
 该诊断平均结果为 25.6955 / 0.9338 / 0.0572、38,172 个 Gaussians。它相对 cached-edge v1 仍正向，但低于 baseline，也低于原始 DINO weighted i0.50 的 PSNR/SSIM。因此 `vfm_weight=0.0` 不是 Tandt 默认方案。
 
+Tandt 诊断汇总脚本只读取已有结果，不启动训练。它把 baseline、cached-edge、DINO weighted i0.50/i0.75/i0.90，以及 staged 自动容量下限、prunemin-only、pruning-fusion-off 三条诊断统一输出，并写出数据集/场景级回退策略：
+
+```bash
+uv run --active python scripts/summarize_0001_tandt_diagnostics.py
+```
+
+主要产物：
+
+- `output/0001/tandt_diagnostics/summary.csv`
+- `output/0001/tandt_diagnostics/comparisons.csv`
+- `output/0001/tandt_diagnostics/averages.csv`
+- `output/0001/tandt_diagnostics/scene_policy.csv`
+- `output/0001/tandt_diagnostics/policy.json`
+
+截至 2026-05-09，`policy.json` 给出的 `dataset_policy_pick` 为 `baseline`；`scene_policy.csv` 中 `train` 与 `truck` 都因没有候选三项指标同时超过 baseline 而回退 baseline。
+
 主要产物：
 
 - `output/0001/dino_weighted_i050_<dataset>/summary.csv`

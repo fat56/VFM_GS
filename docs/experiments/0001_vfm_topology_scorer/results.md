@@ -464,6 +464,18 @@ train-side 选择结果落到 test split 后的表现：
 - 该变体没有解决容量偏低问题，平均 Gaussian 数量仍约 38k；PSNR/SSIM 也低于原始 DINO weighted i0.50。
 - Tandt 支线到此收束：三类诊断都没有超过 baseline。正式策略应选择 baseline 回退；DINO weighted 只作为“相对 cached-edge 的恢复分支”和跨数据集 selector 的候选，不作为 Tandt 默认方法。
 
+新增 `scripts/summarize_0001_tandt_diagnostics.py`，把上述 Tandt 结果汇总到 `output/0001/tandt_diagnostics`。关键产物：
+
+| 产物 | 作用 |
+|---|---|
+| `summary.csv` | baseline、cached-edge、DINO weighted 三档和三条诊断的逐场景指标 |
+| `averages.csv` | Tandt 两场景平均指标 |
+| `comparisons.csv` | 相对 baseline、cached-edge、DINO weighted i0.50 的逐场景差值 |
+| `scene_policy.csv` | 每个场景的策略选择和回退原因 |
+| `policy.json` | 数据集级策略结论 |
+
+`policy.json` 当前结论为 `dataset_policy_pick=baseline`，原因是所有 VFM 候选/诊断的平均指标都没有三项同时超过 baseline。`scene_policy.csv` 中 `train` 和 `truck` 也都回退 baseline。
+
 ## 2026-04-28 Mock v1 快速验证
 
 数据集：`datasets/mipnerf360/bicycle`，test split，`-r 8`，220 iterations，`densify_from_iter=50`，`densification_interval=50`。
