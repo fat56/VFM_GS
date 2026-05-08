@@ -62,6 +62,7 @@
 | 场景 | 方案 | PSNR | ΔPSNR vs baseline | SSIM | ΔSSIM | LPIPS | ΔLPIPS | Gaussian 数量 | ΔGaussian | 判断 |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
 | counter | DINO top-k25 i0.50 | 29.7174 | +0.1763 | 0.9338 | +0.0026 | 0.0751 | -0.0055 | 119,695 | +6,672 | 少量增点、三项正向 |
+| counter | DINO weighted i0.50 | 29.6650 | +0.1239 | 0.9333 | +0.0022 | 0.0752 | -0.0054 | 119,273 | +6,250 | 仍正向，但只比普通 i0.50 少 422 点且质量回落 |
 | kitchen | DINO top-k25 i0.50 | 33.3358 | +0.2438 | 0.9693 | +0.0021 | 0.0344 | -0.0035 | 161,347 | -7,629 | 少点且三项正向 |
 | room | DINO top-k25 i0.50 | 33.0721 | +0.0945 | 0.9622 | +0.0025 | 0.0574 | -0.0037 | 103,820 | +12,506 | 三项正向 |
 | stump | DINO top-k25 i0.50 | 27.6106 | +0.4350 | 0.8168 | +0.0234 | 0.1935 | -0.0393 | 365,584 | +194,825 | 最大 PSNR 正例 |
@@ -106,10 +107,11 @@ Tandt 的 cached edge v1 低于 baseline，不作为正向质量方案；但 `pr
 | support_ratio 与 prune-protect | Bicycle 上没有优于普通 DINO i0.50；收束为非主方向。 |
 | budget-aware 420k/430k 曲线 | 比固定低权重略好，但没有保住普通 i0.50 质量；不继续手工追加相近曲线单点。 |
 | treehill weighted | 相比普通 treehill i0.50 少 14,986 点且 SSIM/LPIPS 对 baseline 正向，但 PSNR 仍低于 baseline；作为压力场景观察，不作为正向主结论。 |
+| counter weighted | 相比 baseline 和 cached-edge v1 仍三项正向，但相对普通 counter i0.50 只少 422 点且 PSNR 回落 -0.0524；用于说明 weighted 不适合默认替代低增点场景的普通 i0.50。 |
 
 ## 简短结论
 
-目前最值得保留的改进有三类：第一，`cached_edge_l1 + staged target ~= 1.42x` 是稳定的 proxy 正向控制组，在 MipNeRF360 平均和 DB 平均均正向；第二，`DINO token-edge top-k25 + importance_weight=0.50` 是当前 MipNeRF360 全场景质量最强候选，平均相对 baseline 提升 +0.2051 PSNR、+0.0115 SSIM、-0.0234 LPIPS；第三，`weighted + importance_weight=0.50` 是最值得继续验证的近预算效率点，已在 bicycle 上接近 cadence control 点数，在 stump 上还比普通 i0.50 更省点且质量略升。
+目前最值得保留的改进有三类：第一，`cached_edge_l1 + staged target ~= 1.42x` 是稳定的 proxy 正向控制组，在 MipNeRF360 平均和 DB 平均均正向；第二，`DINO token-edge top-k25 + importance_weight=0.50` 是当前 MipNeRF360 全场景质量最强候选，平均相对 baseline 提升 +0.2051 PSNR、+0.0115 SSIM、-0.0234 LPIPS；第三，`weighted + importance_weight=0.50` 是最值得继续验证的近预算效率点，已在 bicycle 上接近 cadence control 点数，在 stump 上还比普通 i0.50 更省点且质量略升，但 counter 说明它不适合无条件替代普通 i0.50。
 
 仍未解决的问题是预算机制和跨数据集稳健性：DINO i0.50 平均 Gaussian 数量仍比 baseline 多约 52.1%，`treehill` PSNR 仍有压力，Tandt 上 cached edge v1 明确负向，容量保护只能恢复一部分质量。
 
