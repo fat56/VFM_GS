@@ -505,6 +505,7 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 | `output/0001/vfm_dinov2_token_edge_topk025_supportnorm_i050_bicycle_620_r8` | `dinov2_token_edge_l1` | top-k 25%, `importance_weight=0.50`, `support_ratio` | 620 | 20.8465 | 0.4756 | 0.5468 | 2.96s | 61,517 | 35M | 支持度归一化链路快速验证 |
 | `output/0001/vfm_dinov2_token_edge_topk025_supportnorm_i050_bicycle_30k_r8` | `dinov2_token_edge_l1` | top-k 25%, `importance_weight=0.50`, `support_ratio` | 30,000 | 26.9694 | 0.8286 | 0.1878 | 149.40s | 432,948 | 128M | 点数略降但质量回落，不优于 i0.50 |
 | `output/0001/vfm_dinov2_token_edge_topk025_pruneprotect_i050_w025_bicycle_620_r8` | `dinov2_token_edge_l1` | top-k 25%, `importance_weight=0.50`, prune-protect w0.25 | 620 | 20.8808 | 0.4757 | 0.5457 | 2.72s | 61,604 | 35M | 高置信保护链路快速验证 |
+| `output/0001/vfm_dinov2_token_edge_topk025_pruneprotect_i050_w025_bicycle_30k_r8` | `dinov2_token_edge_l1` | top-k 25%, `importance_weight=0.50`, prune-protect w0.25 | 30,000 | 26.9910 | 0.8302 | 0.1839 | 144.70s | 441,352 | 130M | 与 i0.50 基本持平，LPIPS 微幅改善但 PSNR/SSIM 回落 |
 
 解读：
 
@@ -522,9 +523,10 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 - top-k 25% `importance_weight=0.75` 继续改善质量，但收益开始变慢：相比 `importance_weight=0.50` 多 32,093 个 Gaussians，换来 +0.0317 PSNR、+0.0028 SSIM、LPIPS 改善 -0.0055。它相对 top-k 15% 多 7,166 个点，PSNR 高 +0.0061、SSIM 高 +0.0010、LPIPS 改善 -0.0022，因此可作为高质量预算点，但预算效率不如 `importance_weight=0.50` 清晰。
 - `support_ratio` 快速验证在 620-step 下得到 61,517 个 Gaussians，PSNR 20.8465、SSIM 0.4756、LPIPS 0.5468；它与历史 top-k 15% 快速验证的 61,555 个点基本一致，说明额外的 support-count raster pass 没有破坏 densification 链路。
 - `support_ratio + importance_weight=0.50` 30k 最终 432,948 个 Gaussians，比普通 i0.50 少 7,123 个点，但质量回落 -0.0272 PSNR、-0.0018 SSIM、LPIPS 差 +0.0036，训练时间也多 8.05s。它仍优于 cadence control（+0.0407 PSNR、+0.0045 SSIM、LPIPS 改善 -0.0086），但不如直接 partial importance i0.50，因此支持度归一化不是当前最佳预算效率方向。
-- 高置信 VFM 区域保护的 620-step 快速验证使用 `vfm_prune_protect_weight=0.25`、`vfm_prune_protect_mode=rgb_aware`、`vfm_prune_protect_min_count=5`、`vfm_prune_protect_power=2.0`。它完成 train、render 和 metrics，最终 61,604 个 Gaussians，PSNR 20.8808、SSIM 0.4757、LPIPS 0.5457，说明 protection score 可以同时接入 densification 评分和后期 pruning-only 评分路径。短跑指标略高于其他 620-step 变体，但仍只作为链路健康证据；下一步需要跑 30k bicycle 正式对照。
+- 高置信 VFM 区域保护的 620-step 快速验证使用 `vfm_prune_protect_weight=0.25`、`vfm_prune_protect_mode=rgb_aware`、`vfm_prune_protect_min_count=5`、`vfm_prune_protect_power=2.0`。它完成 train、render 和 metrics，最终 61,604 个 Gaussians，PSNR 20.8808、SSIM 0.4757、LPIPS 0.5457，说明 protection score 可以同时接入 densification 评分和后期 pruning-only 评分路径。
+- 高置信 VFM 区域保护的 30k 正式对照最终 441,352 个 Gaussians，比普通 `importance_weight=0.50` 多 1,281 个点；PSNR 低 -0.0056、SSIM 低 -0.0001，LPIPS 仅改善 -0.0003，训练时间多 3.36s。它没有形成比 i0.50 更好的预算效率点，说明简单保护高 VFM 命中区域不能解决当前的预算-质量矛盾。
 - staged 490,832、final 490,832 和 `rgb_only` 分别暴露了三类问题：中期反复压 cap 会损伤结构生长，终局一次性低分裁剪排序不够可靠，完全关闭 VFM densification 又会交回主要质量收益。`importance_weight=0.25/0.50/0.75` 给出连续正向曲线，因此 partial VFM importance 是当前最有效的预算控制旋钮。
-- 这一路径不引入在线 DINO inference，成本明显低于 descriptor 系列。当前 0001 在 bicycle 上的最佳质量结论仍定为 top-k 25% 完整对照；预算方向把 `importance_weight=0.50` 作为约 440k 点数下的效率点，把 `importance_weight=0.75` 作为略优于 top-k 15% 的高质量预算点。继续把权重推到 1.0 基本回到完整 top-k25 已知上界，support-normalized score 已证实不是更优方向，下一步更应做高置信 VFM 区域保护或自动容量保护，而不是追加同类单点。
+- 这一路径不引入在线 DINO inference，成本明显低于 descriptor 系列。当前 0001 在 bicycle 上的最佳质量结论仍定为 top-k 25% 完整对照；预算方向把 `importance_weight=0.50` 作为约 440k 点数下的效率点，把 `importance_weight=0.75` 作为略优于 top-k 15% 的高质量预算点。继续把权重推到 1.0 基本回到完整 top-k25 已知上界；support-normalized score 和高置信 prune-protect 都未优于普通 partial importance。下一步应转向自动容量保护、staged 后恢复或 target-prune 排序诊断，而不是追加同类 scorer 单点。
 
 ## 2026-05-07 DINOv2 Descriptor 打分器快速验证
 
