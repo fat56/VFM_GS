@@ -2312,3 +2312,72 @@ uv run --active python -m vfm_gs.cli.train \
 uv run --active python -m vfm_gs.cli.render -m output/0001/vfm_cached_edge_compact_bicycle_smoke --skip_train
 uv run --active python -m vfm_gs.cli.metrics -m output/0001/vfm_cached_edge_compact_bicycle_smoke
 ```
+
+## DINO Token-Edge Adaptive Weighted 预算探测
+
+本组继续沿用 bicycle、MipNeRF360、`-r 8` 和 30k 完整训练作为预算方法有效性的对照。`adaptive_weighted` 与旧的 soft-budget weight decay 不同：它不直接衰减 VFM 权重，而是在 Gaussian 数量接近预算区间时，把 importance fusion 从 `max(rgb, scaled_vfm)` 平滑过渡到 `weighted(rgb, vfm)`。
+
+快速验证只用于确认新分支会被 scorer 调用：
+
+```bash
+source .venv/bin/activate
+
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_dinov2_token_edge_topk.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0001/vfm_dinov2_token_edge_topk025_adaptive_weighted_i050_bicycle_620_r8 \
+  --eval \
+  --iterations 620 \
+  --test_iterations 620 \
+  --save_iterations 620 \
+  --checkpoint_iterations 620 \
+  --densify_from_iter 50 \
+  --densification_interval 50 \
+  --vfm_cache_dir output/0001/vfm_cache/bicycle_dinov2_vits14 \
+  --vfm_metric_topk 0.25 \
+  --vfm_importance_weight 0.50 \
+  --vfm_importance_mode adaptive_weighted \
+  --vfm_importance_budget_count 65000 \
+  --vfm_importance_budget_start_ratio 0.80 \
+  -r 8
+
+uv run --active python -m vfm_gs.cli.render \
+  -m output/0001/vfm_dinov2_token_edge_topk025_adaptive_weighted_i050_bicycle_620_r8 \
+  --iteration -1 \
+  --skip_train \
+  --quiet
+
+uv run --active python -m vfm_gs.cli.metrics \
+  -m output/0001/vfm_dinov2_token_edge_topk025_adaptive_weighted_i050_bicycle_620_r8
+```
+
+正式 30k 对照：
+
+```bash
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_dinov2_token_edge_adaptive_weighted.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0001/vfm_dinov2_token_edge_topk025_adaptive_weighted_i050_budget430k_quad_bicycle_30k_r8 \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0001/vfm_cache/bicycle_dinov2_vits14 \
+  -r 8
+
+uv run --active python -m vfm_gs.cli.render \
+  -m output/0001/vfm_dinov2_token_edge_topk025_adaptive_weighted_i050_budget430k_quad_bicycle_30k_r8 \
+  --iteration -1 \
+  --skip_train \
+  --quiet
+
+uv run --active python -m vfm_gs.cli.metrics \
+  -m output/0001/vfm_dinov2_token_edge_topk025_adaptive_weighted_i050_budget430k_quad_bicycle_30k_r8
+```
+
+结果摘要：620-step 快速验证为 PSNR 21.8205、SSIM 0.5489、LPIPS 0.4514，最终 180,605 个 Gaussians，只说明链路健康。30k quadratic 版本为 PSNR 26.9858、SSIM 0.8302、LPIPS 0.1853，最终 424,011 个 Gaussians，训练 141.94s。相比 `weighted i0.50`，它多 8,853 个点但三项质量均微升；相比普通 i0.50，少 16,060 个点但质量仍小幅低一点。下一步优先在 `stump/room/kitchen/treehill` 复验，不直接替代全场景 weighted 结论。

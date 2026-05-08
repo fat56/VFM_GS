@@ -2,7 +2,7 @@
 
 ## 当前决策
 
-继续保留 `vfm_topology_scorer` 作为 v1 集成路径。`mock_l1` 验证打分链路；`cached_edge_l1` 固化为早期 proxy 正向控制组，但 Tandt/DB 全场景评估显示它存在明显跨数据集差异：`db` 正向，`tandt` 负向。`dinov2_token_edge_l1` 已验证训练可以消费真实 DINOv2 patch-token cache，并且 `top-k 25% + importance_weight=0.50` 完成 MipNeRF360 全 9 场景评估，平均 PSNR 28.8577、SSIM 0.8666、LPIPS 0.1385，超过 baseline 与 cached-edge v1，可作为 0001 的 DINO 质量候选；但平均 Gaussian 数量比 baseline 多约 52.1%，还不是预算高效结论。`weighted + importance_weight=0.50` 已完成 MipNeRF360 全 9 场景复验，平均 PSNR 28.8505、SSIM 0.8660、LPIPS 0.1397，平均 254,736 个 Gaussians、训练 137.60s；它相对普通 i0.50 平均少 8,836 个点、训练少 2.87s，质量只小幅回落，因此是场景自适应预算候选，而不是无条件替代普通 i0.50 的默认项。`dinov2_descriptor_cosine` 则打通了在线渲染图 descriptor 与 GT cache descriptor 的语义比较路径，但预算对齐后未转正。后续决策门槛以 30k 完整 run 为准，不再用短程验证指标判断质量。
+继续保留 `vfm_topology_scorer` 作为 v1 集成路径。`mock_l1` 验证打分链路；`cached_edge_l1` 固化为早期 proxy 正向控制组，但 Tandt/DB 全场景评估显示它存在明显跨数据集差异：`db` 正向，`tandt` 负向。`dinov2_token_edge_l1` 已验证训练可以消费真实 DINOv2 patch-token cache，并且 `top-k 25% + importance_weight=0.50` 完成 MipNeRF360 全 9 场景评估，平均 PSNR 28.8577、SSIM 0.8666、LPIPS 0.1385，超过 baseline 与 cached-edge v1，可作为 0001 的 DINO 质量候选；但平均 Gaussian 数量比 baseline 多约 52.1%，还不是预算高效结论。`weighted + importance_weight=0.50` 已完成 MipNeRF360 全 9 场景复验，平均 PSNR 28.8505、SSIM 0.8660、LPIPS 0.1397，平均 254,736 个 Gaussians、训练 137.60s；它相对普通 i0.50 平均少 8,836 个点、训练少 2.87s，质量只小幅回落，因此是当前全场景预算效率候选。新加入的 `adaptive_weighted + quadratic 430k` 在 bicycle 上达到 PSNR 26.9858、SSIM 0.8302、LPIPS 0.1853、424,011 个 Gaussians，相比 `weighted i0.50` 三项质量微升但点数更多，相比普通 i0.50 少 16,060 个点但质量仍小幅低一点；它是单场景新候选，还需要跨场景复验。`dinov2_descriptor_cosine` 则打通了在线渲染图 descriptor 与 GT cache descriptor 的语义比较路径，但预算对齐后未转正。后续决策门槛以 30k 完整 run 为准，不再用短程验证指标判断质量。
 
 ## 发现
 
@@ -72,7 +72,7 @@
 - `vfm_importance_weight` 现在将 densification 强度和 pruning fusion 分离。默认值为 `1.0`，保持向后兼容。
 - `vfm_importance_weight=0.25` 时，edge 达到 PSNR 26.9439，SSIM 0.8244，LPIPS 0.1958，413,301 个 Gaussians；DINO 达到 PSNR 26.9261，SSIM 0.8259，LPIPS 0.1928，418,073 个 Gaussians。
 - 显式 importance weighting 让默认 DINO 点数降低约 14.8%，但仍未达到接近 baseline 的预算。edge 仍稳定在 400k Gaussians 以上。
-- `vfm_importance_mode` 现在支持 `max`、`weighted` 和 `rgb_only`。默认 `max` 保持旧行为。
+- `vfm_importance_mode` 现在支持 `max`、`weighted`、`adaptive_weighted` 和 `rgb_only`。默认 `max` 保持旧行为。
 - 30k `rgb_only` ablation 已完成。edge 达到 PSNR 26.9574，SSIM 0.8243，LPIPS 0.1961，413,914 个 Gaussians；DINO 达到 PSNR 26.9310，SSIM 0.8237，LPIPS 0.1962，413,223 个 Gaussians。
 - `rgb_only` 未能恢复接近 baseline 的 Gaussian count。单独的 VFM pruning-score fusion 仍可保留或重塑足够多的点，让最终点数保持在 baseline 的约 1.72x。
 - 首个 `target_gaussian_count` probe 精确匹配 baseline 点数，但裁掉了最高分 Gaussians，导致质量崩溃：edge PSNR 11.1494，DINO PSNR 10.2215。
@@ -138,6 +138,7 @@
 - `weighted + importance_weight=0.50` kitchen 室内高基线场景复验最终 157,804 个 Gaussians，PSNR 33.3234、SSIM 0.9693、LPIPS 0.0347，训练 141.71s。相比普通 kitchen i0.50 少 3,543 个点、训练少 3.21s，PSNR 低 -0.0124、SSIM 基本持平、LPIPS 差 +0.0003；相比 baseline 和 cached-edge v1 仍三项正向，并且点数少于二者。它说明 weighted 在室内高基线场景可以作为低风险省点折中，但质量上界仍是普通 i0.50。
 - `weighted + importance_weight=0.50` room 室内房间场景复验最终 101,384 个 Gaussians，PSNR 33.1081、SSIM 0.9626、LPIPS 0.0574，训练 131.98s。相比普通 room i0.50 少 2,436 个点、训练少 1.76s，同时 PSNR 高 +0.0360、SSIM 高 +0.0004、LPIPS 基本持平；相比 baseline 和 cached-edge v1 也三项正向。它说明 weighted 在小室内场景也可能少点省时且微升质量。
 - `weighted + importance_weight=0.50` 全 9 场景均值为 PSNR 28.8505、SSIM 0.8660、LPIPS 0.1397、254,736 个 Gaussians、训练 137.60s。相比 baseline 仍提升 +0.1978 PSNR、+0.0109 SSIM、LPIPS 改善 -0.0223；相比普通 i0.50 平均少 8,836 点、训练少 2.87s，质量只低 -0.0072 PSNR、-0.0006 SSIM、LPIPS 差 +0.0012。因此 weighted 完整结论是“预算效率候选”，普通 i0.50 完整结论仍是“质量候选”。
+- `adaptive_weighted + quadratic 430k` bicycle 30k 对照最终 424,011 个 Gaussians，PSNR 26.9858、SSIM 0.8302、LPIPS 0.1853，训练 141.94s。相比 `weighted i0.50` 多 8,853 个点，但提升 +0.0102 PSNR、+0.0014 SSIM、LPIPS 改善 -0.0014；相比普通 i0.50 少 16,060 个点，质量仍小幅低一点。它是新的单场景效率候选，下一步必须跨场景复验后再决定是否替代 weighted。
 
 ## 下一版计划
 

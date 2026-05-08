@@ -71,6 +71,7 @@
 | DINO top-k25 i0.50 | 26.9966 | +0.2934 | 0.8303 | +0.0237 | 0.1842 | -0.0435 | 440,071 | +199,677 | 141.34s | partial importance 最清晰折中 |
 | DINO top-k25 i0.75 | 27.0284 | +0.3251 | 0.8332 | +0.0265 | 0.1788 | -0.0490 | 472,164 | +231,770 | 155.18s | 高质量预算点 |
 | DINO top-k25 weighted i0.50 | 26.9756 | +0.2724 | 0.8288 | +0.0221 | 0.1867 | -0.0411 | 415,158 | +174,764 | 141.21s | 近 cadence 预算效率点 |
+| DINO top-k25 adaptive weighted quadratic i0.50 | 26.9858 | +0.2826 | 0.8302 | +0.0235 | 0.1853 | -0.0425 | 424,011 | +183,617 | 141.94s | 相比 weighted i0.50 三项质量微升，仍少于普通 i0.50 16,060 点 |
 
 ## 跨数据集正向与保护
 
@@ -83,6 +84,6 @@
 
 ## 简短结论
 
-当前应保留三条主线：`cached_edge_l1` 是 proxy 正向控制组，在 MipNeRF360 和 DB 上平均正向；`DINO top-k25 + importance_weight=0.50` 是 MipNeRF360 全场景质量候选，相对 baseline 平均 +0.2051 PSNR、+0.0115 SSIM、LPIPS -0.0234；`weighted + i0.50` 是全场景预算效率候选，相对普通 i0.50 平均少 8,836 点、训练少 2.87s，质量只小幅回落。
+当前应保留四条主线：`cached_edge_l1` 是 proxy 正向控制组，在 MipNeRF360 和 DB 上平均正向；`DINO top-k25 + importance_weight=0.50` 是 MipNeRF360 全场景质量候选，相对 baseline 平均 +0.2051 PSNR、+0.0115 SSIM、LPIPS -0.0234；`weighted + i0.50` 是全场景预算效率候选，相对普通 i0.50 平均少 8,836 点、训练少 2.87s，质量只小幅回落；`adaptive_weighted + quadratic 430k` 是新的 bicycle 单场景效率候选，相比 weighted i0.50 三项质量微升，但还需要跨场景复验。
 
 边界也很清楚：DINO i0.50 仍不是预算中性方案，Tandt 上 cached-edge v1 不是质量正例，容量保护只适合作为默认关闭的诊断/回退防线。下一步更值得做的是场景自适应预算和 weighted 适用边界复验，而不是继续追加同类单点。
