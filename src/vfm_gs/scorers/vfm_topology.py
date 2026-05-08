@@ -337,6 +337,32 @@ def _build_vfm_metric_map_layers(pixel_error_map, args):
     return [(metric_map.reshape(-1).contiguous(), float(weight)) for metric_map, weight in layers]
 
 
+def _support_metric_map(viewpoint_cam, device):
+    return torch.ones(
+        int(viewpoint_cam.image_height) * int(viewpoint_cam.image_width),
+        dtype=torch.int,
+        device=device,
+    )
+
+
+def _normalize_vfm_counts_by_support(vfm_counts, support_counts, args):
+    normalizer = getattr(args, "vfm_importance_normalizer", "none").lower()
+    if normalizer == "none":
+        return vfm_counts
+    if normalizer != "support_ratio":
+        raise ValueError(
+            "Unsupported vfm_importance_normalizer {!r}. Available: none, support_ratio.".format(normalizer)
+        )
+
+    min_count = max(float(getattr(args, "vfm_support_min_count", 1.0)), 1.0)
+    power = max(float(getattr(args, "vfm_support_ratio_power", 1.0)), 0.0)
+    support_counts = torch.clamp(support_counts.to(torch.float32), min=min_count)
+    hit_ratio = torch.clamp(vfm_counts.to(torch.float32) / support_counts, min=0.0, max=1.0)
+    if power != 1.0:
+        hit_ratio = torch.pow(hit_ratio, power)
+    return vfm_counts.to(torch.float32) * hit_ratio
+
+
 def compute_gaussian_score_fastgs_with_vfm(camlist, gaussians, pipe, bg, args, DENSIFY=False):
     """Compute FastGS scores with an auxiliary VFM-style topology signal.
 
@@ -351,11 +377,13 @@ def compute_gaussian_score_fastgs_with_vfm(camlist, gaussians, pipe, bg, args, D
     )
 
     vfm_counts_total = None
+    vfm_support_total = None
     vfm_pruning_total = None
     backend = getattr(args, "vfm_backend", "mock_l1")
     vfm_weight = getattr(args, "vfm_weight", 0.25)
     vfm_importance_weight = max(0.0, getattr(args, "vfm_importance_weight", 1.0))
     vfm_importance_mode = getattr(args, "vfm_importance_mode", "max").lower()
+    vfm_importance_normalizer = getattr(args, "vfm_importance_normalizer", "none").lower()
     use_albedo_sh0 = getattr(args, "vfm_use_albedo_sh0", True)
     cache_dir = getattr(args, "vfm_cache_dir", "")
     dinov2_repo = getattr(args, "vfm_dinov2_repo", "")
@@ -402,6 +430,21 @@ def compute_gaussian_score_fastgs_with_vfm(camlist, gaussians, pipe, bg, args, D
                 vfm_counts_total = counts.clone()
             else:
                 vfm_counts_total += counts
+            if vfm_importance_normalizer == "support_ratio":
+                support_pkg = render_fastgs(
+                    viewpoint_cam,
+                    gaussians,
+                    pipe,
+                    bg,
+                    args.mult,
+                    get_flag=True,
+                    metric_map=_support_metric_map(viewpoint_cam, rendered_image.device),
+                )
+                support_counts = support_pkg["accum_metric_counts"]
+                if vfm_support_total is None:
+                    vfm_support_total = support_counts.clone()
+                else:
+                    vfm_support_total += support_counts
 
         weighted_counts = pixel_error_map.detach().mean() * counts.to(torch.float32)
         if vfm_pruning_total is None:
@@ -413,6 +456,15 @@ def compute_gaussian_score_fastgs_with_vfm(camlist, gaussians, pipe, bg, args, D
     pruning_score = normalize01(rgb_pruning + vfm_weight * vfm_pruning)
 
     if DENSIFY:
+        if vfm_importance_normalizer != "none":
+            if vfm_importance_normalizer == "support_ratio":
+                vfm_counts_total = _normalize_vfm_counts_by_support(vfm_counts_total, vfm_support_total, args)
+            else:
+                raise ValueError(
+                    "Unsupported vfm_importance_normalizer {!r}. Available: none, support_ratio.".format(
+                        vfm_importance_normalizer
+                    )
+                )
         vfm_importance = torch.floor(vfm_counts_total.to(torch.float32) / len(camlist))
         if vfm_importance_mode == "rgb_only":
             importance_score = rgb_importance

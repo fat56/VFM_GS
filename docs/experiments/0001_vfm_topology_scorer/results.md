@@ -485,6 +485,8 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 
 代码变更：新增 `configs/experiments/0001_vfm_topology_dinov2_token_edge_topk.yaml`。它复用 `dinov2_token_edge_l1` 后端和 `output/0001/vfm_cache/bicycle_dinov2_vits14`，但把 metric map 从固定阈值改为 `vfm_metric_map_mode=topk`、`vfm_metric_topk=0.15`。目标是把 descriptor 分支中已经验证可用的 top-k 高误差区域选择迁移到当前最强的 DINO token-edge 路径上。
 
+后续追加 `vfm_importance_normalizer=none|support_ratio`。默认值为 `none`，保持已有实验行为不变；`support_ratio` 会在 densification 打分时额外统计每个 Gaussian 的可见像素支持度，用 VFM 命中比例调节 VFM importance，避免高可见度 Gaussian 仅因曝光机会多而获得过高 VFM densification 权重。
+
 数据集：`datasets/mipnerf360/bicycle`，test split，`-r 8`。先用 620-step 验证链路健康，再跑 30,000 iterations 完整对照。
 
 | 产物 | Backend | Metric map | Iterations | PSNR | SSIM | LPIPS | 训练时间 | Gaussian 数量 | 输出大小 | 备注 |
@@ -498,11 +500,12 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 | `output/0001/vfm_dinov2_token_edge_topk025_i025_bicycle_30k_r8` | `dinov2_token_edge_l1` | top-k 25%, `importance_weight=0.25` | 30,000 | 26.9515 | 0.8262 | 0.1920 | 143.26s | 420,361 | 125M | 接近 cadence 预算，三项指标均小幅优于 cadence control |
 | `output/0001/vfm_dinov2_token_edge_topk025_i050_bicycle_30k_r8` | `dinov2_token_edge_l1` | top-k 25%, `importance_weight=0.50` | 30,000 | 26.9966 | 0.8303 | 0.1842 | 141.34s | 440,071 | 130M | partial importance 曲线继续正向，当前预算效率最佳 |
 | `output/0001/vfm_dinov2_token_edge_topk025_i075_bicycle_30k_r8` | `dinov2_token_edge_l1` | top-k 25%, `importance_weight=0.75` | 30,000 | 27.0284 | 0.8332 | 0.1788 | 155.18s | 472,164 | 137M | 高质量预算点，略优于 top-k 15% |
+| `output/0001/vfm_dinov2_token_edge_topk025_supportnorm_i050_bicycle_620_r8` | `dinov2_token_edge_l1` | top-k 25%, `importance_weight=0.50`, `support_ratio` | 620 | 20.8465 | 0.4756 | 0.5468 | 2.96s | 61,517 | 35M | 支持度归一化链路快速验证 |
 
 解读：
 
-- 训练预检、train、render 和 metrics 均通过，说明 token-edge top-k 配置可直接进入 30k 完整对照。
-- 620-step 指标只说明集成健康；30k 完整结果相对原始 baseline 提升 +0.3191 PSNR、+0.0255 SSIM、LPIPS 改善 -0.0468，属于清晰正向。
+- 训练预检、train、render 和 metrics 均通过，说明 token-edge top-k 配置可直接进入 30k 完整对照；`support_ratio` 支持度归一化也已通过 620-step 链路验证。
+- 620-step 指标只说明集成健康，不作为最终质量判断；30k 完整结果相对原始 baseline 提升 +0.3191 PSNR、+0.0255 SSIM、LPIPS 改善 -0.0468，属于清晰正向。
 - 相比 `fastgs_densify100` cadence control，token-edge top-k 15% 提升 +0.0936 PSNR、+0.0081 SSIM、LPIPS 改善 -0.0154，同时多 52,920 个 Gaussians，训练少 25.49s。
 - 相比默认 DINO token-edge，top-k 15% 少 25,834 个 Gaussians，训练少 25.71s，但质量下降 -0.0354 PSNR、-0.0023 SSIM、LPIPS 差 +0.0043。它是更高效的 DINO token-edge 变体，但没有刷新质量上界。
 - top-k 25% 刷新了当前 bicycle 30k 质量上界。相比默认 DINO token-edge，它提升 +0.0059 PSNR、+0.0009 SSIM、LPIPS 改善 -0.0019，但多 6,496 个 Gaussians；相比原始 baseline，它提升 +0.3604 PSNR、+0.0287 SSIM、LPIPS 改善 -0.0530。
@@ -513,6 +516,7 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 - top-k 25% `importance_weight=0.25` 保留少量 VFM densification，而不是像 `rgb_only` 一样完全关闭。它最终 420,361 个 Gaussians，比 cadence control 多 8,283 个；相比 cadence control，PSNR 高 +0.0228、SSIM 高 +0.0021、LPIPS 改善 -0.0044。相比 `rgb_only`，它多 8,822 个点，但 PSNR 高 +0.0175、SSIM 高 +0.0027、LPIPS 改善 -0.0061，说明 partial VFM importance 是比完全关闭 VFM densification 更合理的预算方向。
 - top-k 25% `importance_weight=0.50` 进一步把预算推到 440,071 个 Gaussians，相比 `importance_weight=0.25` 多 19,710 个点，但换来 +0.0451 PSNR、+0.0041 SSIM、LPIPS 改善 -0.0078。相比 cadence control，它多 27,993 个点，PSNR 高 +0.0679、SSIM 高 +0.0062、LPIPS 改善 -0.0122，并且训练时间更短。这个点是当前 partial importance 曲线上最好的预算效率折中。
 - top-k 25% `importance_weight=0.75` 继续改善质量，但收益开始变慢：相比 `importance_weight=0.50` 多 32,093 个 Gaussians，换来 +0.0317 PSNR、+0.0028 SSIM、LPIPS 改善 -0.0055。它相对 top-k 15% 多 7,166 个点，PSNR 高 +0.0061、SSIM 高 +0.0010、LPIPS 改善 -0.0022，因此可作为高质量预算点，但预算效率不如 `importance_weight=0.50` 清晰。
+- `support_ratio` 快速验证在 620-step 下得到 61,517 个 Gaussians，PSNR 20.8465、SSIM 0.4756、LPIPS 0.5468；它与历史 top-k 15% 快速验证的 61,555 个点基本一致，说明额外的 support-count raster pass 没有破坏 densification 链路。这个结果只证明实现可用，下一步需要跑 30k bicycle 对照，才能判断支持度归一化是否能在约 440k 预算点附近进一步提升质量或减少冗余点。
 - staged 490,832、final 490,832 和 `rgb_only` 分别暴露了三类问题：中期反复压 cap 会损伤结构生长，终局一次性低分裁剪排序不够可靠，完全关闭 VFM densification 又会交回主要质量收益。`importance_weight=0.25/0.50/0.75` 给出连续正向曲线，因此 partial VFM importance 是当前最有效的预算控制旋钮。
 - 这一路径不引入在线 DINO inference，成本明显低于 descriptor 系列。当前 0001 在 bicycle 上的最佳质量结论仍定为 top-k 25% 完整对照；预算方向把 `importance_weight=0.50` 作为约 440k 点数下的效率点，把 `importance_weight=0.75` 作为略优于 top-k 15% 的高质量预算点。继续把权重推到 1.0 基本回到完整 top-k25 已知上界，下一步更应做 support-normalized score 或高置信区域保护，而不是追加同类单点。
 
