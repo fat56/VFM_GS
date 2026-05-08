@@ -311,7 +311,7 @@ uv run --active python -m vfm_gs.cli.train \
 
 ### Weighted 结果汇总与选择规则
 
-`configs/experiments/0001_weighted_candidate_catalog.yaml` 记录当前 DINO token-edge 主线、weighted i0.50 和已完成的 weighted i0.75 run。每次新增场景结果后，先把 run 目录和训练时间追加到 catalog，再运行汇总脚本：
+`configs/experiments/0001_weighted_candidate_catalog.yaml` 记录当前 DINO token-edge 主线、weighted i0.50、weighted i0.75 和 weighted i0.90 run。每次新增场景结果后，先把 run 目录和训练日志追加到 catalog，再运行汇总脚本：
 
 ```bash
 uv run --active python scripts/summarize_0001_weighted_candidates.py
@@ -325,7 +325,7 @@ uv run --active python scripts/summarize_0001_weighted_candidates.py
 - `output/0001/weighted_candidate_summary/averages.csv`
 - `output/0001/weighted_candidate_summary/recommendation_averages.csv`
 
-当前规则是：预算优先默认选 `weighted_i050`；只有当 `weighted_i075` 相比 `weighted_i050` 的 PSNR 提升、SSIM 没有明显回落、LPIPS 没有明显变差时，才把质量档推荐为 `weighted_i075`。截至 MipNeRF360 全 9 场景 i0.75 补齐，`quality_pick` 会选择 bicycle、counter、garden、room、stump 的 i0.75，其余场景保留 i0.50。固定 `weighted_i075` 均值为 28.8396 / 0.8663 / 0.1395、257,715 个 Gaussians，不作为默认档；`quality_pick` 均值为 28.8636 / 0.8665 / 0.1393、257,223 个 Gaussians，相比固定 i0.50 提升 +0.0130 PSNR、+0.0005 SSIM、LPIPS 改善 -0.0004，只多 2,487 个点。
+当前规则是：预算优先默认选 `weighted_i050`；严格质量档会在 `weighted_i075` 和 `weighted_i090` 中选择通过质量门槛且 PSNR 最高的候选；QCGI 档则选择质量-容量收益指数为正且最高的候选。固定 `weighted_i075` 和 `weighted_i090` 都不作为默认档。截至 MipNeRF360 全 9 场景 i0.90 补齐，严格 `quality_pick` 选择 bicycle/garden/room/stump 的 i0.75、counter 的 i0.90，其余场景保留 i0.50，均值为 28.8641 / 0.8665 / 0.1392、257,326 个 Gaussians；`QCGI pick` 额外选择 treehill 的 i0.90，均值为 28.8641 / 0.8667 / 0.1388、255,822 个 Gaussians。
 
 ### Weighted 候选跨数据集/跨档位评估
 
@@ -366,6 +366,23 @@ uv run --active python scripts/run_0001_dino_weighted_eval.py \
   --reference-summary output/0001/full_mipnerf360_v1/summary.csv
 ```
 
+更激进的 i0.90 档位只作为质量探测和 QCGI 候选，不作为默认档：
+
+```bash
+uv run --active python scripts/run_0001_dino_weighted_eval.py \
+  --dataset-name mipnerf360 \
+  --dataset-root datasets/mipnerf360 \
+  --output-root output/0001/weighted_i090_mipnerf360 \
+  --scenes bicycle bonsai counter flowers garden kitchen room stump treehill \
+  --config configs/experiments/0001_vfm_topology_dinov2_token_edge_weighted_i090.yaml \
+  --method-name dinov2_token_edge_weighted_i090 \
+  --run-name vfm_dinov2_token_edge_topk025_weighted_i090_30k_r8 \
+  --cache-root output/0001/vfm_cache \
+  --reference-summary output/0001/full_mipnerf360_v1/summary.csv
+```
+
+当前一次实际执行中，前 6 个场景写入 `output/0001/weighted_i090_mipnerf360`，尾部 `room/stump/treehill` 写入 `output/0001/weighted_i090_mipnerf360_tail`；`configs/experiments/0001_weighted_candidate_catalog.yaml` 已记录这两个输出根目录，汇总脚本可直接读取。
+
 主要产物：
 
 - `output/0001/dino_weighted_i050_<dataset>/summary.csv`
@@ -373,6 +390,15 @@ uv run --active python scripts/run_0001_dino_weighted_eval.py \
 - `output/0001/dino_weighted_i050_<dataset>/averages.json`
 - `output/0001/dino_weighted_i050_<dataset>/comparisons.csv`
 - `output/0001/dino_weighted_i050_<dataset>/<scene>/logs/vfm_dinov2_token_edge_topk025_weighted_i050_30k_r8/*.log`
+
+weighted 候选汇总：
+
+```bash
+uv run --active python scripts/summarize_0001_weighted_candidates.py \
+  --output-dir output/0001/weighted_candidate_summary
+```
+
+该脚本读取 `configs/experiments/0001_weighted_candidate_catalog.yaml`，输出固定档均值、逐场景差值、严格 `quality_pick` 和 `QCGI pick`。截至 i0.90 完整复验，固定 i0.90 均值低于 i0.50，不作为默认档；严格 `quality_pick` 均值为 28.8641 / 0.8665 / 0.1392、257,326 个 Gaussians；`QCGI pick` 均值为 28.8641 / 0.8667 / 0.1388、255,822 个 Gaussians。
 
 ### 跨数据集后端选择汇总
 

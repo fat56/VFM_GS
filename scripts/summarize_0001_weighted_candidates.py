@@ -11,6 +11,19 @@ from typing import Any
 
 
 METRIC_KEYS = ("psnr", "ssim", "lpips")
+QUALITY_CANDIDATE_METHODS = ("weighted_i075", "weighted_i090")
+QUALITY_MIN_DELTA_PSNR = 0.0
+QUALITY_MIN_DELTA_SSIM = -0.0002
+QUALITY_MAX_DELTA_LPIPS = 0.0002
+GS_UNIT = 10_000.0
+GS_SOFT_BUDGET = 100_000.0
+GS_PENALTY_PER_10K = 0.01
+GS_HEAVY_PENALTY_PER_10K = 0.04
+QUALITY_WEIGHTS = {
+    "psnr": 1.0,
+    "ssim": 20.0,
+    "lpips": 5.0,
+}
 GS_RE = re.compile(r"Gaussian number:\s*(\d+)")
 TIME_RE = re.compile(r"Training time:\s*([0-9.]+)")
 
@@ -103,6 +116,51 @@ def delta(value: float | int | None, reference: float | int | None) -> float | i
     return value - reference
 
 
+def quality_gain_from_deltas(deltas: dict[str, float | int | None]) -> float | None:
+    d_psnr = deltas.get("delta_psnr")
+    d_ssim = deltas.get("delta_ssim")
+    d_lpips = deltas.get("delta_lpips")
+    if d_psnr is None or d_ssim is None or d_lpips is None:
+        return None
+    return (
+        QUALITY_WEIGHTS["psnr"] * float(d_psnr)
+        + QUALITY_WEIGHTS["ssim"] * float(d_ssim)
+        - QUALITY_WEIGHTS["lpips"] * float(d_lpips)
+    )
+
+
+def gs_growth_band(delta_gs_num: int | float | None) -> str:
+    if delta_gs_num is None:
+        return "unknown"
+    if delta_gs_num <= 0:
+        return "no_growth"
+    if delta_gs_num < GS_UNIT:
+        return "sub_0.01M"
+    if delta_gs_num < GS_SOFT_BUDGET:
+        return "0.01M_to_0.10M"
+    return "gte_0.10M"
+
+
+def gs_penalty(delta_gs_num: int | float | None) -> float | None:
+    if delta_gs_num is None:
+        return None
+    growth = max(0.0, float(delta_gs_num))
+    soft_growth = min(growth, GS_SOFT_BUDGET)
+    heavy_growth = max(0.0, growth - GS_SOFT_BUDGET)
+    return (
+        GS_PENALTY_PER_10K * (soft_growth / GS_UNIT)
+        + GS_HEAVY_PENALTY_PER_10K * (heavy_growth / GS_UNIT)
+    )
+
+
+def qcgi_from_deltas(deltas: dict[str, float | int | None]) -> float | None:
+    gain = quality_gain_from_deltas(deltas)
+    penalty = gs_penalty(deltas.get("delta_gs"))
+    if gain is None or penalty is None:
+        return None
+    return gain - penalty
+
+
 def collect_rows(catalog: dict[str, Any], repo: Path) -> list[dict[str, Any]]:
     rows = []
     for item in catalog.get("runs", []):
@@ -155,28 +213,61 @@ def build_comparisons(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         reference = by_key.get((str(row["scene"]), reference_method))
         if reference is None:
             continue
+        deltas = candidate_delta_row(row, reference)
         comparisons.append(
             {
                 "scene": row["scene"],
                 "method": row["method"],
                 "reference": reference_method,
-                "delta_psnr": delta(optional_float(row["psnr"]), optional_float(reference["psnr"])),
-                "delta_ssim": delta(optional_float(row["ssim"]), optional_float(reference["ssim"])),
-                "delta_lpips": delta(optional_float(row["lpips"]), optional_float(reference["lpips"])),
-                "delta_gs_num": delta(optional_int(row["gs_num"]), optional_int(reference["gs_num"])),
-                "delta_train_time_s": delta(optional_float(row["train_time_s"]), optional_float(reference["train_time_s"])),
+                "delta_psnr": deltas["delta_psnr"],
+                "delta_ssim": deltas["delta_ssim"],
+                "delta_lpips": deltas["delta_lpips"],
+                "delta_gs_num": deltas["delta_gs"],
+                "delta_train_time_s": deltas["delta_time"],
+                "quality_gain": quality_gain_from_deltas(deltas),
+                "gs_growth_band": gs_growth_band(deltas["delta_gs"]),
+                "gs_penalty": gs_penalty(deltas["delta_gs"]),
+                "qcgi": qcgi_from_deltas(deltas),
             }
         )
     return comparisons
 
 
-def i075_passes(i075: dict[str, Any], i050: dict[str, Any]) -> bool:
-    d_psnr = delta(optional_float(i075["psnr"]), optional_float(i050["psnr"]))
-    d_ssim = delta(optional_float(i075["ssim"]), optional_float(i050["ssim"]))
-    d_lpips = delta(optional_float(i075["lpips"]), optional_float(i050["lpips"]))
+def candidate_delta_row(candidate: dict[str, Any], reference: dict[str, Any]) -> dict[str, float | int | None]:
+    return {
+        "delta_psnr": delta(optional_float(candidate["psnr"]), optional_float(reference["psnr"])),
+        "delta_ssim": delta(optional_float(candidate["ssim"]), optional_float(reference["ssim"])),
+        "delta_lpips": delta(optional_float(candidate["lpips"]), optional_float(reference["lpips"])),
+        "delta_gs": delta(optional_int(candidate["gs_num"]), optional_int(reference["gs_num"])),
+        "delta_time": delta(optional_float(candidate["train_time_s"]), optional_float(reference["train_time_s"])),
+    }
+
+
+def quality_candidate_passes(deltas: dict[str, float | int | None]) -> bool:
+    d_psnr = deltas["delta_psnr"]
+    d_ssim = deltas["delta_ssim"]
+    d_lpips = deltas["delta_lpips"]
     if d_psnr is None or d_ssim is None or d_lpips is None:
         return False
-    return d_psnr > 0.0 and d_ssim >= -0.0002 and d_lpips <= 0.0002
+    return (
+        float(d_psnr) > QUALITY_MIN_DELTA_PSNR
+        and float(d_ssim) >= QUALITY_MIN_DELTA_SSIM
+        and float(d_lpips) <= QUALITY_MAX_DELTA_LPIPS
+    )
+
+
+def candidate_status(candidate: dict[str, Any] | None, reference: dict[str, Any] | None) -> tuple[str, dict[str, float | int | None]]:
+    empty = {
+        "delta_psnr": None,
+        "delta_ssim": None,
+        "delta_lpips": None,
+        "delta_gs": None,
+        "delta_time": None,
+    }
+    if candidate is None or reference is None:
+        return "missing", empty
+    deltas = candidate_delta_row(candidate, reference)
+    return ("positive" if quality_candidate_passes(deltas) else "boundary"), deltas
 
 
 def build_recommendations(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -192,37 +283,63 @@ def build_recommendations(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         dino_i050 = methods.get("dino_i050")
         budget_pick = "weighted_i050" if weighted_i050 else ("dino_i050" if dino_i050 else "")
         quality_pick = budget_pick
-        i075_status = "missing"
-        reason = "没有 weighted_i075 结果，保留当前 i0.50 规则。"
+        qcgi_pick = budget_pick
+        qcgi_pick_score = 0.0
+        reason = "没有更激进质量档通过门槛，保留当前 i0.50 规则。"
+        qcgi_reason = "没有候选质量档取得正 QCGI，保留当前 i0.50 规则。"
 
-        delta_psnr = delta_ssim = delta_lpips = delta_gs = delta_time = None
-        if weighted_i075 and weighted_i050:
-            delta_psnr = delta(optional_float(weighted_i075["psnr"]), optional_float(weighted_i050["psnr"]))
-            delta_ssim = delta(optional_float(weighted_i075["ssim"]), optional_float(weighted_i050["ssim"]))
-            delta_lpips = delta(optional_float(weighted_i075["lpips"]), optional_float(weighted_i050["lpips"]))
-            delta_gs = delta(optional_int(weighted_i075["gs_num"]), optional_int(weighted_i050["gs_num"]))
-            delta_time = delta(optional_float(weighted_i075["train_time_s"]), optional_float(weighted_i050["train_time_s"]))
-            if i075_passes(weighted_i075, weighted_i050):
-                quality_pick = "weighted_i075"
-                i075_status = "positive"
-                reason = "i0.75 相比 i0.50 的 PSNR 提升，SSIM/LPIPS 未明显回落。"
-            else:
-                quality_pick = "weighted_i050"
-                i075_status = "boundary"
-                reason = "i0.75 未超过 i0.50 的质量门槛，推荐保留 i0.50。"
+        candidate_reports: dict[str, tuple[str, dict[str, float | int | None]]] = {}
+        passing_candidates = []
+        for method in QUALITY_CANDIDATE_METHODS:
+            candidate = methods.get(method)
+            status, deltas = candidate_status(candidate, weighted_i050)
+            candidate_reports[method] = (status, deltas)
+            if candidate is not None and status == "positive":
+                passing_candidates.append((float(candidate["psnr"]), method, candidate))
+            score = qcgi_from_deltas(deltas)
+            if candidate is not None and score is not None and score > qcgi_pick_score:
+                qcgi_pick = method
+                qcgi_pick_score = score
+                qcgi_reason = "{} 的 QCGI 最高且为正，质量收益足以覆盖容量代价。".format(method)
+
+        if passing_candidates:
+            _, quality_pick, _ = max(passing_candidates, key=lambda item: (item[0], item[1]))
+            reason = "{} 在候选质量档中 PSNR 最高，且 SSIM/LPIPS 未明显回落。".format(quality_pick)
+
+        i075_status, i075_deltas = candidate_reports.get(
+            "weighted_i075",
+            candidate_status(weighted_i075, weighted_i050),
+        )
+        i090_status, i090_deltas = candidate_reports.get(
+            "weighted_i090",
+            candidate_status(methods.get("weighted_i090"), weighted_i050),
+        )
 
         recommendations.append(
             {
                 "scene": scene,
                 "budget_pick": budget_pick,
                 "quality_pick": quality_pick,
+                "qcgi_pick": qcgi_pick,
+                "qcgi_pick_score": qcgi_pick_score,
                 "i075_status": i075_status,
-                "delta_psnr_i075_vs_i050": delta_psnr,
-                "delta_ssim_i075_vs_i050": delta_ssim,
-                "delta_lpips_i075_vs_i050": delta_lpips,
-                "delta_gs_i075_vs_i050": delta_gs,
-                "delta_train_time_i075_vs_i050": delta_time,
+                "delta_psnr_i075_vs_i050": i075_deltas["delta_psnr"],
+                "delta_ssim_i075_vs_i050": i075_deltas["delta_ssim"],
+                "delta_lpips_i075_vs_i050": i075_deltas["delta_lpips"],
+                "delta_gs_i075_vs_i050": i075_deltas["delta_gs"],
+                "delta_train_time_i075_vs_i050": i075_deltas["delta_time"],
+                "qcgi_i075_vs_i050": qcgi_from_deltas(i075_deltas),
+                "gs_growth_band_i075_vs_i050": gs_growth_band(i075_deltas["delta_gs"]),
+                "i090_status": i090_status,
+                "delta_psnr_i090_vs_i050": i090_deltas["delta_psnr"],
+                "delta_ssim_i090_vs_i050": i090_deltas["delta_ssim"],
+                "delta_lpips_i090_vs_i050": i090_deltas["delta_lpips"],
+                "delta_gs_i090_vs_i050": i090_deltas["delta_gs"],
+                "delta_train_time_i090_vs_i050": i090_deltas["delta_time"],
+                "qcgi_i090_vs_i050": qcgi_from_deltas(i090_deltas),
+                "gs_growth_band_i090_vs_i050": gs_growth_band(i090_deltas["delta_gs"]),
                 "reason": reason,
+                "qcgi_reason": qcgi_reason,
             }
         )
     return recommendations
@@ -253,6 +370,7 @@ def build_recommendation_averages(
     pick_columns = (
         ("budget_pick", "budget_pick"),
         ("quality_pick", "quality_pick"),
+        ("qcgi_pick", "qcgi_pick"),
     )
     averages = []
     for column, selector in pick_columns:
