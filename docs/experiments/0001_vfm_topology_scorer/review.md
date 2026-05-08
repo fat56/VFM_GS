@@ -2,7 +2,7 @@
 
 ## 当前决策
 
-继续保留 `vfm_topology_scorer` 作为 v1 集成路径。`mock_l1` 验证打分链路，`cached_edge_l1` 已固化为第一版正向控制组，但新完成的 Tandt/DB 全场景评估显示它存在明显跨数据集差异：`db` 正向，`tandt` 负向。`dinov2_token_edge_l1` 验证训练可以消费真实 DINOv2 patch-token cache，`dinov2_descriptor_cosine` 则打通了在线渲染图 descriptor 与 GT cache descriptor 的语义比较路径。后续决策门槛以 30k 完整 run 为准，不再用短跑快速验证指标判断质量。
+继续保留 `vfm_topology_scorer` 作为 v1 集成路径。`mock_l1` 验证打分链路；`cached_edge_l1` 固化为早期 proxy 正向控制组，但 Tandt/DB 全场景评估显示它存在明显跨数据集差异：`db` 正向，`tandt` 负向。`dinov2_token_edge_l1` 已验证训练可以消费真实 DINOv2 patch-token cache，并且 `top-k 25% + importance_weight=0.50` 完成 MipNeRF360 全 9 场景评估，平均 PSNR 28.8577、SSIM 0.8666、LPIPS 0.1385，超过 baseline 与 cached-edge v1，可作为 0001 的 DINO 质量候选；但平均 Gaussian 数量比 baseline 多约 52.1%，还不是预算高效结论。`dinov2_descriptor_cosine` 则打通了在线渲染图 descriptor 与 GT cache descriptor 的语义比较路径，但预算对齐后未转正。后续决策门槛以 30k 完整 run 为准，不再用短程验证指标判断质量。
 
 ## 发现
 
@@ -111,10 +111,10 @@
 - 220-iteration 快速验证只验证集成健康，不验证最终重建质量。既然 30k runs 已足够便宜，后续不应用短跑结果选择 scorer。
 - compact storage 有助于节省磁盘，但 `npz_uint8` 尚未证明 metric-neutral。float32 与 compact cache 变体仍应保留用于 ablation。
 - 当前 DINO cache 构建于 `max_width=224`；完整 `max_width=518` 或 `640` 的缓存时间、磁盘占用和 scorer 行为仍需测量。
-- 最好的 30k DINO 结果不是预算受控结果：它使用了约 2.04x baseline Gaussian count。下一步必须把特征信号质量和允许更密 reconstruction 的收益拆开。
+- 最好的 DINO 质量结果不是预算受控结果：bicycle top-k 25% 完整对照约为该场景 baseline 的 2.07x Gaussian count；全场景 DINO i0.50 candidate 平均也约为 baseline 的 1.52x。下一步必须把特征信号质量和允许更密 reconstruction 的收益拆开。
 - 现有 knobs 不能提供完整 budget control。`vfm_weight` 影响 pruning fusion，`vfm_importance_weight` 影响直接 VFM densification 强度，`vfm_importance_mode=rgb_only` 可以关闭直接 VFM densification，但都不能匹配 baseline point count。
 - `target_gaussian_count` 适合作为 count-control 诊断，但 baseline-sized budget 下的一次性 final pruning 破坏性太强。
-- staged budget control 更健康，edge 已在 MipNeRF360 全 9 场景平均转正，但 `treehill` 仍是负例。DINO token-edge 仍需要更好的 projection 或 recovery training，才能成为预算高效方案。
+- staged budget control 更健康，edge 已在 MipNeRF360 全 9 场景平均转正，但 `treehill` 仍是负例。DINO token-edge i0.50 已成为更强的 MipNeRF360 质量候选，但仍需要预算感知 scorer 或自动容量保护，才能成为预算高效方案。
 - 全场景 edge 评估使用 `1.42x baseline count` 的比例感知 target；部分场景自然低于 target，没有真正触发最终预算裁剪。因此结论应表述为比例感知的 v1 正向控制组，而不是所有场景都完成了精确预算匹配。
 - Tandt/DB 全场景评估已完成。`db` 的 `drjohnson` 和 `playroom` 均正向，平均提升 +0.4451 PSNR、+0.0037 SSIM、LPIPS 改善 -0.0021，平均 Gaussian 数量增加约 13.5%。
 - `tandt` 的 `train` 和 `truck` 均负向，平均下降 -0.3752 PSNR、-0.0061 SSIM、LPIPS 变差 +0.0067，同时平均 Gaussian 数量下降约 37.3%。这说明 v1 在该数据集上的问题不是点数膨胀，而更像 edge/pruning 组合过度压低结构容量。
@@ -125,12 +125,15 @@
 - Tandt 容量保护诊断显示，`train` 从 cached edge v1 的 PSNR 23.4054 / SSIM 0.9081 / LPIPS 0.0837 / 35,322 点恢复到 23.5970 / 0.9104 / 0.0804 / 58,788 点；`truck` 从 27.7543 / 0.9550 / 0.0379 / 27,802 点恢复到 27.9641 / 0.9570 / 0.0366 / 41,952 点。
 - 容量保护后的 Tandt 平均为 PSNR 25.7806、SSIM 0.9337、LPIPS 0.0585，优于原始 cached edge v1 的 25.5799 / 0.9316 / 0.0608，但仍低于 baseline 的 25.9551 / 0.9377 / 0.0541。结论是：容量下限是必要防线，但不能独立解决 Tandt 负例。
 - `vfm_weight=0.0` 的 Tandt `train` 诊断仍只有 35,698 个点且 PSNR 23.2628；纯 FastGS `densification_interval=100` 也只有 43,488 个点且 PSNR 23.6091。负例同时包含 cadence、edge signal 和 pruning trajectory 的耦合，不应简单归因为某一个 fusion 权重。
+- DINO token-edge `top-k 25% + importance_weight=0.50` 已完成 MipNeRF360 全 9 场景复验。候选均值为 PSNR 28.8577、SSIM 0.8666、LPIPS 0.1385、263,572 个 Gaussians；相对 baseline 平均提升 +0.2051 PSNR、+0.0115 SSIM、LPIPS 改善 -0.0234；相对 cached-edge v1 平均提升 +0.1365 PSNR、+0.0087 SSIM、LPIPS 改善 -0.0166。
+- DINO i0.50 相对 cached-edge v1 在 9/9 场景三项指标均正向；相对 baseline 在 8/9 场景 PSNR 正向、9/9 场景 SSIM/LPIPS 正向。`treehill` 是唯一 PSNR 低于 baseline 的场景，但 SSIM/LPIPS 明显改善；`stump` 是 PSNR 增益最大的正例。
+- DINO i0.50 的代价是平均 Gaussian 数量从 baseline 的 173,341 增到 263,572，约 +52.1%。它证明真实 DINO token topology 信号有效，但预算机制仍需单独解决。
 
 ## 下一版计划
 
-1. 固化 `cached_edge_l1` 为 0001 v1 正向控制组，但结论边界改为：MipNeRF360 全 9 场景平均正向，DB 两场景正向，Tandt 两场景负向。它是有价值的 proxy，不是跨数据集稳健的最终 scorer。
+1. 固化两个角色：`cached_edge_l1` 是 proxy 正向控制组，结论边界为 MipNeRF360 与 DB 正向、Tandt 负向；DINO token-edge i0.50 是 MipNeRF360 全场景质量候选，但不是预算高效候选。
 2. 把 `prune_min_gaussian_count` 保留为诊断/回退保护，但下一版不要依赖人工填 baseline count。更合理的方向是由 baseline 预跑、在线增长曲线或 scene scale 自动估计容量下限。
-3. 为下一版增加场景自适应保护：当 edge v1 自然结束 Gaussian 数量显著低于 baseline 或 staged target 时，降低 pruning fusion 强度、回退到 baseline pruning，或触发容量保护，避免 Tandt 这类场景被压得过稀。
-4. 将 DINOv2 descriptor 收束为“真实语义特征路径已打通但预算机制未转正”。下一版不再优先增加 top-k、percentile 或 soft-top-k 单点，而是设计预算感知 score：按 Gaussian 支持度归一化 VFM 分数，削弱大面积重复命中的 densification 放大效应。
-5. 改造 VFM 的角色：优先测试 prune-protect 或 prune-reorder，让语义信号保护结构性点，而不是直接扩大 densification；必要时把 VFM importance 与 RGB gradient gate 做更强的 AND/ratio 约束。
+3. 为下一版增加场景自适应保护：当自然结束 Gaussian 数量显著低于 baseline 或 staged target 时，降低 pruning fusion 强度、回退到 baseline pruning，或触发容量保护，避免 Tandt 这类场景被压得过稀。
+4. DINO 主线不再追加同类 top-k、percentile、soft-top-k 或单纯 final hard-prune 单点。下一步只做会改变预算行为的实验，例如预算感知 importance cap、按场景自动下调 VFM importance、或把 target budget 与恢复时序绑定。
+5. 已验证的 `support_ratio` 与高置信 prune-protect 都没有优于普通 i0.50，因此下一版不把它们作为主方向；可以保留为诊断分支。
 6. 重做恢复时序：不再只在训练结束后统一 dense recovery，而是在 staged pruning 发生后立即执行短局部恢复，观察是否能减少中期结构损伤。
