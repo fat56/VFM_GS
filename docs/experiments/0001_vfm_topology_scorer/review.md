@@ -139,13 +139,14 @@
 - `weighted + importance_weight=0.50` room 室内房间场景复验最终 101,384 个 Gaussians，PSNR 33.1081、SSIM 0.9626、LPIPS 0.0574，训练 131.98s。相比普通 room i0.50 少 2,436 个点、训练少 1.76s，同时 PSNR 高 +0.0360、SSIM 高 +0.0004、LPIPS 基本持平；相比 baseline 和 cached-edge v1 也三项正向。它说明 weighted 在小室内场景也可能少点省时且微升质量。
 - `weighted + importance_weight=0.50` 全 9 场景均值为 PSNR 28.8505、SSIM 0.8660、LPIPS 0.1397、254,736 个 Gaussians、训练 137.60s。相比 baseline 仍提升 +0.1978 PSNR、+0.0109 SSIM、LPIPS 改善 -0.0223；相比普通 i0.50 平均少 8,836 点、训练少 2.87s，质量只低 -0.0072 PSNR、-0.0006 SSIM、LPIPS 差 +0.0012。因此 weighted 完整结论是“预算效率候选”，普通 i0.50 完整结论仍是“质量候选”。
 - `adaptive_weighted + quadratic 430k` bicycle 30k 对照最终 424,011 个 Gaussians，PSNR 26.9858、SSIM 0.8302、LPIPS 0.1853，训练 141.94s。相比 `weighted i0.50` 多 8,853 个点，但提升 +0.0102 PSNR、+0.0014 SSIM、LPIPS 改善 -0.0014；相比普通 i0.50 少 16,060 个点，质量仍小幅低一点。它是新的单场景效率候选，下一步必须跨场景复验后再决定是否替代 weighted。
+- `adaptive_weighted + quadratic 430k` treehill 复验最终 420,283 个 Gaussians，PSNR 24.4393、SSIM 0.7285、LPIPS 0.2821，训练 140.96s。相比普通 treehill i0.50，PSNR 低 -0.0780，SSIM 基本持平，LPIPS 只微幅好 -0.0001；相比 treehill `weighted i0.50`，点数更多但 PSNR 低 -0.0708。它没有通过第二场景验证，不能替代全场景 weighted 结论。
 
 ## 下一版计划
 
 1. 固化两个角色：`cached_edge_l1` 是 proxy 正向控制组，结论边界为 MipNeRF360 与 DB 正向、Tandt 负向；DINO token-edge i0.50 是 MipNeRF360 全场景质量候选，但不是预算高效候选。
 2. 把 `prune_min_gaussian_count` 保留为诊断/回退保护，但下一版不要依赖人工填 baseline count。更合理的方向是由 baseline 预跑、在线增长曲线或 scene scale 自动估计容量下限。
 3. 为下一版增加场景自适应保护：当自然结束 Gaussian 数量显著低于 baseline 或 staged target 时，降低 pruning fusion 强度、回退到 baseline pruning，或触发容量保护，避免 Tandt 这类场景被压得过稀。
-4. DINO 主线不再追加同类 top-k、percentile、soft-top-k 或单纯 final hard-prune 单点。下一步只做会改变预算行为的实验，例如 RGB/VFM 加权融合的跨场景复验、预算感知 importance cap、按场景自动下调 VFM importance，或把 target budget 与恢复时序绑定。
+4. DINO 主线不再追加同类 top-k、percentile、soft-top-k 或单纯 final hard-prune 单点。下一步只做会改变预算行为的实验，例如 RGB/VFM 加权融合的高质量档位复验、按场景自动下调 VFM importance，或把 target budget 与恢复时序绑定。
 5. 预算感知 importance cap 已完成 bicycle 420k、430k 放松衰减和 430k quadratic 三个 30k 对照：420k 软预算点为 422,778 个 Gaussians，PSNR/SSIM/LPIPS 为 26.9732 / 0.8273 / 0.1916；430k、start 0.95、min 0.10 为 419,513 个 Gaussians，PSNR/SSIM/LPIPS 为 26.9750 / 0.8270 / 0.1919；430k quadratic 为 418,137 个 Gaussians，PSNR/SSIM/LPIPS 为 26.9402 / 0.8262 / 0.1918。它们都没有保住 i0.50 质量；下一步不迁移全场景，也不继续手工追加相近曲线单点，先改为场景自适应预算或直接估计场景容量。
 6. `weighted + importance_weight=0.50` 已完成全 9 场景复验。它平均只比普通 i0.50 低 -0.0072 PSNR、-0.0006 SSIM、LPIPS 差 +0.0012，但少 8,836 个 Gaussians、训练少 2.87s。下一步把规则收束为：默认保留普通 i0.50 作为质量上界，若场景目标更偏预算效率或 DINO topology 已显示结构收益，则选择 `weighted`；如果普通 i0.50 已接近 baseline 点数且 quality margin 很小，优先不切换。
 7. 已验证的 `support_ratio` 与高置信 prune-protect 都没有优于普通 i0.50，因此下一版不把它们作为主方向；可以保留为诊断分支。

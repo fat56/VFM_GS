@@ -2381,3 +2381,32 @@ uv run --active python -m vfm_gs.cli.metrics \
 ```
 
 结果摘要：620-step 快速验证为 PSNR 21.8205、SSIM 0.5489、LPIPS 0.4514，最终 180,605 个 Gaussians，只说明链路健康。30k quadratic 版本为 PSNR 26.9858、SSIM 0.8302、LPIPS 0.1853，最终 424,011 个 Gaussians，训练 141.94s。相比 `weighted i0.50`，它多 8,853 个点但三项质量均微升；相比普通 i0.50，少 16,060 个点但质量仍小幅低一点。下一步优先在 `stump/room/kitchen/treehill` 复验，不直接替代全场景 weighted 结论。
+
+treehill 第二场景复验：
+
+```bash
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_dinov2_token_edge_adaptive_weighted.yaml \
+  -s datasets/mipnerf360/treehill \
+  -i images \
+  -m output/0001/vfm_dinov2_token_edge_topk025_adaptive_weighted_i050_budget430k_quad_treehill_30k_r8 \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0001/vfm_cache/treehill_dinov2_vits14 \
+  -r 8
+
+uv run --active python -m vfm_gs.cli.render \
+  -m output/0001/vfm_dinov2_token_edge_topk025_adaptive_weighted_i050_budget430k_quad_treehill_30k_r8 \
+  --iteration -1 \
+  --skip_train \
+  --quiet
+
+uv run --active python -m vfm_gs.cli.metrics \
+  -m output/0001/vfm_dinov2_token_edge_topk025_adaptive_weighted_i050_budget430k_quad_treehill_30k_r8
+```
+
+treehill 结果为 PSNR 24.4393、SSIM 0.7285、LPIPS 0.2821，最终 420,283 个 Gaussians，训练 140.96s。相比普通 treehill i0.50，PSNR 下降 -0.0780，SSIM 基本持平，LPIPS 仅微幅改善 -0.0001；相比 treehill `weighted i0.50`，点数多 2,749 个但 PSNR 下降 -0.0708。因此 quadratic adaptive weighted 不能从 bicycle 单场景候选升级为全场景预算效率候选，后续不继续扩展这条曲线。

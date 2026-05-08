@@ -538,6 +538,7 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 | `output/0001/vfm_dinov2_token_edge_topk025_adaptive_weighted_i050_budget430k_bicycle_30k_r8` | `dinov2_token_edge_l1` | top-k 25%, `adaptive_weighted`, 叠加旧权重衰减 | 30,000 | 26.9331 | 0.8248 | 0.1946 | 141.30s | 407,773 | 122M | 过度降权负例 |
 | `output/0001/vfm_dinov2_token_edge_topk025_adaptive_weighted_i050_budget430k_v2_bicycle_30k_r8` | `dinov2_token_edge_l1` | top-k 25%, `adaptive_weighted`, linear 430k | 30,000 | 26.9724 | 0.8292 | 0.1859 | 141.18s | 421,472 | 125M | 修正后混合结果，LPIPS 好于 weighted 但 PSNR 略低 |
 | `output/0001/vfm_dinov2_token_edge_topk025_adaptive_weighted_i050_budget430k_quad_bicycle_30k_r8` | `dinov2_token_edge_l1` | top-k 25%, `adaptive_weighted`, quadratic 430k | 30,000 | 26.9858 | 0.8302 | 0.1853 | 141.94s | 424,011 | 126M | 新的 bicycle 预算效率点 |
+| `output/0001/vfm_dinov2_token_edge_topk025_adaptive_weighted_i050_budget430k_quad_treehill_30k_r8` | `dinov2_token_edge_l1` | treehill, top-k 25%, `adaptive_weighted`, quadratic 430k | 30,000 | 24.4393 | 0.7285 | 0.2821 | 140.96s | 420,283 | 117M | 第二场景复验未通过，PSNR 明显回落 |
 
 解读：
 
@@ -593,6 +594,7 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 - quadratic 430k 对照最终 418,137 个 Gaussians，PSNR 26.9402、SSIM 0.8262、LPIPS 0.1918，训练 140.00s。相比 420k 线性软预算，点数少 4,641，但 PSNR 低 -0.0330、SSIM 低 -0.0011，LPIPS 只好 +0.0002；相比 430k 放松衰减，PSNR 低 -0.0348、SSIM 低 -0.0008，LPIPS 只好 +0.0001。这个结果说明“直接衰减 VFM 权重”的二次曲线没有改善预算质量曲线，至少在 bicycle 上不是值得迁移的方向。
 - `adaptive_weighted` 代码路径把预算进度用于 importance 融合语义，而不是直接衰减 VFM 权重：软预算区间前使用接近 `max` 的 partial VFM importance，接近预算时平滑过渡到 RGB/VFM weighted average。首个 65k 低预算 620-step 快速验证完成 train、render 和 metrics，说明分支可运行；指标不作为质量判断。
 - 首个 430k 30k 对照错误地叠加了旧的 budget-aware weight decay，最终只有 407,773 个 Gaussians，PSNR 26.9331、SSIM 0.8248、LPIPS 0.1946。它说明“过渡到 weighted”与“继续衰减 VFM weight”不能同时使用，否则会过度削弱 VFM densification。
+- 修正后的 `adaptive_weighted + quadratic 430k` 在 bicycle 上优于 `weighted i0.50`，但 treehill 第二场景复验没有复制这个收益：最终 420,283 个 Gaussians，PSNR 24.4393、SSIM 0.7285、LPIPS 0.2821。相比普通 treehill i0.50，PSNR 低 -0.0780、SSIM 基本持平、LPIPS 仅改善 -0.0001；相比 `weighted i0.50`，点数多 2,749 个但 PSNR 低 -0.0708、SSIM 高 +0.0004、LPIPS 改善 -0.0016。因此它不进入正向改进表，也不替代全场景 `weighted i0.50` 结论。
 - 修正后的 `adaptive_weighted` linear 430k 对照最终 421,472 个 Gaussians，PSNR 26.9724、SSIM 0.8292、LPIPS 0.1859。相比 `weighted i0.50`，点数多 6,314，PSNR 低 -0.0032，但 SSIM 高 +0.0004、LPIPS 改善 -0.0008；这是混合结果，还不足以替代 weighted。
 - `adaptive_weighted` quadratic 430k 对照最终 424,011 个 Gaussians，PSNR 26.9858、SSIM 0.8302、LPIPS 0.1853，训练 141.94s。相比 `weighted i0.50` 多 8,853 个点，但三项质量均更好：+0.0102 PSNR、+0.0014 SSIM、LPIPS 改善 -0.0014；相比普通 i0.50 少 16,060 个点，PSNR 低 -0.0108，但 SSIM 低 -0.0001、LPIPS 差 +0.0011。它是新的 bicycle 预算效率点，但还需要至少在 `stump/room/kitchen/treehill` 上复验，才能替代全场景 weighted 结论。
 - staged 490,832、final 490,832、high-score final 490,832 和 `rgb_only` 分别暴露了四类问题：中期反复压 cap 会损伤结构生长，终局一次性低分裁剪排序不够可靠，终局高分裁剪更不可靠，完全关闭 VFM densification 又会交回主要质量收益。`importance_weight=0.25/0.50/0.75` 给出连续正向曲线，`weighted + importance_weight=0.50` 则把点数进一步拉回 cadence 预算附近，因此 partial VFM importance 与加权融合是当前最有效的预算控制方向。
