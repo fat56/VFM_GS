@@ -421,6 +421,23 @@ uv run --active python scripts/run_0001_dino_weighted_eval.py \
 
 该诊断平均结果为 25.6430 / 0.9341 / 0.0566、50,370 个 Gaussians。它相对 staged 自动容量下限恢复了 LPIPS/SSIM，但仍低于 baseline，也低于原始 DINO weighted i0.50 的 PSNR。因此 Tandt 当前仍应回退 baseline；若继续优化，应改动早期 VFM 介入方式，而不是继续补最终容量。
 
+pruning-fusion-off 诊断关闭 `vfm_weight`，用于确认 Tandt 掉点是否主要来自 VFM pruning score 融合：
+
+```bash
+uv run --active python scripts/run_0001_dino_weighted_eval.py \
+  --dataset-name tandt \
+  --dataset-root datasets/tandt_db/tandt \
+  --output-root output/0001/dino_weighted_i050_prune0_tandt \
+  --scenes train truck \
+  --config configs/experiments/0001_vfm_topology_dinov2_token_edge_weighted_i050_prune0.yaml \
+  --method-name dinov2_token_edge_weighted_i050_prune0 \
+  --run-name vfm_dinov2_token_edge_topk025_weighted_i050_prune0_30k_r8 \
+  --cache-root output/0001/vfm_cache \
+  --reference-summary output/0001/full_tandt_db_v1/tandt/summary.csv
+```
+
+该诊断平均结果为 25.6955 / 0.9338 / 0.0572、38,172 个 Gaussians。它相对 cached-edge v1 仍正向，但低于 baseline，也低于原始 DINO weighted i0.50 的 PSNR/SSIM。因此 `vfm_weight=0.0` 不是 Tandt 默认方案。
+
 主要产物：
 
 - `output/0001/dino_weighted_i050_<dataset>/summary.csv`
