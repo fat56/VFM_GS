@@ -493,6 +493,8 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 
 再追加 `vfm_importance_budget_count`、`vfm_importance_budget_start_ratio` 和 `vfm_importance_budget_min_weight`。这些参数默认关闭；开启后会在训练期根据当前 Gaussian 数量动态衰减 VFM densification 权重。它不是训练结束后的硬裁剪，而是一个软预算机制：在当前点数接近 `budget_count * start_ratio` 时开始线性降低 VFM importance，到达 `budget_count` 时降到 `min_weight`。
 
+再追加 `vfm_importance_budget_curve`，默认值为 `linear`，保持历史行为不变。可选 `quadratic` 和 `sqrt`，用于诊断非线性软预算：`quadratic` 在衰减早段更保留 VFM densification 权重，接近预算时再更快降低；`sqrt` 则更早压低权重。
+
 主对照数据集：`datasets/mipnerf360/bicycle`，test split，`-r 8`。先用 620-step 验证链路健康，再跑 30,000 iterations 完整对照。后续用同一设置在 `garden`、`counter`、`treehill`、`bonsai`、`flowers`、`kitchen`、`room` 和 `stump` 做跨场景复验，训练仍用 train split，指标来自 test split render。
 
 | 产物 | Backend | Metric map | Iterations | PSNR | SSIM | LPIPS | 训练时间 | Gaussian 数量 | 输出大小 | 备注 |
@@ -522,6 +524,7 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 | `output/0001/vfm_dinov2_token_edge_budgetaware420k_i050_bicycle_620_r8` | `dinov2_token_edge_l1` | top-k 25%, `importance_weight=0.50`, soft budget 420k | 620 | 20.7641 | 0.4749 | 0.5459 | 2.81s | 61,590 | 35M | 预算感知 importance 链路快速验证 |
 | `output/0001/vfm_dinov2_token_edge_budgetaware420k_i050_bicycle_30k_r8` | `dinov2_token_edge_l1` | top-k 25%, `importance_weight=0.50`, soft budget 420k | 30,000 | 26.9732 | 0.8273 | 0.1916 | 140.65s | 422,778 | 125M | 接近 i0.25 点数，质量优于 i0.25 但低于 i0.50 |
 | `output/0001/vfm_dinov2_token_edge_budgetaware430k_s095_min010_i050_bicycle_30k_r8` | `dinov2_token_edge_l1` | top-k 25%, `importance_weight=0.50`, soft budget 430k, start 0.95, min 0.10 | 30,000 | 26.9750 | 0.8270 | 0.1919 | 139.38s | 419,513 | 125M | 放松衰减起点后未改善质量，点数也未上升 |
+| `output/0001/vfm_dinov2_token_edge_budgetquad430k_i050_bicycle_30k_r8` | `dinov2_token_edge_l1` | top-k 25%, `importance_weight=0.50`, soft budget 430k, quadratic | 30,000 | 26.9402 | 0.8262 | 0.1918 | 140.00s | 418,137 | 124M | 非线性 late-decay 负例，质量低于线性软预算 |
 
 解读：
 
@@ -564,8 +567,9 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 - 预算感知 importance 的 620-step 快速验证使用 `vfm_importance_budget_count=420000`、`vfm_importance_budget_start_ratio=0.90`、`vfm_importance_budget_min_weight=0.0`。短程点数远低于软预算区间，因此它主要验证参数读取和 scorer 分支健康；train、render 和 metrics 均通过，结果为 61,590 个 Gaussians，PSNR 20.7641、SSIM 0.4749、LPIPS 0.5459。
 - 预算感知 importance 的 30k 对照最终 422,778 个 Gaussians，接近固定 `importance_weight=0.25` 的 420,361 个点；相比 i0.25 提升 +0.0217 PSNR、+0.0011 SSIM、LPIPS 改善 -0.0004，训练少 2.61s。相比普通 i0.50，它少 17,293 个点，但质量回落 -0.0234 PSNR、-0.0031 SSIM、LPIPS 差 +0.0074。这个结果说明动态软预算优于固定低权重，但当前线性衰减还没有保住 i0.50 的主要质量收益。
 - 放松软预算的 430k 对照使用 `vfm_importance_budget_count=430000`、`vfm_importance_budget_start_ratio=0.95`、`vfm_importance_budget_min_weight=0.10`，最终 419,513 个 Gaussians，PSNR 26.9750、SSIM 0.8270、LPIPS 0.1919，训练 139.38s。相比 420k 软预算，它少 3,265 个点，PSNR 只高 +0.0018，SSIM 低 -0.0003，LPIPS 差 +0.0003；相比普通 i0.50，仍少 20,558 个点但质量回落 -0.0216 PSNR、-0.0034 SSIM、LPIPS 差 +0.0077。因此“更晚开始衰减 + 保留 10% 最小 VFM 权重”没有成为新主结果，短期不迁移全场景。
+- quadratic 430k 对照最终 418,137 个 Gaussians，PSNR 26.9402、SSIM 0.8262、LPIPS 0.1918，训练 140.00s。相比 420k 线性软预算，点数少 4,641，但 PSNR 低 -0.0330、SSIM 低 -0.0011，LPIPS 只好 +0.0002；相比 430k 放松衰减，PSNR 低 -0.0348、SSIM 低 -0.0008，LPIPS 只好 +0.0001。这个结果说明“前段保留更多 VFM 权重、后段加速衰减”的二次曲线没有改善预算质量曲线，至少在 bicycle 上不是值得迁移的方向。
 - staged 490,832、final 490,832、high-score final 490,832 和 `rgb_only` 分别暴露了四类问题：中期反复压 cap 会损伤结构生长，终局一次性低分裁剪排序不够可靠，终局高分裁剪更不可靠，完全关闭 VFM densification 又会交回主要质量收益。`importance_weight=0.25/0.50/0.75` 给出连续正向曲线，因此 partial VFM importance 是当前最有效的预算控制旋钮。
-- 这一路径不引入在线 DINO inference，成本明显低于 descriptor 系列。当前 0001 在 bicycle 上的最佳质量结论仍定为 top-k 25% 完整对照；预算方向把 `importance_weight=0.50` 作为约 440k 点数下的效率点，把 `importance_weight=0.75` 作为略优于 top-k 15% 的高质量预算点。MipNeRF360 全场景复验支持 i0.50 的跨场景有效性，尤其 `counter` 在仅 +5.9% Gaussian 的条件下获得三项指标提升，`kitchen` 在少于 baseline 点数下仍获得三项指标提升，`room` 证明高基线小室内场景上也能略超 cached-edge v1，`stump` 则给出全场景中最大的 PSNR 增益；`treehill` 显示 DINO i0.50 能修复 cached-edge 负例的 SSIM/LPIPS，但预算膨胀明显且 PSNR 仍略低于 baseline。继续把权重推到 1.0 基本回到完整 top-k25 已知上界；support-normalized score 和高置信 prune-protect 都未优于普通 partial importance。420k 与 430k 两个预算感知点说明软预算行为优于固定低权重，但还不能保住 i0.50 的主要质量收益；下一步应转向场景自适应预算或非线性预算函数，而不是继续手工追加相近的线性单点。
+- 这一路径不引入在线 DINO inference，成本明显低于 descriptor 系列。当前 0001 在 bicycle 上的最佳质量结论仍定为 top-k 25% 完整对照；预算方向把 `importance_weight=0.50` 作为约 440k 点数下的效率点，把 `importance_weight=0.75` 作为略优于 top-k 15% 的高质量预算点。MipNeRF360 全场景复验支持 i0.50 的跨场景有效性，尤其 `counter` 在仅 +5.9% Gaussian 的条件下获得三项指标提升，`kitchen` 在少于 baseline 点数下仍获得三项指标提升，`room` 证明高基线小室内场景上也能略超 cached-edge v1，`stump` 则给出全场景中最大的 PSNR 增益；`treehill` 显示 DINO i0.50 能修复 cached-edge 负例的 SSIM/LPIPS，但预算膨胀明显且 PSNR 仍略低于 baseline。继续把权重推到 1.0 基本回到完整 top-k25 已知上界；support-normalized score 和高置信 prune-protect 都未优于普通 partial importance。420k、430k 线性和 430k quadratic 三个预算感知点说明软预算行为优于固定低权重的一部分指标，但还不能保住 i0.50 的主要质量收益；下一步应转向场景自适应预算或直接学习/估计场景容量，而不是继续手工追加相近的预算曲线单点。
 
 ## 2026-05-07 DINOv2 Descriptor 打分器快速验证
 
