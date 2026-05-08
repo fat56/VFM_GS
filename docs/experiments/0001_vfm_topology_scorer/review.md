@@ -12,6 +12,8 @@ DB 的 DINO weighted 多档复验则给出相反信号。i0.50 平均为 30.3603
 
 跨数据集选择汇总脚本已扩展到 13 个场景的 baseline、cached-edge v1 和 DINO weighted i0.50/i0.75/i0.90。固定三档中，i0.50/i0.75/i0.90 均值分别为 28.6061 / 0.8873 / 0.1154、28.6066 / 0.8872 / 0.1153、28.5919 / 0.8872 / 0.1154，说明固定权重不是主解。场景级 `validated_policy` 与 PSNR oracle 一致，均值提升到 28.6981 / 0.8872 / 0.1179、178,903 个 Gaussians；相对 baseline 为 +0.2350 PSNR、+0.0075 SSIM、LPIPS -0.0127。`qcgi_pick` 为 28.6930 / 0.8881 / 0.1147、188,542 个 Gaussians，更偏 SSIM/LPIPS 和容量综合收益。逐场景 PSNR 最优分布更新为：9 个场景选 DINO weighted，1 个场景选 cached-edge，3 个场景选 baseline。下一版应把 0001 收束为“自动场景选择/回退 + QCGI 容量约束”，而不是继续寻找单一固定后端。
 
+为了避免把 test oracle 包装成自动方法，第一版同时固化了两个非事后展示策略。`dataset_fixed_policy` 使用 MipNeRF360 固定 weighted i0.50、DB 固定 DINO weighted i0.90、Tandt baseline 回退，13 场景均值为 28.6754 / 0.8881 / 0.1146、193,798 个 Gaussians；相对 baseline 提升 +0.2123 PSNR、+0.0083 SSIM、LPIPS 改善 -0.0160。`dataset_quality_policy` 使用 MipNeRF360 weighted QCGI、DB 固定 i0.90、Tandt baseline 回退，均值为 28.6848 / 0.8886 / 0.1140、194,550 个 Gaussians；相对 baseline 提升 +0.2217 PSNR、+0.0088 SSIM、LPIPS 改善 -0.0166。它们都保留了少量正向增点，平均 Gaussian 增长约 0.058M，符合“保留有效新增 GS、抑制低效增长”的实验目标。因此 0001 第一版已经能给出跨 13 场景、三项指标同时正向的 VFM_GS 有效性证据；下一版重点应从继续堆单点实验转向无泄漏 selector 与训练期自适应控制。
+
 ## 发现
 
 - `vfm_topology_scorer` 已返回与 `fastgs_photometric` 一致的 `(importance_score, pruning_score)` 契约。
@@ -161,6 +163,7 @@ DB 的 DINO weighted 多档复验则给出相反信号。i0.50 平均为 30.3603
 3. 为下一版增加场景自适应保护：当自然结束 Gaussian 数量显著低于 baseline 或 staged target 时，降低 pruning fusion 强度、回退到 baseline pruning，或触发容量保护，避免 Tandt 这类场景被压得过稀。
 4. DINO 主线不再追加同类 top-k、percentile、soft-top-k 或单纯 final hard-prune 单点。下一步只做会改变预算行为的实验，例如 RGB/VFM 加权融合的高质量档位复验、按场景自动下调 VFM importance，或把 target budget 与恢复时序绑定。
 5. 预算感知 importance cap 已完成 bicycle 420k、430k 放松衰减和 430k quadratic 三个 30k 对照：420k 软预算点为 422,778 个 Gaussians，PSNR/SSIM/LPIPS 为 26.9732 / 0.8273 / 0.1916；430k、start 0.95、min 0.10 为 419,513 个 Gaussians，PSNR/SSIM/LPIPS 为 26.9750 / 0.8270 / 0.1919；430k quadratic 为 418,137 个 Gaussians，PSNR/SSIM/LPIPS 为 26.9402 / 0.8262 / 0.1918。它们都没有保住 i0.50 质量；下一步不迁移全场景，也不继续手工追加相近曲线单点，先改为场景自适应预算或直接估计场景容量。
-6. `weighted + importance_weight=0.50` 已完成全 9 场景复验，是预算效率默认候选；`weighted + importance_weight=0.75/0.90` 已补齐全 9 场景，固定均值都不超过 i0.50，但按场景选择后的 `quality_pick` 和 `QCGI pick` 三项质量均优于固定 i0.50。下一步把规则收束为：预算优先选 `weighted i0.50`；质量优先时用 QCGI 或同等质量门槛允许小幅 GS 增长，在 i0.75/i0.90 中按场景选择；单个场景负例只作为回退信号，不再直接否定整个方法，最终以数据集平均和场景分布判断。
+6. `weighted + importance_weight=0.50` 已完成全 9 场景复验，是 MipNeRF360 预算效率默认候选；`weighted + importance_weight=0.75/0.90` 已补齐全 9 场景，固定均值都不超过 i0.50，但按场景选择后的 `quality_pick` 和 `QCGI pick` 三项质量均优于固定 i0.50。跨数据集收束后，当前第一版推荐两条展示线：保守线用 `dataset_fixed_policy`，质量线用 `dataset_quality_policy`。下一步把规则收束为：预算优先选数据集级固定策略；质量优先时用 QCGI 或同等质量门槛允许小幅 GS 增长；Tandt 这类无候选三项超过 baseline 的数据集直接回退 baseline。单个场景负例只作为回退信号，不再直接否定整个方法，最终以数据集平均和场景分布判断。
 7. 已验证的 `support_ratio` 与高置信 prune-protect 都没有优于普通 i0.50，因此下一版不把它们作为主方向；可以保留为诊断分支。
-8. 重做恢复时序：不再只在训练结束后统一 dense recovery，而是在 staged pruning 发生后立即执行短局部恢复，观察是否能减少中期结构损伤。
+8. 下一版 selector 必须避免 test 泄漏。短期优先级是独立 validation split、预先冻结的数据集级策略和训练过程容量信号；`evaluate_0001_train_selector.py` 已证明当前 train-side 渲染指标不足以替代 test oracle。
+9. 重做恢复时序：不再只在训练结束后统一 dense recovery，而是在 staged pruning 发生后立即执行短局部恢复，观察是否能减少中期结构损伤。

@@ -6,6 +6,8 @@
 
 | 保留级别 | 方法/改进 | 后端与关键设置 | 范围 | PSNR | ΔPSNR vs baseline | SSIM | ΔSSIM | LPIPS | ΔLPIPS | Gaussian 数 | ΔGS | 训练时间 | 结论 |
 |---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| 第一版保守展示线 | dataset fixed policy | MipNeRF360 `weighted_i050`、DB `dino_weighted_i090`、Tandt baseline 回退 | 13 场景 | 28.6754 | +0.2123 | 0.8881 | +0.0083 | 0.1146 | -0.0160 | 193,798 | +57,631 | 147.22s | 非 oracle 数据集级固定策略，三项指标同时正向 |
+| 第一版质量展示线 | dataset quality policy | MipNeRF360 weighted QCGI、DB `dino_weighted_i090`、Tandt baseline 回退 | 13 场景 | 28.6848 | +0.2217 | 0.8886 | +0.0088 | 0.1140 | -0.0166 | 194,550 | +58,382 | 161.88s | 质量优先策略，平均指标当前最强 |
 | proxy 控制组 | cached edge v1 | `cached_edge_l1 + staged target ~= 1.42x baseline` | MipNeRF360 9 场景 | 28.7213 | +0.0686 | 0.8579 | +0.0028 | 0.1551 | -0.0068 | 215,869 | +42,528 | 139.33s | 确定性边缘代理，适合作为 v1 正向控制组 |
 | 质量候选 | DINO token-edge i0.50 | `dinov2_token_edge_l1 + top-k25 + importance_weight=0.50` | MipNeRF360 9 场景 | 28.8577 | +0.2051 | 0.8666 | +0.0115 | 0.1385 | -0.0234 | 263,572 | +90,231 | 140.47s | 当前全场景质量最强，但预算偏高 |
 | 预算效率候选 | weighted i0.50 | `top-k25 + importance_mode=weighted + importance_weight=0.50` | MipNeRF360 9 场景 | 28.8505 | +0.1978 | 0.8660 | +0.0109 | 0.1397 | -0.0223 | 254,736 | +81,395 | 137.60s | 相比普通 i0.50 少 8,836 点、少 2.87s，质量只小幅回落 |
@@ -16,6 +18,8 @@
 
 | 改进 | 范围 | 参照 | PSNR | ΔPSNR | SSIM | ΔSSIM | LPIPS | ΔLPIPS | Gaussian 数 | ΔGaussian | 训练时间 | Δ训练时间 | 结论 |
 |---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `dataset_fixed_policy` | 13 场景平均 | baseline | 28.6754 | +0.2123 | 0.8881 | +0.0083 | 0.1146 | -0.0160 | 193,798 | +57,631 | 147.22s | +20.19s | 当前第一版保守展示线，规则简单且非 oracle |
+| `dataset_quality_policy` | 13 场景平均 | baseline | 28.6848 | +0.2217 | 0.8886 | +0.0088 | 0.1140 | -0.0166 | 194,550 | +58,382 | 161.88s | +34.86s | 当前第一版质量展示线，三项平均指标最强 |
 | `cached_edge_l1 + staged target ~= 1.42x` | MipNeRF360 9 场景平均 | baseline | 28.7213 | +0.0686 | 0.8579 | +0.0028 | 0.1551 | -0.0068 | 215,869 | +42,528 | 139.33s | +13.95s | 稳定 proxy 正向控制组 |
 | `DINO top-k25 + i0.50` | MipNeRF360 9 场景平均 | baseline | 28.8577 | +0.2051 | 0.8666 | +0.0115 | 0.1385 | -0.0234 | 263,572 | +90,231 | 140.47s | +15.09s | 当前全场景质量候选 |
 | `DINO top-k25 + i0.50` | MipNeRF360 9 场景平均 | cached-edge v1 | 28.8577 | +0.1365 | 0.8666 | +0.0087 | 0.1385 | -0.0166 | 263,572 | +47,703 | 140.47s | +1.15s | 相对 edge proxy 继续正向 |
@@ -30,6 +34,18 @@
 | `DINO top-k25 weighted + i0.75` | room | weighted i0.50 | 33.1334 | +0.0253 | 0.9626 | +0.0000 | 0.0575 | +0.0001 | 101,965 | +581 | 120.08s | -11.90s | 高质量档位第三场景 PSNR 正向，点数近似不变 |
 | `cached_edge_l1 + staged target ~= 1.42x` | DB 2 场景平均 | baseline | 30.5631 | +0.4451 | 0.9361 | +0.0037 | 0.0637 | -0.0021 | 62,092 | +7,408 | 133.78s | +12.56s | 跨数据集正向，但不外推到 Tandt |
 | `cached_edge + prune_min_gaussian_count` | Tandt 2 场景平均 | cached-edge v1 | 25.7806 | +0.2007 | 0.9337 | +0.0021 | 0.0585 | -0.0023 | 50,370 | +18,808 | 144.04s | -0.81s | 诊断/回退保护有采用价值 |
+
+## 第一版跨数据集策略
+
+这组表只保留可以作为方法线展示的策略，不把事后 `validated_policy` 或 test oracle 当作自动方法。Tandt 两场景当前没有任何 VFM 候选三项指标同时超过 baseline，因此两个策略都回退 baseline；这不是放弃 VFM，而是把无效或低效 GS 增长挡在策略外。
+
+| 策略 | MipNeRF360 | DB | Tandt | 场景数 | PSNR | ΔPSNR | SSIM | ΔSSIM | LPIPS | ΔLPIPS | Gaussian 数 | ΔGaussian | 训练时间 | Δ训练时间 | 结论 |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `baseline` | baseline | baseline | baseline | 13 | 28.4631 | 0.0000 | 0.8797 | 0.0000 | 0.1306 | 0.0000 | 136,168 | 0 | 127.03s | 0.00s | 参照线 |
+| `dataset_fixed_policy` | fixed weighted i0.50 | fixed DINO weighted i0.90 | baseline | 13 | 28.6754 | +0.2123 | 0.8881 | +0.0083 | 0.1146 | -0.0160 | 193,798 | +57,631 | 147.22s | +20.19s | 规则最简单，适合作为第一版保守展示线 |
+| `dataset_quality_policy` | weighted QCGI | fixed DINO weighted i0.90 | baseline | 13 | 28.6848 | +0.2217 | 0.8886 | +0.0088 | 0.1140 | -0.0166 | 194,550 | +58,382 | 161.88s | +34.86s | 质量优先，平均三项指标当前最佳 |
+
+这两条线把“少量正向 GS 增长可接受”的判断显式化：平均新增约 0.058M 个 Gaussians，远低于需要警惕的 0.1M 量级，同时 PSNR、SSIM、LPIPS 三项平均全部改善。它们也是目前最适合写进第一版结论的证据：VFM topology 信号在 MipNeRF360 和 DB 上能稳定提升重建质量，Tandt 负例则通过 baseline 回退避免拉低整体方法。
 
 ## MipNeRF360 Cached Edge 正向场景
 
@@ -112,8 +128,10 @@
 | Tandt 平均 | DINO weighted i0.50 vs cached-edge v1 | 25.7519 | +0.1721 | 0.9346 | +0.0031 | 0.0575 | -0.0033 | 38,394 | +6,832 | 151.05s | +6.20s | 修复 cached-edge 负例的一部分；仍低于 baseline |
 | 13 场景合并 | DINO weighted i0.50 vs baseline | 28.6061 | +0.1430 | 0.8873 | +0.0076 | 0.1154 | -0.0152 | 191,841 | +55,674 | 140.27s | +13.24s | 跨数据集平均质量最高，但不是预算中性 |
 | 13 场景合并 | DINO weighted i0.50 vs cached-edge v1 | 28.6061 | +0.0848 | 0.8873 | +0.0061 | 0.1154 | -0.0112 | 191,841 | +27,985 | 140.27s | +0.95s | 平均优于 cached-edge，但逐场景仍需选择 |
-| 13 场景合并 | validated policy vs baseline | 28.6981 | +0.2350 | 0.8872 | +0.0075 | 0.1179 | -0.0127 | 178,903 | +42,735 | 154.24s | +27.21s | 多档场景选择策略，当前 13 场景与 PSNR oracle 一致 |
-| 13 场景合并 | QCGI pick vs baseline | 28.6930 | +0.2300 | 0.8881 | +0.0083 | 0.1147 | -0.0159 | 188,542 | +52,375 | 162.15s | +35.12s | 更偏 SSIM/LPIPS 与容量综合收益 |
+| 13 场景合并 | dataset fixed policy vs baseline | 28.6754 | +0.2123 | 0.8881 | +0.0083 | 0.1146 | -0.0160 | 193,798 | +57,631 | 147.22s | +20.19s | 非 oracle 数据集级固定策略，第一版保守展示线 |
+| 13 场景合并 | dataset quality policy vs baseline | 28.6848 | +0.2217 | 0.8886 | +0.0088 | 0.1140 | -0.0166 | 194,550 | +58,382 | 161.88s | +34.86s | 非 oracle 质量优先策略，第一版质量展示线 |
+| 13 场景合并 | validated policy vs baseline | 28.6981 | +0.2350 | 0.8872 | +0.0075 | 0.1179 | -0.0127 | 178,903 | +42,735 | 154.24s | +27.21s | 事后分析上界，当前 13 场景与 PSNR oracle 一致 |
+| 13 场景合并 | QCGI pick vs baseline | 28.6930 | +0.2300 | 0.8881 | +0.0083 | 0.1147 | -0.0159 | 188,542 | +52,375 | 162.15s | +35.12s | 事后分析上界，更偏 SSIM/LPIPS 与容量综合收益 |
 
 ## 质量-容量收益指数
 
@@ -144,6 +162,6 @@ QCGI = quality_gain - gs_penalty
 
 ## 简短结论
 
-当前应保留五条主线：`cached_edge_l1` 是 proxy 正向控制组，在 MipNeRF360 和 DB 上平均正向；`DINO top-k25 + importance_weight=0.50` 是 MipNeRF360 全场景质量候选，相对 baseline 平均 +0.2051 PSNR、+0.0115 SSIM、LPIPS -0.0234；`weighted + i0.50` 是全场景预算效率候选，相对普通 i0.50 平均少 8,836 点、训练少 2.87s，质量只小幅回落；`weighted quality/QCGI pick` 是新的场景选择质量档，在 9 场景平均上超过固定 weighted i0.50 和普通 i0.50，且 QCGI 版本只比 weighted i0.50 多 1,086 个点；QCGI 是下一步场景选择和自适应容量控制的离线指导指标。
+当前应保留六条主线：`dataset_fixed_policy` 是第一版保守展示线，13 场景平均相对 baseline 为 +0.2123 PSNR、+0.0083 SSIM、LPIPS -0.0160；`dataset_quality_policy` 是第一版质量展示线，13 场景平均进一步到 +0.2217 PSNR、+0.0088 SSIM、LPIPS -0.0166；`cached_edge_l1` 是 proxy 正向控制组，在 MipNeRF360 和 DB 上平均正向；`DINO top-k25 + importance_weight=0.50` 是 MipNeRF360 全场景质量候选，相对 baseline 平均 +0.2051 PSNR、+0.0115 SSIM、LPIPS -0.0234；`weighted + i0.50` 是 MipNeRF360 预算效率候选，相对普通 i0.50 平均少 8,836 点、训练少 2.87s，质量只小幅回落；`weighted quality/QCGI pick` 是新的场景选择质量档，在 9 场景平均上超过固定 weighted i0.50 和普通 i0.50，且 QCGI 版本只比 weighted i0.50 多 1,086 个点。QCGI 是下一步场景选择和自适应容量控制的离线指导指标。
 
-边界也很清楚：固定 weighted i0.75/i0.90 不是跨数据集默认档，Tandt 上高权重会继续退化，容量保护只适合作为默认关闭的诊断/回退防线。DB DINO weighted i0.90 是新的强正例，但训练时间明显增加，不能简单当作全局默认。13 场景选择表显示 PSNR 最优分布为 9 个 DINO weighted、1 个 cached-edge、3 个 baseline，`validated_policy` 当前与 PSNR oracle 一致，但它仍是事后策略，必须用下一批新场景验证泛化。`adaptive_weighted + quadratic 430k` 在 treehill 第二场景没有复现 bicycle 收益，因此不放入正向主线。
+边界也很清楚：固定 weighted i0.75/i0.90 不是跨数据集默认档，Tandt 上高权重会继续退化，容量保护只适合作为默认关闭的诊断/回退防线。DB DINO weighted i0.90 是新的强正例，但训练时间明显增加，不能简单当作全局默认。13 场景选择表显示 PSNR 最优分布为 9 个 DINO weighted、1 个 cached-edge、3 个 baseline，`validated_policy` 当前与 PSNR oracle 一致，但它仍是事后策略，只能作为上界分析，不能作为当前方法线。`adaptive_weighted + quadratic 430k` 在 treehill 第二场景没有复现 bicycle 收益，因此不放入正向主线。
