@@ -358,6 +358,34 @@ uv run --active python scripts/run_0001_dino_weighted_eval.py \
 - `output/0001/dino_weighted_i050_<dataset>/comparisons.csv`
 - `output/0001/dino_weighted_i050_<dataset>/<scene>/logs/vfm_dinov2_token_edge_topk025_weighted_i050_30k_r8/*.log`
 
+### 跨数据集后端选择汇总
+
+`scripts/summarize_0001_cross_dataset_selector.py` 用于把 MipNeRF360、Tandt、DB 的 baseline、cached-edge v1 和 DINO weighted i0.50 放到同一张选择表里。它不启动训练，只读取已有 summary 文件，适合每次新增数据集评估后重跑。
+
+```bash
+uv run --active python scripts/summarize_0001_cross_dataset_selector.py
+```
+
+默认输入：
+
+- `output/0001/full_mipnerf360_v1/summary.csv`
+- `output/0001/weighted_candidate_summary/summary.csv`
+- `output/0001/full_tandt_db_v1/tandt/summary.csv`
+- `output/0001/dino_weighted_i050_tandt/summary.csv`
+- `output/0001/full_tandt_db_v1/db/summary.csv`
+- `output/0001/dino_weighted_i050_db/summary.csv`
+
+主要产物：
+
+- `output/0001/cross_dataset_selector/summary.csv`
+- `output/0001/cross_dataset_selector/comparisons.csv`
+- `output/0001/cross_dataset_selector/averages.csv`
+- `output/0001/cross_dataset_selector/average_comparisons.csv`
+- `output/0001/cross_dataset_selector/recommendations.csv`
+- `output/0001/cross_dataset_selector/recommendation_averages.csv`
+
+`recommendations.csv` 中的 `best_psnr_method` 和 `best_lpips_method` 表示单指标最优；`budget_no_worse_method` 表示在不低于 baseline 三项指标的候选中选择 Gaussian 数最少者，baseline 本身也会参与这个保守预算选择；`vfm_psnr_pick` 只在 VFM 后端内部按 PSNR 选择。当前 13 场景合并后，DINO weighted i0.50 相对 baseline 平均提升 +0.1430 PSNR、+0.0076 SSIM、LPIPS 改善 -0.0152；相对 cached-edge v1 平均提升 +0.0848 PSNR、+0.0061 SSIM、LPIPS 改善 -0.0112。但逐场景推荐不是单一后端：8 个场景 PSNR 选择 DINO weighted i0.50，2 个场景选择 cached-edge v1，3 个场景选择 baseline。
+
 ### Token-Edge Top-k 探测
 
 `0001_vfm_topology_dinov2_token_edge_topk.yaml` 保持 `dinov2_token_edge_l1` 后端不变，只把 metric map 改为 top-k 15% 高误差区域。先用 620-step 验证链路，再进入 30k 完整对照。

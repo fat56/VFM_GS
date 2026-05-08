@@ -229,6 +229,49 @@
 - `playroom` 暴露了边界：它相对 baseline 提升 PSNR/SSIM，但 LPIPS 变差；相对 cached-edge v1 则三项指标均回落。因此 DB 的当前默认正向控制组仍应保留 `cached_edge_l1`，DINO weighted i0.50 不能无条件替代。
 - 结合 Tandt 结果，跨数据集选择规则更清楚：DINO weighted i0.50 比 cached-edge 更适合修复 Tandt 这类 edge proxy 负例，但在 DB 上 cached-edge 仍更强。下一版应把 scene-level 选择规则纳入批量评估，而不是假设单一 VFM 后端跨数据集最优。
 
+## 2026-05-08 跨数据集后端选择汇总
+
+新增 `scripts/summarize_0001_cross_dataset_selector.py`，把 MipNeRF360 9 场景、Tandt 2 场景和 DB 2 场景中的 baseline、cached-edge v1、DINO weighted i0.50 汇总成统一选择表。该脚本不启动训练，只读取已完成的 summary 文件，输出到 `output/0001/cross_dataset_selector`。
+
+13 场景平均：
+
+| 方法 | 场景数 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---:|---:|---:|---:|---:|---:|
+| baseline | 13 | 28.4631 | 0.8797 | 0.1306 | 136,168 | 127.03s |
+| cached-edge v1 | 13 | 28.5213 | 0.8813 | 0.1266 | 163,856 | 139.32s |
+| DINO weighted i0.50 | 13 | 28.6061 | 0.8873 | 0.1154 | 191,841 | 140.27s |
+
+平均差值：
+
+| 方法 | 参照 | ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| cached-edge v1 | baseline | +0.0582 | +0.0015 | -0.0040 | +27,688 | +12.29s |
+| DINO weighted i0.50 | baseline | +0.1430 | +0.0076 | -0.0152 | +55,674 | +13.24s |
+| DINO weighted i0.50 | cached-edge v1 | +0.0848 | +0.0061 | -0.0112 | +27,985 | +0.95s |
+
+选择策略均值：
+
+| 选择器 | 场景数 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 | 说明 |
+|---|---:|---:|---:|---:|---:|---:|---|
+| `best_psnr_oracle` | 13 | 28.6786 | 0.8868 | 0.1182 | 177,134 | 137.07s | 每场景选 PSNR 最高方法，用作质量上界参考 |
+| `best_lpips_oracle` | 13 | 28.6751 | 0.8880 | 0.1147 | 193,761 | 138.41s | 每场景选 LPIPS 最低方法，用作感知上界参考 |
+| `budget_no_worse` | 13 | 28.4887 | 0.8800 | 0.1302 | 135,162 | 128.37s | 在不低于 baseline 三项指标的候选中选最少点数，接近 baseline 预算 |
+| `vfm_psnr_pick` | 13 | 28.6442 | 0.8872 | 0.1157 | 188,478 | 140.16s | 只在 VFM 后端中按 PSNR 选优 |
+
+逐场景推荐摘要：
+
+| 推荐类型 | 场景 | 数量 | 说明 |
+|---|---|---:|---|
+| `best_psnr_method = dino_weighted_i050` | DB `drjohnson`；MipNeRF360 `bicycle/bonsai/counter/garden/kitchen/room/stump` | 8 | DINO weighted i0.50 是这些场景的 PSNR 最优后端 |
+| `best_psnr_method = cached_edge_staged142` | DB `playroom`；MipNeRF360 `flowers` | 2 | edge proxy 仍是这些场景的 PSNR 最优 VFM 后端 |
+| `best_psnr_method = baseline` | MipNeRF360 `treehill`；Tandt `train/truck` | 3 | 当前不应默认启用 VFM 后端；Tandt 中 DINO weighted 只适合修复 cached-edge 负例 |
+
+解读：
+
+- 合并 13 个场景后，DINO weighted i0.50 平均质量最高，但 Gaussian 数量也最高。它是跨数据集质量候选，不是预算中性方案。
+- 单一后端不能解释所有场景：DB `playroom` 和 MipNeRF360 `flowers` 更偏 cached-edge，Tandt 两场景和 MipNeRF360 `treehill` 的 PSNR 最优仍是 baseline。
+- 下一版不应继续只追加固定后端单点，而应做场景级选择或自动回退：先判断是否启用 VFM，再在 cached-edge 与 DINO weighted 之间选择。如果只能保守上线，应以 baseline 作为预算安全回退，以 DINO weighted/cached-edge 作为有证据的场景级增强。
+
 ## 2026-04-28 Mock v1 快速验证
 
 数据集：`datasets/mipnerf360/bicycle`，test split，`-r 8`，220 iterations，`densify_from_iter=50`，`densification_interval=50`。
