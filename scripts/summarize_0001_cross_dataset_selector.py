@@ -22,6 +22,15 @@ METHOD_ORDER = {
     "dino_weighted_i050": 2,
 }
 METRIC_KEYS = ("psnr", "ssim", "lpips")
+GS_UNIT = 10_000.0
+GS_SOFT_BUDGET = 100_000.0
+GS_PENALTY_PER_10K = 0.01
+GS_HEAVY_PENALTY_PER_10K = 0.04
+QUALITY_WEIGHTS = {
+    "psnr": 1.0,
+    "ssim": 20.0,
+    "lpips": 5.0,
+}
 
 
 def read_csv(path: Path) -> list[dict[str, str]]:
@@ -47,6 +56,61 @@ def delta(value: float | int | None, reference: float | int | None) -> float | i
     if value is None or reference is None:
         return None
     return value - reference
+
+
+def quality_gain(candidate: dict[str, Any], reference: dict[str, Any]) -> float | None:
+    d_psnr = delta(optional_float(candidate["psnr"]), optional_float(reference["psnr"]))
+    d_ssim = delta(optional_float(candidate["ssim"]), optional_float(reference["ssim"]))
+    d_lpips = delta(optional_float(candidate["lpips"]), optional_float(reference["lpips"]))
+    if d_psnr is None or d_ssim is None or d_lpips is None:
+        return None
+    return (
+        QUALITY_WEIGHTS["psnr"] * d_psnr
+        + QUALITY_WEIGHTS["ssim"] * d_ssim
+        - QUALITY_WEIGHTS["lpips"] * d_lpips
+    )
+
+
+def gs_growth_band(delta_gs_num: int | float | None) -> str:
+    if delta_gs_num is None:
+        return "unknown"
+    if delta_gs_num <= 0:
+        return "no_growth"
+    if delta_gs_num < GS_UNIT:
+        return "sub_0.01M"
+    if delta_gs_num < GS_SOFT_BUDGET:
+        return "0.01M_to_0.10M"
+    return "gte_0.10M"
+
+
+def gs_penalty(delta_gs_num: int | float | None) -> float | None:
+    if delta_gs_num is None:
+        return None
+    growth = max(0.0, float(delta_gs_num))
+    soft_growth = min(growth, GS_SOFT_BUDGET)
+    heavy_growth = max(0.0, growth - GS_SOFT_BUDGET)
+    return (
+        GS_PENALTY_PER_10K * (soft_growth / GS_UNIT)
+        + GS_HEAVY_PENALTY_PER_10K * (heavy_growth / GS_UNIT)
+    )
+
+
+def qcgi(candidate: dict[str, Any], reference: dict[str, Any]) -> float | None:
+    gain = quality_gain(candidate, reference)
+    penalty = gs_penalty(delta(optional_int(candidate["gs_num"]), optional_int(reference["gs_num"])))
+    if gain is None or penalty is None:
+        return None
+    return gain - penalty
+
+
+def quality_per_10k(candidate: dict[str, Any], reference: dict[str, Any]) -> float | None:
+    gain = quality_gain(candidate, reference)
+    d_gs = delta(optional_int(candidate["gs_num"]), optional_int(reference["gs_num"]))
+    if gain is None or d_gs is None:
+        return None
+    if d_gs <= 0:
+        return gain
+    return gain / (d_gs / GS_UNIT)
 
 
 def append_rows(
@@ -159,6 +223,15 @@ def build_comparisons(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                         "delta_train_time_s": delta(
                             optional_float(row["train_time_s"]), optional_float(reference["train_time_s"])
                         ),
+                        "quality_gain": quality_gain(row, reference),
+                        "quality_gain_per_10k_gs": quality_per_10k(row, reference),
+                        "gs_growth_band": gs_growth_band(
+                            delta(optional_int(row["gs_num"]), optional_int(reference["gs_num"]))
+                        ),
+                        "gs_penalty": gs_penalty(
+                            delta(optional_int(row["gs_num"]), optional_int(reference["gs_num"]))
+                        ),
+                        "qcgi": qcgi(row, reference),
                     }
                 )
     return comparisons
@@ -226,6 +299,16 @@ def lpips_key(row: dict[str, Any]) -> tuple[float, float, float]:
     )
 
 
+def qcgi_pick_key(row: dict[str, Any], baseline: dict[str, Any] | None) -> tuple[float, float, float]:
+    if baseline is None or row["method"] == "baseline":
+        score = 0.0
+    else:
+        score = qcgi(row, baseline)
+        if score is None:
+            score = float("-inf")
+    return (score, optional_float(row["psnr"]) or float("-inf"), -(optional_float(row["lpips"]) or float("inf")))
+
+
 def build_recommendations(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     by_scene: dict[tuple[str, str], dict[str, dict[str, Any]]] = defaultdict(dict)
     for row in rows:
@@ -239,6 +322,8 @@ def build_recommendations(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         dino = methods.get("dino_weighted_i050")
         best_psnr = max(ordered, key=psnr_key)
         best_lpips = max(ordered, key=lpips_key)
+        qcgi_pick = max(ordered, key=lambda row: qcgi_pick_key(row, baseline))
+        qcgi_pick_score = 0.0 if qcgi_pick["method"] == "baseline" or baseline is None else qcgi(qcgi_pick, baseline)
         validated_policy, validated_policy_reason = select_validated_policy(baseline, cached, dino, best_psnr)
 
         budget_candidates = ordered
@@ -267,6 +352,8 @@ def build_recommendations(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "best_psnr": best_psnr["psnr"],
                 "best_lpips_method": best_lpips["method"],
                 "best_lpips": best_lpips["lpips"],
+                "qcgi_pick_method": qcgi_pick["method"],
+                "qcgi_pick_score": qcgi_pick_score,
                 "validated_policy_method": validated_policy["method"],
                 "validated_policy_reason": validated_policy_reason,
                 "budget_no_worse_method": budget_pick["method"],
@@ -300,6 +387,7 @@ def build_recommendation_averages(
     pick_columns = (
         ("best_psnr_method", "best_psnr_oracle"),
         ("best_lpips_method", "best_lpips_oracle"),
+        ("qcgi_pick_method", "qcgi_pick"),
         ("validated_policy_method", "validated_policy"),
         ("budget_no_worse_method", "budget_no_worse"),
         ("vfm_psnr_pick", "vfm_psnr_pick"),
@@ -363,6 +451,52 @@ def build_average_comparisons(averages: list[dict[str, Any]]) -> list[dict[str, 
                         "delta_avg_gs_num": delta(row.get("avg_gs_num"), reference.get("avg_gs_num")),
                         "delta_avg_train_time_s": delta(
                             row.get("avg_train_time_s"), reference.get("avg_train_time_s")
+                        ),
+                        "avg_quality_gain": quality_gain(
+                            {
+                                "psnr": row.get("avg_psnr"),
+                                "ssim": row.get("avg_ssim"),
+                                "lpips": row.get("avg_lpips"),
+                            },
+                            {
+                                "psnr": reference.get("avg_psnr"),
+                                "ssim": reference.get("avg_ssim"),
+                                "lpips": reference.get("avg_lpips"),
+                            },
+                        ),
+                        "avg_quality_gain_per_10k_gs": quality_per_10k(
+                            {
+                                "psnr": row.get("avg_psnr"),
+                                "ssim": row.get("avg_ssim"),
+                                "lpips": row.get("avg_lpips"),
+                                "gs_num": row.get("avg_gs_num"),
+                            },
+                            {
+                                "psnr": reference.get("avg_psnr"),
+                                "ssim": reference.get("avg_ssim"),
+                                "lpips": reference.get("avg_lpips"),
+                                "gs_num": reference.get("avg_gs_num"),
+                            },
+                        ),
+                        "avg_gs_growth_band": gs_growth_band(
+                            delta(row.get("avg_gs_num"), reference.get("avg_gs_num"))
+                        ),
+                        "avg_gs_penalty": gs_penalty(
+                            delta(row.get("avg_gs_num"), reference.get("avg_gs_num"))
+                        ),
+                        "avg_qcgi": qcgi(
+                            {
+                                "psnr": row.get("avg_psnr"),
+                                "ssim": row.get("avg_ssim"),
+                                "lpips": row.get("avg_lpips"),
+                                "gs_num": row.get("avg_gs_num"),
+                            },
+                            {
+                                "psnr": reference.get("avg_psnr"),
+                                "ssim": reference.get("avg_ssim"),
+                                "lpips": reference.get("avg_lpips"),
+                                "gs_num": reference.get("avg_gs_num"),
+                            },
                         ),
                     }
                 )

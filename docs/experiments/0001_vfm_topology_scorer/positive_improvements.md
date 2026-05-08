@@ -102,8 +102,31 @@
 | 13 场景合并 | DINO weighted i0.50 vs cached-edge v1 | 28.6061 | +0.0848 | 0.8873 | +0.0061 | 0.1154 | -0.0112 | 191,841 | +27,985 | 140.27s | +0.95s | 平均优于 cached-edge，但逐场景仍需选择 |
 | 13 场景合并 | validated policy vs baseline | 28.6786 | +0.2155 | 0.8868 | +0.0071 | 0.1182 | -0.0124 | 177,134 | +40,967 | 137.07s | +10.05s | 事后场景选择策略，当前 13 场景与 PSNR oracle 一致 |
 
+## 质量-容量收益指数
+
+后续实验不应把 Gaussian 数量的轻微增长一律视为负面。当前先使用 QCGI（Quality-Capacity Gain Index，质量-容量收益指数）作为实验统筹指标，用来支持“少量增点且质量明确提升”的方案，同时压制“增点很多但质量收益不足”的方案。
+
+```text
+quality_gain = ΔPSNR + 20 * ΔSSIM - 5 * ΔLPIPS
+gs_penalty = 0.01 * min(max(ΔGS, 0), 100000) / 10000
+           + 0.04 * max(ΔGS - 100000, 0) / 10000
+QCGI = quality_gain - gs_penalty
+```
+
+当前分档为：`ΔGS < 0.01M` 是轻量正向增长，`0.01M <= ΔGS < 0.10M` 是可接受增长，`ΔGS >= 0.10M` 进入重惩罚区间。这个设计符合本实验的目标：VFM 不是为了机械减少所有点，而是为了筛掉无用或低效的点；当新增 Gaussian 能稳定换来 PSNR/SSIM/LPIPS 改善时，应允许保留。
+
+| 对比 | ΔPSNR | ΔSSIM | ΔLPIPS | ΔGS | GS 分档 | QCGI | 解释 |
+|---|---:|---:|---:|---:|---|---:|---|
+| DB `playroom` cached-edge v1 vs baseline | +0.7847 | +0.0055 | -0.0013 | +6,878 | `sub_0.01M` | +0.8947 | 少量增点且质量大幅正向，应鼓励 |
+| MipNeRF360 `counter` cached-edge v1 vs baseline | +0.1017 | +0.0010 | -0.0018 | -1,898 | `no_growth` | +0.1305 | 少点且质量正向，是高效正例 |
+| MipNeRF360 `stump` DINO weighted i0.50 vs baseline | +0.4391 | +0.0236 | -0.0393 | +183,287 | `gte_0.10M` | +0.6742 | 虽然增点超过 0.1M，但质量收益足够大，仍可接受 |
+| MipNeRF360 `treehill` DINO weighted i0.50 vs baseline | -0.0416 | +0.0107 | -0.0391 | +171,417 | `gte_0.10M` | -0.0182 | 增点较多且 PSNR 低于 baseline，应回退 |
+| 13 场景平均 DINO weighted i0.50 vs baseline | +0.1430 | +0.0076 | -0.0152 | +55,674 | `0.01M_to_0.10M` | +0.3155 | 跨数据集平均质量正向，容量增长处于可接受区间 |
+
+`scripts/summarize_0001_cross_dataset_selector.py` 已把 `quality_gain`、`quality_gain_per_10k_gs`、`gs_growth_band`、`gs_penalty` 和 `qcgi` 写入 comparison 表，并新增 `qcgi_pick_method`。在当前 13 个场景中，QCGI 选择与 `validated_policy`、PSNR oracle 一致，平均 PSNR/SSIM/LPIPS 为 28.6786 / 0.8868 / 0.1182，Gaussian 数为 177,134。下一阶段可以先继续把它作为离线选择准则；当更多数据集验证稳定后，再把 QCGI 或其分档信号接入 density/prune 强度的自适应控制。
+
 ## 简短结论
 
-当前应保留四条主线：`cached_edge_l1` 是 proxy 正向控制组，在 MipNeRF360 和 DB 上平均正向；`DINO top-k25 + importance_weight=0.50` 是 MipNeRF360 全场景质量候选，相对 baseline 平均 +0.2051 PSNR、+0.0115 SSIM、LPIPS -0.0234；`weighted + i0.50` 是全场景预算效率候选，相对普通 i0.50 平均少 8,836 点、训练少 2.87s，质量只小幅回落；`weighted + i0.75` 是有条件高质量档位候选，在 bicycle、stump 和 room 上相对 weighted i0.50 都有 PSNR 提升，但 bonsai 复验未超过 weighted i0.50，因此不能无条件替代 i0.50。
+当前应保留五条主线：`cached_edge_l1` 是 proxy 正向控制组，在 MipNeRF360 和 DB 上平均正向；`DINO top-k25 + importance_weight=0.50` 是 MipNeRF360 全场景质量候选，相对 baseline 平均 +0.2051 PSNR、+0.0115 SSIM、LPIPS -0.0234；`weighted + i0.50` 是全场景预算效率候选，相对普通 i0.50 平均少 8,836 点、训练少 2.87s，质量只小幅回落；`weighted + i0.75` 是有条件高质量档位候选，在 bicycle、stump 和 room 上相对 weighted i0.50 都有 PSNR 提升，但 bonsai 复验未超过 weighted i0.50，因此不能无条件替代 i0.50；QCGI 是下一步场景选择和自适应容量控制的离线指导指标。
 
 边界也很清楚：DINO i0.50 仍不是预算中性方案，Tandt 上 cached-edge v1 不是质量正例，容量保护只适合作为默认关闭的诊断/回退防线。Tandt DINO weighted i0.50 只相对 cached-edge v1 正向，平均仍低于 baseline -0.2032 PSNR、-0.0031 SSIM、LPIPS 差 +0.0035，因此应记录为恢复型结果而不是默认替代方案。DB DINO weighted i0.50 相对 baseline 平均正向，但低于 DB cached-edge v1，说明它是跨数据集候选而不是固定最优后端。13 场景选择表显示 PSNR 最优分布为 8 个 DINO weighted、2 个 cached-edge、3 个 baseline，`validated_policy` 当前与 PSNR oracle 一致，但它仍是事后策略，必须用下一批新场景验证泛化。`adaptive_weighted + quadratic 430k` 在 treehill 第二场景没有复现 bicycle 收益，因此不放入正向主线。

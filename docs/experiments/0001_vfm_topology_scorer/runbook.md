@@ -384,7 +384,18 @@ uv run --active python scripts/summarize_0001_cross_dataset_selector.py
 - `output/0001/cross_dataset_selector/recommendations.csv`
 - `output/0001/cross_dataset_selector/recommendation_averages.csv`
 
-`recommendations.csv` 中的 `best_psnr_method` 和 `best_lpips_method` 表示单指标最优；`validated_policy_method` 是当前保守策略：DINO weighted i0.50 只有同时三项优于 baseline 和 cached-edge 时才选，cached-edge 三项优于 baseline 时次优先，否则回退 baseline；`budget_no_worse_method` 表示在不低于 baseline 三项指标的候选中选择 Gaussian 数最少者，baseline 本身也会参与这个保守预算选择；`vfm_psnr_pick` 只在 VFM 后端内部按 PSNR 选择。当前 13 场景合并后，DINO weighted i0.50 相对 baseline 平均提升 +0.1430 PSNR、+0.0076 SSIM、LPIPS 改善 -0.0152；相对 cached-edge v1 平均提升 +0.0848 PSNR、+0.0061 SSIM、LPIPS 改善 -0.0112。但逐场景推荐不是单一后端：8 个场景 PSNR 选择 DINO weighted i0.50，2 个场景选择 cached-edge v1，3 个场景选择 baseline。当前 `validated_policy_method` 与 PSNR oracle 一致，均值为 28.6786 / 0.8868 / 0.1182。
+`recommendations.csv` 中的 `best_psnr_method` 和 `best_lpips_method` 表示单指标最优；`qcgi_pick_method` 表示按质量-容量收益指数选择；`validated_policy_method` 是当前保守策略：DINO weighted i0.50 只有同时三项优于 baseline 和 cached-edge 时才选，cached-edge 三项优于 baseline 时次优先，否则回退 baseline；`budget_no_worse_method` 表示在不低于 baseline 三项指标的候选中选择 Gaussian 数最少者，baseline 本身也会参与这个保守预算选择；`vfm_psnr_pick` 只在 VFM 后端内部按 PSNR 选择。当前 13 场景合并后，DINO weighted i0.50 相对 baseline 平均提升 +0.1430 PSNR、+0.0076 SSIM、LPIPS 改善 -0.0152；相对 cached-edge v1 平均提升 +0.0848 PSNR、+0.0061 SSIM、LPIPS 改善 -0.0112。但逐场景推荐不是单一后端：8 个场景 PSNR 选择 DINO weighted i0.50，2 个场景选择 cached-edge v1，3 个场景选择 baseline。当前 `qcgi_pick_method`、`validated_policy_method` 与 PSNR oracle 一致，均值为 28.6786 / 0.8868 / 0.1182。
+
+QCGI 的当前定义用于实验统筹，而不是训练时约束：
+
+```text
+quality_gain = ΔPSNR + 20 * ΔSSIM - 5 * ΔLPIPS
+gs_penalty = 0.01 * min(max(ΔGS, 0), 100000) / 10000
+           + 0.04 * max(ΔGS - 100000, 0) / 10000
+QCGI = quality_gain - gs_penalty
+```
+
+其中 `ΔGS < 0.01M` 视为轻量增长，`0.01M <= ΔGS < 0.10M` 是可接受增长区间，`ΔGS >= 0.10M` 会进入重惩罚区间。这个指标有意支持“少量 GS 增长且质量提升”的正例，也会压制“GS 大幅增长但质量收益不足”的低效变体。
 
 ### Token-Edge Top-k 探测
 

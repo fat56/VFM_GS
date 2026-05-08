@@ -255,9 +255,21 @@
 |---|---:|---:|---:|---:|---:|---:|---|
 | `best_psnr_oracle` | 13 | 28.6786 | 0.8868 | 0.1182 | 177,134 | 137.07s | 每场景选 PSNR 最高方法，用作质量上界参考 |
 | `best_lpips_oracle` | 13 | 28.6751 | 0.8880 | 0.1147 | 193,761 | 138.41s | 每场景选 LPIPS 最低方法，用作感知上界参考 |
+| `qcgi_pick` | 13 | 28.6786 | 0.8868 | 0.1182 | 177,134 | 137.07s | 按质量-容量收益指数选优，当前与 PSNR oracle 一致 |
 | `validated_policy` | 13 | 28.6786 | 0.8868 | 0.1182 | 177,134 | 137.07s | DINO 需同时优于 baseline/cached-edge，cached-edge 需优于 baseline，否则回退 baseline |
 | `budget_no_worse` | 13 | 28.4887 | 0.8800 | 0.1302 | 135,162 | 128.37s | 在不低于 baseline 三项指标的候选中选最少点数，接近 baseline 预算 |
 | `vfm_psnr_pick` | 13 | 28.6442 | 0.8872 | 0.1157 | 188,478 | 140.16s | 只在 VFM 后端中按 PSNR 选优 |
+
+QCGI 定义：
+
+```text
+quality_gain = ΔPSNR + 20 * ΔSSIM - 5 * ΔLPIPS
+gs_penalty = 0.01 * min(max(ΔGS, 0), 100000) / 10000
+           + 0.04 * max(ΔGS - 100000, 0) / 10000
+QCGI = quality_gain - gs_penalty
+```
+
+该指数的出发点是支持正向且少量的 Gaussian 增长，抑制低效膨胀。当前分档为：`sub_0.01M` 轻量增长、`0.01M_to_0.10M` 可接受增长、`gte_0.10M` 重惩罚增长。典型结果是：DB `playroom` 的 cached-edge v1 只增加 6,878 个点且质量明显提升，QCGI 为正；MipNeRF360 `treehill` 的 DINO weighted i0.50 虽然改善 SSIM/LPIPS，但增加 171,417 个点且 PSNR 低于 baseline，QCGI 为负。
 
 逐场景推荐摘要：
 
