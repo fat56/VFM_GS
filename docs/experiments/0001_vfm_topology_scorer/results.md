@@ -491,6 +491,8 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 
 再追加 `target_gaussian_prune_order`。默认值为 `lowest_score`，保持已有 target-prune 实验行为不变；可选 `highest_score` 和 `lowest_opacity` 用于诊断最终预算裁剪的排序语义。该参数只在显式设置 `target_gaussian_count` 时生效。
 
+再追加 `vfm_importance_budget_count`、`vfm_importance_budget_start_ratio` 和 `vfm_importance_budget_min_weight`。这些参数默认关闭；开启后会在训练期根据当前 Gaussian 数量动态衰减 VFM densification 权重。它不是训练结束后的硬裁剪，而是一个软预算机制：在当前点数接近 `budget_count * start_ratio` 时开始线性降低 VFM importance，到达 `budget_count` 时降到 `min_weight`。
+
 主对照数据集：`datasets/mipnerf360/bicycle`，test split，`-r 8`。先用 620-step 验证链路健康，再跑 30,000 iterations 完整对照。后续用同一设置在 `garden`、`counter`、`treehill`、`bonsai`、`flowers`、`kitchen`、`room` 和 `stump` 做跨场景复验，训练仍用 train split，指标来自 test split render。
 
 | 产物 | Backend | Metric map | Iterations | PSNR | SSIM | LPIPS | 训练时间 | Gaussian 数量 | 输出大小 | 备注 |
@@ -517,6 +519,7 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 | `output/0001/vfm_dinov2_token_edge_topk025_supportnorm_i050_bicycle_30k_r8` | `dinov2_token_edge_l1` | top-k 25%, `importance_weight=0.50`, `support_ratio` | 30,000 | 26.9694 | 0.8286 | 0.1878 | 149.40s | 432,948 | 128M | 点数略降但质量回落，不优于 i0.50 |
 | `output/0001/vfm_dinov2_token_edge_topk025_pruneprotect_i050_w025_bicycle_620_r8` | `dinov2_token_edge_l1` | top-k 25%, `importance_weight=0.50`, prune-protect w0.25 | 620 | 20.8808 | 0.4757 | 0.5457 | 2.72s | 61,604 | 35M | 高置信保护链路快速验证 |
 | `output/0001/vfm_dinov2_token_edge_topk025_pruneprotect_i050_w025_bicycle_30k_r8` | `dinov2_token_edge_l1` | top-k 25%, `importance_weight=0.50`, prune-protect w0.25 | 30,000 | 26.9910 | 0.8302 | 0.1839 | 144.70s | 441,352 | 130M | 与 i0.50 基本持平，LPIPS 微幅改善但 PSNR/SSIM 回落 |
+| `output/0001/vfm_dinov2_token_edge_budgetaware420k_i050_bicycle_620_r8` | `dinov2_token_edge_l1` | top-k 25%, `importance_weight=0.50`, soft budget 420k | 620 | 20.7641 | 0.4749 | 0.5459 | 2.81s | 61,590 | 35M | 预算感知 importance 链路快速验证 |
 
 解读：
 
@@ -556,8 +559,9 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 - `support_ratio + importance_weight=0.50` 30k 最终 432,948 个 Gaussians，比普通 i0.50 少 7,123 个点，但质量回落 -0.0272 PSNR、-0.0018 SSIM、LPIPS 差 +0.0036，训练时间也多 8.05s。它仍优于 cadence control（+0.0407 PSNR、+0.0045 SSIM、LPIPS 改善 -0.0086），但不如直接 partial importance i0.50，因此支持度归一化不是当前最佳预算效率方向。
 - 高置信 VFM 区域保护的 620-step 快速验证使用 `vfm_prune_protect_weight=0.25`、`vfm_prune_protect_mode=rgb_aware`、`vfm_prune_protect_min_count=5`、`vfm_prune_protect_power=2.0`。它完成 train、render 和 metrics，最终 61,604 个 Gaussians，PSNR 20.8808、SSIM 0.4757、LPIPS 0.5457，说明 protection score 可以同时接入 densification 评分和后期 pruning-only 评分路径。
 - 高置信 VFM 区域保护的 30k 正式对照最终 441,352 个 Gaussians，比普通 `importance_weight=0.50` 多 1,281 个点；PSNR 低 -0.0056、SSIM 低 -0.0001，LPIPS 仅改善 -0.0003，训练时间多 3.36s。它没有形成比 i0.50 更好的预算效率点，说明简单保护高 VFM 命中区域不能解决当前的预算-质量矛盾。
+- 预算感知 importance 的 620-step 快速验证使用 `vfm_importance_budget_count=420000`、`vfm_importance_budget_start_ratio=0.90`、`vfm_importance_budget_min_weight=0.0`。短程点数远低于软预算区间，因此它主要验证参数读取和 scorer 分支健康；train、render 和 metrics 均通过，结果为 61,590 个 Gaussians，PSNR 20.7641、SSIM 0.4749、LPIPS 0.5459。
 - staged 490,832、final 490,832、high-score final 490,832 和 `rgb_only` 分别暴露了四类问题：中期反复压 cap 会损伤结构生长，终局一次性低分裁剪排序不够可靠，终局高分裁剪更不可靠，完全关闭 VFM densification 又会交回主要质量收益。`importance_weight=0.25/0.50/0.75` 给出连续正向曲线，因此 partial VFM importance 是当前最有效的预算控制旋钮。
-- 这一路径不引入在线 DINO inference，成本明显低于 descriptor 系列。当前 0001 在 bicycle 上的最佳质量结论仍定为 top-k 25% 完整对照；预算方向把 `importance_weight=0.50` 作为约 440k 点数下的效率点，把 `importance_weight=0.75` 作为略优于 top-k 15% 的高质量预算点。MipNeRF360 全场景复验支持 i0.50 的跨场景有效性，尤其 `counter` 在仅 +5.9% Gaussian 的条件下获得三项指标提升，`kitchen` 在少于 baseline 点数下仍获得三项指标提升，`room` 证明高基线小室内场景上也能略超 cached-edge v1，`stump` 则给出全场景中最大的 PSNR 增益；`treehill` 显示 DINO i0.50 能修复 cached-edge 负例的 SSIM/LPIPS，但预算膨胀明显且 PSNR 仍略低于 baseline。继续把权重推到 1.0 基本回到完整 top-k25 已知上界；support-normalized score 和高置信 prune-protect 都未优于普通 partial importance。下一步应优先做自动容量保护，而不是追加同类 scorer 单点。
+- 这一路径不引入在线 DINO inference，成本明显低于 descriptor 系列。当前 0001 在 bicycle 上的最佳质量结论仍定为 top-k 25% 完整对照；预算方向把 `importance_weight=0.50` 作为约 440k 点数下的效率点，把 `importance_weight=0.75` 作为略优于 top-k 15% 的高质量预算点。MipNeRF360 全场景复验支持 i0.50 的跨场景有效性，尤其 `counter` 在仅 +5.9% Gaussian 的条件下获得三项指标提升，`kitchen` 在少于 baseline 点数下仍获得三项指标提升，`room` 证明高基线小室内场景上也能略超 cached-edge v1，`stump` 则给出全场景中最大的 PSNR 增益；`treehill` 显示 DINO i0.50 能修复 cached-edge 负例的 SSIM/LPIPS，但预算膨胀明显且 PSNR 仍略低于 baseline。继续把权重推到 1.0 基本回到完整 top-k25 已知上界；support-normalized score 和高置信 prune-protect 都未优于普通 partial importance。下一步进入预算感知 importance 的 30k 对照，目标是在接近 i0.25 点数带时尽量保留 i0.50 的质量收益。
 
 ## 2026-05-07 DINOv2 Descriptor 打分器快速验证
 

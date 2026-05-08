@@ -113,6 +113,9 @@ class OptimizationParams(ParamGroup):
         self.vfm_descriptor_token_smooth_kernel = 1
         self.vfm_weight = 0.25
         self.vfm_importance_weight = 1.0
+        self.vfm_importance_budget_count = 0
+        self.vfm_importance_budget_start_ratio = 0.9
+        self.vfm_importance_budget_min_weight = 0.0
         self.vfm_importance_mode = "max"
         self.vfm_importance_normalizer = "none"
         self.vfm_support_ratio_power = 1.0

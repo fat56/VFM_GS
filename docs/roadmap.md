@@ -7,7 +7,7 @@
 ## 排队
 
 - 下一版优先设计预算感知 scorer 和自动容量保护，而不是继续堆叠 descriptor mask ratio：候选方向包括当自然点数显著低于 baseline 预测值时回退 pruning 强度、在 staged pruning 后立即短恢复而非训练结束统一恢复。按 Gaussian 支持度归一化 VFM score 和高置信 VFM 区域保护都已完成 bicycle 30k 验证，均不优于普通 i0.50；partial VFM importance 曲线已给出正向结论，下一步不再追加同类单点。
-- 若继续做 0001 追加验证，只保留明确改变预算行为的实验，不再追加同类 top-k / percentile / soft-top-k 单点，也不再追加单纯 final hard-prune 预算点。DINO i0.50 已完成 MipNeRF360 全 9 场景 candidate 表，下一步进入自动容量保护和预算感知 scorer 设计。
+- 已增加默认关闭的 `vfm_importance_budget_count` 软预算机制，并完成 620-step bicycle 链路验证；下一步跑 30k 正式对照，目标是在接近 i0.25 的 420k 点数带尽量保留 i0.50 的质量收益。若该方向转正，再迁移到 `treehill` 和 `stump` 这类容量膨胀明显场景。
 
 ## 阻塞
 
@@ -81,6 +81,7 @@
 - 完成 `support_ratio + importance_weight=0.50` bicycle 30k 对照；最终 432,948 个 Gaussians，PSNR 26.9694、SSIM 0.8286、LPIPS 0.1878，训练 149.40s。它仍优于 cadence control，但比普通 i0.50 少点的同时质量回落，因此不作为下一版主方向。
 - 增加 `vfm_prune_protect_weight` 等默认关闭参数，把高置信 VFM 命中区域转换为 pruning-side 保护分数。620-step bicycle 快速验证完成 train/render/metrics，PSNR 20.8808、SSIM 0.4757、LPIPS 0.5457，61,604 个 Gaussians，说明保护分数链路健康。
 - 完成高置信 VFM 区域保护 30k bicycle 对照；最终 441,352 个 Gaussians，PSNR 26.9910、SSIM 0.8302、LPIPS 0.1839，训练 144.70s。它相对普通 i0.50 只微幅改善 LPIPS，PSNR/SSIM 和训练时间均不占优，因此该分支收束为负结果。
+- 增加 `vfm_importance_budget_count`、`vfm_importance_budget_start_ratio` 和 `vfm_importance_budget_min_weight`，默认关闭。预算感知 importance 会在训练期根据当前 Gaussian 数量软衰减 VFM densification 权重，而不是训练结束后硬裁剪。620-step bicycle 快速验证完成 train/render/metrics，PSNR 20.7641、SSIM 0.4749、LPIPS 0.5459，61,590 个 Gaussians，说明链路健康。
 - 增加 `target_gaussian_prune_order`，默认保持 `lowest_score`，用于显式复现不同 target-prune 排序。完成 high-score final 490,832 bicycle 30k 对照；最终 PSNR 24.0554、SSIM 0.7914、LPIPS 0.2040，说明终局高分批量裁剪比 low-score final 更差，target-prune 不能简单复用训练期 pruning 的高分删除语义。
 - 完成 no-effect/cadence control；`fastgs_photometric + densification_interval=100` 与 zero-weight VFM runs 都在约 410k Gaussians，说明此前 no-effect 高点数主要来自 densification cadence。
 - 增加 `post_prune_finetune_iterations` 并完成 final-prune-plus-fine-tune 探测；严格 240k 预算下质量明显优于 final-only，但仍低于 baseline 与 350k staged 正向控制组。

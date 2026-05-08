@@ -388,6 +388,28 @@ def _build_prune_protection(vfm_counts, rgb_pruning, args):
     )
 
 
+def _budget_aware_importance_weight(base_weight, gaussians, args):
+    budget_count = int(getattr(args, "vfm_importance_budget_count", 0) or 0)
+    if budget_count <= 0:
+        return base_weight
+
+    start_ratio = float(getattr(args, "vfm_importance_budget_start_ratio", 0.9) or 0.0)
+    start_ratio = max(0.0, min(start_ratio, 1.0))
+    min_weight = float(getattr(args, "vfm_importance_budget_min_weight", 0.0) or 0.0)
+    min_weight = max(0.0, min(min_weight, base_weight))
+
+    current_count = int(gaussians._xyz.shape[0])
+    start_count = max(1, int(round(budget_count * start_ratio)))
+    if current_count <= start_count:
+        return base_weight
+    if current_count >= budget_count:
+        return min_weight
+
+    span = max(1, budget_count - start_count)
+    progress = float(current_count - start_count) / float(span)
+    return base_weight - progress * (base_weight - min_weight)
+
+
 def compute_gaussian_score_fastgs_with_vfm(camlist, gaussians, pipe, bg, args, DENSIFY=False):
     """Compute FastGS scores with an auxiliary VFM-style topology signal.
 
@@ -407,6 +429,8 @@ def compute_gaussian_score_fastgs_with_vfm(camlist, gaussians, pipe, bg, args, D
     backend = getattr(args, "vfm_backend", "mock_l1")
     vfm_weight = getattr(args, "vfm_weight", 0.25)
     vfm_importance_weight = max(0.0, getattr(args, "vfm_importance_weight", 1.0))
+    if DENSIFY:
+        vfm_importance_weight = _budget_aware_importance_weight(vfm_importance_weight, gaussians, args)
     vfm_importance_mode = getattr(args, "vfm_importance_mode", "max").lower()
     vfm_importance_normalizer = getattr(args, "vfm_importance_normalizer", "none").lower()
     vfm_prune_protect_weight = max(0.0, float(getattr(args, "vfm_prune_protect_weight", 0.0) or 0.0))
