@@ -288,6 +288,23 @@ uv run --active python -m vfm_gs.cli.train \
   -r 8
 ```
 
+### Weighted 结果汇总与选择规则
+
+`configs/experiments/0001_weighted_candidate_catalog.yaml` 记录当前 DINO token-edge 主线、weighted i0.50 和已完成的 weighted i0.75 run。每次新增场景结果后，先把 run 目录和训练时间追加到 catalog，再运行汇总脚本：
+
+```bash
+uv run --active python scripts/summarize_0001_weighted_candidates.py
+```
+
+脚本会从 run 目录的 `results.json` 读取 PSNR/SSIM/LPIPS，从最终 `point_cloud.ply` 读取 Gaussian 数，并输出：
+
+- `output/0001/weighted_candidate_summary/summary.csv`
+- `output/0001/weighted_candidate_summary/comparisons.csv`
+- `output/0001/weighted_candidate_summary/recommendations.csv`
+- `output/0001/weighted_candidate_summary/averages.csv`
+
+当前规则是：预算优先默认选 `weighted_i050`；只有当 `weighted_i075` 相比 `weighted_i050` 的 PSNR 提升、SSIM 没有明显回落、LPIPS 没有明显变差时，才把质量档推荐为 `weighted_i075`。截至 bonsai 边界复验，脚本会把 bicycle、stump、room 判为 `weighted_i075` 正向，把 bonsai 判为 boundary 并推荐保留 `weighted_i050`。
+
 ### Token-Edge Top-k 探测
 
 `0001_vfm_topology_dinov2_token_edge_topk.yaml` 保持 `dinov2_token_edge_l1` 后端不变，只把 metric map 改为 top-k 15% 高误差区域。先用 620-step 验证链路，再进入 30k 完整对照。

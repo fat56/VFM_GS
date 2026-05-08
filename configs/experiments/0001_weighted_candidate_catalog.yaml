@@ -1,0 +1,126 @@
+name: 0001_weighted_candidate_catalog
+description: 0001 DINO token-edge weighted 候选实验目录。
+runs:
+  - scene: bicycle
+    method: dino_i050
+    role: quality_reference
+    run_dir: output/0001/vfm_dinov2_token_edge_topk025_i050_bicycle_30k_r8
+    train_time_s: 141.34
+  - scene: garden
+    method: dino_i050
+    role: quality_reference
+    run_dir: output/0001/vfm_dinov2_token_edge_topk025_i050_garden_30k_r8
+    train_time_s: 139.31
+  - scene: counter
+    method: dino_i050
+    role: quality_reference
+    run_dir: output/0001/vfm_dinov2_token_edge_topk025_i050_counter_30k_r8
+    train_time_s: 140.29
+  - scene: treehill
+    method: dino_i050
+    role: quality_reference
+    run_dir: output/0001/vfm_dinov2_token_edge_topk025_i050_treehill_30k_r8
+    train_time_s: 142.14
+  - scene: bonsai
+    method: dino_i050
+    role: quality_reference
+    run_dir: output/0001/vfm_dinov2_token_edge_topk025_i050_bonsai_30k_r8
+    train_time_s: 139.32
+  - scene: flowers
+    method: dino_i050
+    role: quality_reference
+    run_dir: output/0001/vfm_dinov2_token_edge_topk025_i050_flowers_30k_r8
+    train_time_s: 145.30
+  - scene: kitchen
+    method: dino_i050
+    role: quality_reference
+    run_dir: output/0001/vfm_dinov2_token_edge_topk025_i050_kitchen_30k_r8
+    train_time_s: 144.92
+  - scene: room
+    method: dino_i050
+    role: quality_reference
+    run_dir: output/0001/vfm_dinov2_token_edge_topk025_i050_room_30k_r8
+    train_time_s: 133.74
+  - scene: stump
+    method: dino_i050
+    role: quality_reference
+    run_dir: output/0001/vfm_dinov2_token_edge_topk025_i050_stump_30k_r8
+    train_time_s: 137.90
+  - scene: bicycle
+    method: weighted_i050
+    role: budget_candidate
+    compare_to: dino_i050
+    run_dir: output/0001/vfm_dinov2_token_edge_topk025_weighted_i050_bicycle_30k_r8
+    train_time_s: 141.21
+  - scene: garden
+    method: weighted_i050
+    role: budget_candidate
+    compare_to: dino_i050
+    run_dir: output/0001/vfm_dinov2_token_edge_topk025_weighted_i050_garden_30k_r8
+    train_time_s: 134.56
+  - scene: counter
+    method: weighted_i050
+    role: budget_candidate
+    compare_to: dino_i050
+    run_dir: output/0001/vfm_dinov2_token_edge_topk025_weighted_i050_counter_30k_r8
+    train_time_s: 133.34
+  - scene: treehill
+    method: weighted_i050
+    role: budget_candidate
+    compare_to: dino_i050
+    run_dir: output/0001/vfm_dinov2_token_edge_topk025_weighted_i050_treehill_30k_r8
+    train_time_s: 139.79
+  - scene: bonsai
+    method: weighted_i050
+    role: budget_candidate
+    compare_to: dino_i050
+    run_dir: output/0001/vfm_dinov2_token_edge_topk025_weighted_i050_bonsai_30k_r8
+    train_time_s: 138.31
+  - scene: flowers
+    method: weighted_i050
+    role: budget_candidate
+    compare_to: dino_i050
+    run_dir: output/0001/vfm_dinov2_token_edge_topk025_weighted_i050_flowers_30k_r8
+    train_time_s: 141.18
+  - scene: kitchen
+    method: weighted_i050
+    role: budget_candidate
+    compare_to: dino_i050
+    run_dir: output/0001/vfm_dinov2_token_edge_topk025_weighted_i050_kitchen_30k_r8
+    train_time_s: 141.71
+  - scene: room
+    method: weighted_i050
+    role: budget_candidate
+    compare_to: dino_i050
+    run_dir: output/0001/vfm_dinov2_token_edge_topk025_weighted_i050_room_30k_r8
+    train_time_s: 131.98
+  - scene: stump
+    method: weighted_i050
+    role: budget_candidate
+    compare_to: dino_i050
+    run_dir: output/0001/vfm_dinov2_token_edge_topk025_weighted_i050_stump_30k_r8
+    train_time_s: 136.36
+  - scene: bicycle
+    method: weighted_i075
+    role: quality_probe
+    compare_to: weighted_i050
+    run_dir: output/0001/vfm_dinov2_token_edge_topk025_weighted_i075_bicycle_30k_r8
+    train_time_s: 141.48
+  - scene: stump
+    method: weighted_i075
+    role: quality_probe
+    compare_to: weighted_i050
+    run_dir: output/0001/vfm_dinov2_token_edge_topk025_weighted_i075_stump_30k_r8
+    train_time_s: 138.82
+  - scene: room
+    method: weighted_i075
+    role: quality_probe
+    compare_to: weighted_i050
+    run_dir: output/0001/vfm_dinov2_token_edge_topk025_weighted_i075_room_30k_r8
+    train_time_s: 120.08
+  - scene: bonsai
+    method: weighted_i075
+    role: quality_probe
+    compare_to: weighted_i050
+    run_dir: output/0001/vfm_dinov2_token_edge_topk025_weighted_i075_bonsai_30k_r8
+    train_time_s: 138.14
