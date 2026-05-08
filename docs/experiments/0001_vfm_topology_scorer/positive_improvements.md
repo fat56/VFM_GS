@@ -100,9 +100,10 @@
 | Tandt 平均 | DINO weighted i0.50 vs cached-edge v1 | 25.7519 | +0.1721 | 0.9346 | +0.0031 | 0.0575 | -0.0033 | 38,394 | +6,832 | 151.05s | +6.20s | 修复 cached-edge 负例的一部分；仍低于 baseline |
 | 13 场景合并 | DINO weighted i0.50 vs baseline | 28.6061 | +0.1430 | 0.8873 | +0.0076 | 0.1154 | -0.0152 | 191,841 | +55,674 | 140.27s | +13.24s | 跨数据集平均质量最高，但不是预算中性 |
 | 13 场景合并 | DINO weighted i0.50 vs cached-edge v1 | 28.6061 | +0.0848 | 0.8873 | +0.0061 | 0.1154 | -0.0112 | 191,841 | +27,985 | 140.27s | +0.95s | 平均优于 cached-edge，但逐场景仍需选择 |
+| 13 场景合并 | validated policy vs baseline | 28.6786 | +0.2155 | 0.8868 | +0.0071 | 0.1182 | -0.0124 | 177,134 | +40,967 | 137.07s | +10.05s | 事后场景选择策略，当前 13 场景与 PSNR oracle 一致 |
 
 ## 简短结论
 
 当前应保留四条主线：`cached_edge_l1` 是 proxy 正向控制组，在 MipNeRF360 和 DB 上平均正向；`DINO top-k25 + importance_weight=0.50` 是 MipNeRF360 全场景质量候选，相对 baseline 平均 +0.2051 PSNR、+0.0115 SSIM、LPIPS -0.0234；`weighted + i0.50` 是全场景预算效率候选，相对普通 i0.50 平均少 8,836 点、训练少 2.87s，质量只小幅回落；`weighted + i0.75` 是有条件高质量档位候选，在 bicycle、stump 和 room 上相对 weighted i0.50 都有 PSNR 提升，但 bonsai 复验未超过 weighted i0.50，因此不能无条件替代 i0.50。
 
-边界也很清楚：DINO i0.50 仍不是预算中性方案，Tandt 上 cached-edge v1 不是质量正例，容量保护只适合作为默认关闭的诊断/回退防线。Tandt DINO weighted i0.50 只相对 cached-edge v1 正向，平均仍低于 baseline -0.2032 PSNR、-0.0031 SSIM、LPIPS 差 +0.0035，因此应记录为恢复型结果而不是默认替代方案。DB DINO weighted i0.50 相对 baseline 平均正向，但低于 DB cached-edge v1，说明它是跨数据集候选而不是固定最优后端。13 场景选择表显示 PSNR 最优分布为 8 个 DINO weighted、2 个 cached-edge、3 个 baseline，下一步应做场景自适应选择和自动回退，而不是继续追加固定后端单点。`adaptive_weighted + quadratic 430k` 在 treehill 第二场景没有复现 bicycle 收益，因此不放入正向主线。
+边界也很清楚：DINO i0.50 仍不是预算中性方案，Tandt 上 cached-edge v1 不是质量正例，容量保护只适合作为默认关闭的诊断/回退防线。Tandt DINO weighted i0.50 只相对 cached-edge v1 正向，平均仍低于 baseline -0.2032 PSNR、-0.0031 SSIM、LPIPS 差 +0.0035，因此应记录为恢复型结果而不是默认替代方案。DB DINO weighted i0.50 相对 baseline 平均正向，但低于 DB cached-edge v1，说明它是跨数据集候选而不是固定最优后端。13 场景选择表显示 PSNR 最优分布为 8 个 DINO weighted、2 个 cached-edge、3 个 baseline，`validated_policy` 当前与 PSNR oracle 一致，但它仍是事后策略，必须用下一批新场景验证泛化。`adaptive_weighted + quadratic 430k` 在 treehill 第二场景没有复现 bicycle 收益，因此不放入正向主线。
