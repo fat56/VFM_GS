@@ -329,7 +329,7 @@ uv run --active python scripts/summarize_0001_weighted_candidates.py
 
 ### Weighted 候选跨数据集/跨档位评估
 
-`scripts/run_0001_dino_weighted_eval.py` 用于把当前 DINO weighted 候选迁移到 Tandt/DB 等新数据集，或补齐同一数据集的其他档位。脚本会按场景执行 DINO cache 构建、cache 校验、30k 训练、render、metrics 和汇总；已完成步骤会跳过。若传入 `--reference-summary`，还会输出相对 baseline 与 cached edge v1 的差值表。常用可选参数包括 `--config`、`--method-name`、`--run-name`、`--cache-root` 和 `--comparison-methods`，用于复用同一个 runner 跑 i0.50、i0.75 或后续 weighted 候选。
+`scripts/run_0001_dino_weighted_eval.py` 用于把当前 DINO weighted 候选迁移到 Tandt/DB 等新数据集，或补齐同一数据集的其他档位。脚本会按场景执行 DINO cache 构建、cache 校验、30k 训练、render、metrics 和汇总；已完成步骤会跳过。若传入 `--reference-summary`，还会输出相对 baseline 与 cached edge v1 的差值表。常用可选参数包括 `--config`、`--method-name`、`--run-name`、`--cache-root` 和 `--comparison-methods`，用于复用同一个 runner 跑 i0.50、i0.75 或后续 weighted 候选。若设置 `--target-ratio-from-reference`，脚本会从参考 summary 中读取指定方法的 `gs_num`，按比例派生 `target_gaussian_count`，并把该目标写入 `summary.csv/json`。
 
 ```bash
 uv run --active python scripts/run_0001_dino_weighted_eval.py \
@@ -382,6 +382,25 @@ uv run --active python scripts/run_0001_dino_weighted_eval.py \
 ```
 
 当前一次实际执行中，前 6 个场景写入 `output/0001/weighted_i090_mipnerf360`，尾部 `room/stump/treehill` 写入 `output/0001/weighted_i090_mipnerf360_tail`；`configs/experiments/0001_weighted_candidate_catalog.yaml` 已记录这两个输出根目录，汇总脚本可直接读取。
+
+Tandt DINO weighted i0.50 + 自动容量下限诊断命令如下。该实验把 target 设为对应 baseline Gaussian 数量的 1.42 倍，并通过 `prune_min_gaussian_target_ratio=0.7042253521126761` 自动得到 baseline 容量下限：
+
+```bash
+uv run --active python scripts/run_0001_dino_weighted_eval.py \
+  --dataset-name tandt \
+  --dataset-root datasets/tandt_db/tandt \
+  --output-root output/0001/dino_weighted_i050_auto_prunemin_tandt \
+  --scenes train truck \
+  --config configs/experiments/0001_vfm_topology_dinov2_token_edge_weighted_i050_auto_prunemin.yaml \
+  --method-name dinov2_token_edge_weighted_i050_auto_prunemin \
+  --run-name vfm_dinov2_token_edge_topk025_weighted_i050_auto_prunemin_30k_r8 \
+  --cache-root output/0001/vfm_cache \
+  --reference-summary output/0001/full_tandt_db_v1/tandt/summary.csv \
+  --target-ratio-from-reference 1.42 \
+  --target-reference-method baseline
+```
+
+该诊断的平均结果为 25.6078 / 0.9324 / 0.0610、50,370 个 Gaussians，低于原始 DINO weighted i0.50 和 baseline。后续不再把“最终补容量”作为 Tandt 主修复方向，应改测早期 staged target 时序或直接回退 baseline。
 
 主要产物：
 

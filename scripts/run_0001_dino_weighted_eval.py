@@ -137,7 +137,26 @@ def validate_dino_cache(scene_path: Path, args: argparse.Namespace, repo: Path, 
     marker.write_text("ok\n", encoding="utf-8")
 
 
-def train_candidate(scene_path: Path, args: argparse.Namespace, repo: Path, run_dir: Path, log_dir: Path, cache_dir: Path) -> None:
+def reference_gs_for_scene(reference_rows: list[dict[str, object]], scene: str, method: str) -> int | None:
+    for row in reference_rows:
+        if str(row.get("scene")) != scene or str(row.get("method")) != method:
+            continue
+        value = row.get("gs_num")
+        if value in (None, ""):
+            return None
+        return int(float(value))
+    return None
+
+
+def train_candidate(
+    scene_path: Path,
+    args: argparse.Namespace,
+    repo: Path,
+    run_dir: Path,
+    log_dir: Path,
+    cache_dir: Path,
+    target: int | None,
+) -> None:
     if run_dir.exists() and latest_point_count(run_dir) is not None:
         return
     cmd = [
@@ -171,6 +190,8 @@ def train_candidate(scene_path: Path, args: argparse.Namespace, repo: Path, run_
         "-r",
         str(args.resolution),
     ]
+    if target is not None:
+        cmd.extend(["--target_gaussian_count", str(target)])
     require_success(run_command(cmd, log_dir / "train.log", repo), log_dir / "train.log")
 
 
@@ -205,7 +226,14 @@ def render_and_metrics(run_dir: Path, log_dir: Path, repo: Path) -> None:
         require_success(run_command(cmd, log_dir / "metrics.log", repo), log_dir / "metrics.log")
 
 
-def collect_row(dataset: str, scene: str, method: str, run_dir: Path, log_dir: Path) -> dict[str, object]:
+def collect_row(
+    dataset: str,
+    scene: str,
+    method: str,
+    run_dir: Path,
+    log_dir: Path,
+    target_gaussian_count: int | None,
+) -> dict[str, object]:
     gs_num, train_time = parse_train_log(log_dir / "train.log")
     if gs_num is None:
         gs_num = latest_point_count(run_dir)
@@ -214,6 +242,7 @@ def collect_row(dataset: str, scene: str, method: str, run_dir: Path, log_dir: P
         "dataset": dataset,
         "scene": scene,
         "method": method,
+        "target_gaussian_count": target_gaussian_count,
         "psnr": metrics["PSNR"],
         "ssim": metrics["SSIM"],
         "lpips": metrics["LPIPS"],
@@ -247,6 +276,7 @@ def write_summary(
         "dataset",
         "scene",
         "method",
+        "target_gaussian_count",
         "psnr",
         "ssim",
         "lpips",
@@ -341,6 +371,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cache-root", type=Path, default=None)
     parser.add_argument("--reference-summary", type=Path, default=None)
     parser.add_argument("--comparison-methods", nargs="+", default=["baseline", "cached_edge_staged142"])
+    parser.add_argument("--target-ratio-from-reference", type=float, default=0.0)
+    parser.add_argument("--target-reference-method", default="baseline")
     return parser.parse_args()
 
 
@@ -364,13 +396,23 @@ def main() -> int:
         run_dir = args.output_root / scene / args.run_name
         log_dir = args.output_root / scene / "logs" / args.run_name
         cache_dir = cache_dir_for_scene(scene, args)
+        target = None
+        if args.target_ratio_from_reference > 0:
+            reference_gs = reference_gs_for_scene(reference_rows, scene, args.target_reference_method)
+            if reference_gs is None:
+                raise RuntimeError(
+                    "Unable to determine reference Gaussian count for {} using method {}".format(
+                        scene, args.target_reference_method
+                    )
+                )
+            target = int(round(reference_gs * args.target_ratio_from_reference))
 
         print("[{}] {} cache/train/render/metrics".format(scene, args.method_name), flush=True)
         build_dino_cache(scene_dir, args, repo, cache_dir, log_dir)
         validate_dino_cache(scene_dir, args, repo, cache_dir, log_dir)
-        train_candidate(scene_dir, args, repo, run_dir, log_dir, cache_dir)
+        train_candidate(scene_dir, args, repo, run_dir, log_dir, cache_dir, target)
         render_and_metrics(run_dir, log_dir, repo)
-        rows.append(collect_row(args.dataset_name, scene, args.method_name, run_dir, log_dir))
+        rows.append(collect_row(args.dataset_name, scene, args.method_name, run_dir, log_dir, target))
         write_summary(rows, reference_rows, args.output_root, args.comparison_methods)
 
     write_summary(rows, reference_rows, args.output_root, args.comparison_methods)
