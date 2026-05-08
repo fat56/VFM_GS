@@ -461,6 +461,38 @@ uv run --active python -m vfm_gs.cli.metrics \
   -m output/0001/vfm_dinov2_token_edge_topk025_weighted_i050_bicycle_30k_r8
 ```
 
+高质量档位加权融合探测：
+
+```bash
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_dinov2_token_edge_topk.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0001/vfm_dinov2_token_edge_topk025_weighted_i075_bicycle_30k_r8 \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0001/vfm_cache/bicycle_dinov2_vits14 \
+  --vfm_metric_topk 0.25 \
+  --vfm_importance_weight 0.75 \
+  --vfm_importance_mode weighted \
+  -r 8
+
+uv run --active python -m vfm_gs.cli.render \
+  -m output/0001/vfm_dinov2_token_edge_topk025_weighted_i075_bicycle_30k_r8 \
+  --iteration -1 \
+  --skip_train \
+  --quiet
+
+uv run --active python -m vfm_gs.cli.metrics \
+  -m output/0001/vfm_dinov2_token_edge_topk025_weighted_i075_bicycle_30k_r8
+```
+
+结果：PSNR 26.9909、SSIM 0.8309、LPIPS 0.1844，最终 414,563 个 Gaussians，训练 141.48s，输出目录约 124M。相比 `weighted i0.50`，点数少 595 个且三项质量均提升；相比普通 i0.75，少 57,601 个点、训练少 13.70s，但质量小幅低于普通 i0.75。该点可作为 bicycle 近预算正向点，后续优先在 weighted i0.50 已经表现好的 `stump/room` 复验。
+
 partial importance 第二场景复验：
 
 ```bash
