@@ -396,7 +396,7 @@ train-side 选择结果落到 test split 后的表现：
 - train-side 选择的 DB 平均 test PSNR 为 30.5605，略低于 DB cached-edge v1 的 30.5631，也低于 fixed DINO weighted i0.90 的 30.6074，更低于 test oracle 的 30.6710。
 - 因此不能把当前 `validated_policy` 包装成无泄漏的自动选择器。下一步如果要形成严格方案，需要独立 validation split、预先固定的数据集级策略，或使用与 test 指标无关的训练过程信号；单纯 train render PSNR/QCGI 不够。
 
-## 2026-05-09 Tandt DINO weighted 自动容量下限诊断
+## 2026-05-09 Tandt DINO weighted 容量/时序诊断
 
 目标：验证 Tandt 上 DINO weighted i0.50 低于 baseline 是否主要来自最终 Gaussian 数量不足。实验使用 `configs/experiments/0001_vfm_topology_dinov2_token_edge_weighted_i050_auto_prunemin.yaml`，在 `target_gaussian_count=baseline*1.42` 的同时启用 `prune_min_gaussian_target_ratio=0.7042253521126761`，因此容量下限自动等价于 baseline 最终点数。运行入口为 `scripts/run_0001_dino_weighted_eval.py`，输出在 `output/0001/dino_weighted_i050_auto_prunemin_tandt`。
 
@@ -420,6 +420,29 @@ train-side 选择结果落到 test split 后的表现：
 - 质量没有恢复，且低于原始 DINO weighted i0.50。这说明 Tandt 的 DINO weighted 负例不是单纯“最终点数太少”。
 - 训练日志显示早期 staged target pruning 仍发生了大幅裁剪，例如 `train` 在 1,000 iteration 从 184,878 裁到 91,827。容量下限只约束训练期 FastGS prune 和最终一致性裁剪，不会阻止 staged target 在早期改变结构轨迹。
 - 下一步不再继续“最终补容量”支线。若还要修复 Tandt，应测试推迟或取消早期 staged target、降低早期 VFM pruning/densification 介入，或直接回退 baseline；当前更有价值的主线仍是跨场景选择/回退和 QCGI 容量约束。
+
+随后增加 `configs/experiments/0001_vfm_topology_dinov2_token_edge_weighted_i050_prunemin_only.yaml`，只启用容量下限，不启用 staged target。runner 使用 `--target-ratio-from-reference 1.0 --target-reference-method baseline`，因此 `target_gaussian_count` 与 `prune_min_gaussian_count` 都等于 baseline 最终 Gaussian 数量，输出在 `output/0001/dino_weighted_i050_prunemin_only_tandt`。
+
+| 场景 | 方法 | target | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|---:|
+| train | DINO weighted i0.50 + 容量下限，不启用 staged target | 58,788 | 23.4287 | 0.9111 | 0.0775 | 58,788 | 218.14s |
+| truck | DINO weighted i0.50 + 容量下限，不启用 staged target | 41,952 | 27.8573 | 0.9572 | 0.0357 | 41,952 | 214.33s |
+| **平均** | **DINO weighted i0.50 + 容量下限，不启用 staged target** | - | **25.6430** | **0.9341** | **0.0566** | **50,370** | **216.24s** |
+
+关键对比：
+
+| 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 相对 baseline | 结论 |
+|---|---:|---:|---:|---:|---|---|
+| baseline | 25.9551 | 0.9377 | 0.0541 | 50,370 | - | Tandt 当前默认回退 |
+| DINO weighted i0.50 | 25.7519 | 0.9346 | 0.0575 | 38,394 | -0.2032 / -0.0031 / +0.0035 | 相对 cached-edge 修复，但仍低于 baseline |
+| DINO weighted i0.50 + staged 自动容量下限 | 25.6078 | 0.9324 | 0.0610 | 50,370 | -0.3473 / -0.0053 / +0.0069 | staged target 早期裁剪后，补容量仍不能恢复 |
+| DINO weighted i0.50 + 容量下限，不启用 staged target | 25.6430 | 0.9341 | 0.0566 | 50,370 | -0.3121 / -0.0036 / +0.0025 | LPIPS/SSIM 恢复一部分，但 PSNR 仍低 |
+
+解读：
+
+- 取消 staged target 后，平均结果相对 `staged 自动容量下限` 提升 +0.0352 PSNR、+0.0017 SSIM，LPIPS 改善 -0.0044，说明早期 staged target 对 Tandt 的感知质量确实有负面影响。
+- 该结果仍低于 baseline，也低于原始 DINO weighted i0.50 的 PSNR。换言之，`prune_min` 可以防止最终过稀，取消 staged target 可以修复部分感知指标，但 DINO weighted 在 Tandt 上仍不是默认方案。
+- 这条支线到此收束：Tandt 应进入场景级 baseline 回退；若继续优化，应改变早期 VFM 介入方式，而不是继续提高最终 Gaussian 数量。
 
 ## 2026-04-28 Mock v1 快速验证
 

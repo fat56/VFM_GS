@@ -402,6 +402,25 @@ uv run --active python scripts/run_0001_dino_weighted_eval.py \
 
 该诊断的平均结果为 25.6078 / 0.9324 / 0.0610、50,370 个 Gaussians，低于原始 DINO weighted i0.50 和 baseline。后续不再把“最终补容量”作为 Tandt 主修复方向，应改测早期 staged target 时序或直接回退 baseline。
 
+对应的 prunemin-only 诊断不启用 staged target，只把 target 和容量下限设为 baseline 最终 Gaussian 数量：
+
+```bash
+uv run --active python scripts/run_0001_dino_weighted_eval.py \
+  --dataset-name tandt \
+  --dataset-root datasets/tandt_db/tandt \
+  --output-root output/0001/dino_weighted_i050_prunemin_only_tandt \
+  --scenes train truck \
+  --config configs/experiments/0001_vfm_topology_dinov2_token_edge_weighted_i050_prunemin_only.yaml \
+  --method-name dinov2_token_edge_weighted_i050_prunemin_only \
+  --run-name vfm_dinov2_token_edge_topk025_weighted_i050_prunemin_only_30k_r8 \
+  --cache-root output/0001/vfm_cache \
+  --reference-summary output/0001/full_tandt_db_v1/tandt/summary.csv \
+  --target-ratio-from-reference 1.0 \
+  --target-reference-method baseline
+```
+
+该诊断平均结果为 25.6430 / 0.9341 / 0.0566、50,370 个 Gaussians。它相对 staged 自动容量下限恢复了 LPIPS/SSIM，但仍低于 baseline，也低于原始 DINO weighted i0.50 的 PSNR。因此 Tandt 当前仍应回退 baseline；若继续优化，应改动早期 VFM 介入方式，而不是继续补最终容量。
+
 主要产物：
 
 - `output/0001/dino_weighted_i050_<dataset>/summary.csv`

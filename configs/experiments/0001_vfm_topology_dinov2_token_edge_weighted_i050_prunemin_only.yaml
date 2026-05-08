@@ -1,0 +1,20 @@
+name: 0001_vfm_topology_dinov2_token_edge_weighted_i050_prunemin_only
+extends: fastgs_baseline
+scorer: vfm_topology_scorer
+training_args:
+  densification_interval: 100
+  vfm_enable: true
+  vfm_backend: dinov2_token_edge_l1
+  vfm_cache_dir: output/0001/vfm_cache/bicycle_dinov2_vits14
+  vfm_loss_thresh: 0.45
+  vfm_metric_map_mode: topk
+  vfm_metric_topk: 0.25
+  vfm_weight: 0.25
+  vfm_importance_weight: 0.50
+  vfm_importance_mode: weighted
+  vfm_use_albedo_sh0: true
+  prune_min_gaussian_target_ratio: 1.0
+experiment:
+  status: dinov2_token_edge_weighted_prunemin_without_staged_target_probe
+  proposal: docs/experiments/0001_vfm_topology_scorer/proposal.md
+  note: DINO weighted i0.50 + 最小容量下限，不启用 staged target；用于隔离早期 staged target 对 Tandt 训练轨迹的影响。
