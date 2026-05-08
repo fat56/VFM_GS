@@ -517,6 +517,49 @@ uv run --active python -m vfm_gs.cli.metrics \
   -m output/0001/vfm_dinov2_token_edge_topk025_i050_counter_30k_r8
 ```
 
+partial importance 在 cached-edge 负例上的压力测试：
+
+```bash
+uv run --active python -m vfm_gs.cli.build_vfm_cache \
+  -s datasets/mipnerf360/treehill \
+  -i images_8 \
+  -o output/0001/vfm_cache/treehill_dinov2_vits14 \
+  --backend dinov2_vits14 \
+  --dinov2_repo output/0001/external/dinov2 \
+  --max_width 224
+
+uv run --active python -m vfm_gs.cli.validate_vfm_cache \
+  -c output/0001/vfm_cache/treehill_dinov2_vits14 \
+  -s datasets/mipnerf360/treehill \
+  -i images_8 \
+  --backend dinov2_vits14
+
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_dinov2_token_edge_topk.yaml \
+  -s datasets/mipnerf360/treehill \
+  -i images \
+  -m output/0001/vfm_dinov2_token_edge_topk025_i050_treehill_30k_r8 \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0001/vfm_cache/treehill_dinov2_vits14 \
+  --vfm_metric_topk 0.25 \
+  --vfm_importance_weight 0.50 \
+  -r 8
+
+uv run --active python -m vfm_gs.cli.render \
+  -m output/0001/vfm_dinov2_token_edge_topk025_i050_treehill_30k_r8 \
+  --iteration -1 \
+  --skip_train \
+  --quiet
+
+uv run --active python -m vfm_gs.cli.metrics \
+  -m output/0001/vfm_dinov2_token_edge_topk025_i050_treehill_30k_r8
+```
+
 partial importance 曲线的高质量预算点：
 
 ```bash
