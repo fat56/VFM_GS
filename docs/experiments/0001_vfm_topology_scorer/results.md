@@ -491,7 +491,7 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 
 再追加 `target_gaussian_prune_order`。默认值为 `lowest_score`，保持已有 target-prune 实验行为不变；可选 `highest_score` 和 `lowest_opacity` 用于诊断最终预算裁剪的排序语义。该参数只在显式设置 `target_gaussian_count` 时生效。
 
-主对照数据集：`datasets/mipnerf360/bicycle`，test split，`-r 8`。先用 620-step 验证链路健康，再跑 30,000 iterations 完整对照。后续用同一设置在 `garden` 做第二场景复验，训练仍用 train split，指标来自 test split render。
+主对照数据集：`datasets/mipnerf360/bicycle`，test split，`-r 8`。先用 620-step 验证链路健康，再跑 30,000 iterations 完整对照。后续用同一设置在 `garden` 和 `counter` 做跨场景复验，训练仍用 train split，指标来自 test split render。
 
 | 产物 | Backend | Metric map | Iterations | PSNR | SSIM | LPIPS | 训练时间 | Gaussian 数量 | 输出大小 | 备注 |
 |---|---|---|---:|---:|---:|---:|---:|---:|---:|---|
@@ -505,6 +505,7 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 | `output/0001/vfm_dinov2_token_edge_topk025_i025_bicycle_30k_r8` | `dinov2_token_edge_l1` | top-k 25%, `importance_weight=0.25` | 30,000 | 26.9515 | 0.8262 | 0.1920 | 143.26s | 420,361 | 125M | 接近 cadence 预算，三项指标均小幅优于 cadence control |
 | `output/0001/vfm_dinov2_token_edge_topk025_i050_bicycle_30k_r8` | `dinov2_token_edge_l1` | top-k 25%, `importance_weight=0.50` | 30,000 | 26.9966 | 0.8303 | 0.1842 | 141.34s | 440,071 | 130M | partial importance 曲线继续正向，当前预算效率最佳 |
 | `output/0001/vfm_dinov2_token_edge_topk025_i050_garden_30k_r8` | `dinov2_token_edge_l1` | garden, top-k 25%, `importance_weight=0.50` | 30,000 | 28.9644 | 0.8986 | 0.0954 | 139.31s | 262,385 | 92M | 第二场景复验，超过 garden baseline 与 cached-edge v1 |
+| `output/0001/vfm_dinov2_token_edge_topk025_i050_counter_30k_r8` | `dinov2_token_edge_l1` | counter, top-k 25%, `importance_weight=0.50` | 30,000 | 29.7174 | 0.9338 | 0.0751 | 140.29s | 119,695 | 42M | 第三场景复验，点数接近 baseline 且超过 cached-edge v1 |
 | `output/0001/vfm_dinov2_token_edge_topk025_i075_bicycle_30k_r8` | `dinov2_token_edge_l1` | top-k 25%, `importance_weight=0.75` | 30,000 | 27.0284 | 0.8332 | 0.1788 | 155.18s | 472,164 | 137M | 高质量预算点，略优于 top-k 15% |
 | `output/0001/vfm_dinov2_token_edge_topk025_supportnorm_i050_bicycle_620_r8` | `dinov2_token_edge_l1` | top-k 25%, `importance_weight=0.50`, `support_ratio` | 620 | 20.8465 | 0.4756 | 0.5468 | 2.96s | 61,517 | 35M | 支持度归一化链路快速验证 |
 | `output/0001/vfm_dinov2_token_edge_topk025_supportnorm_i050_bicycle_30k_r8` | `dinov2_token_edge_l1` | top-k 25%, `importance_weight=0.50`, `support_ratio` | 30,000 | 26.9694 | 0.8286 | 0.1878 | 149.40s | 432,948 | 128M | 点数略降但质量回落，不优于 i0.50 |
@@ -528,13 +529,16 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 - `garden` 复验先构建并验证 `output/0001/vfm_cache/garden_dinov2_vits14`，共 185 张图对应的 DINOv2 ViT-S/14 cache，目录大小约 23M。`top-k 25% + importance_weight=0.50` 完成 30k train、render 和 metrics，最终 262,385 个 Gaussians。
 - 在 `garden` 上，DINO token-edge partial importance 相比本地 baseline `output/0001/baseline_garden_30k_r8` 提升 +0.2593 PSNR、+0.0097 SSIM、LPIPS 改善 -0.0179。若对比 full MipNeRF360 v1 统一表中的 garden baseline，则提升 +0.2388 PSNR、+0.0092 SSIM、LPIPS 改善 -0.0177，同时多 65,878 个 Gaussians，训练多 10.38s。
 - 相比 full MipNeRF360 v1 的 garden cached-edge v1，DINO token-edge partial importance 仍提升 +0.0641 PSNR、+0.0024 SSIM、LPIPS 改善 -0.0048；代价是多 13,981 个 Gaussians，训练多 4.28s。这说明 i0.50 不是只在 bicycle 生效，但它仍不是 budget-neutral 结论。
+- `counter` 复验先构建并验证 `output/0001/vfm_cache/counter_dinov2_vits14`，共 240 张图对应的 DINOv2 ViT-S/14 cache，目录大小约 30M。`top-k 25% + importance_weight=0.50` 完成 30k train、render 和 metrics，最终 119,695 个 Gaussians。
+- 在 `counter` 上，DINO token-edge partial importance 相比 full MipNeRF360 v1 的 counter baseline 提升 +0.1763 PSNR、+0.0026 SSIM、LPIPS 改善 -0.0055；Gaussian 数量只多 6,672 个，约 +5.9%，训练多 16.02s。相比 counter cached-edge v1，仍提升 +0.0746 PSNR、+0.0017 SSIM、LPIPS 改善 -0.0037，点数多 8,570 个，训练多 8.16s。
+- 三个代表场景目前形成比较清晰的形态：`bicycle` 用于和历史方法直接比较，`garden` 证明室外植被/高频纹理上 DINO i0.50 超过 edge proxy，`counter` 证明室内/台面场景上也能在接近 baseline 点数的条件下超过 baseline 与 cached-edge v1。下一步若继续扩展，应优先测试 cached-edge v1 的负例 `treehill`，验证 DINO token-edge 是否能处理 edge proxy 失效场景。
 - top-k 25% `importance_weight=0.75` 继续改善质量，但收益开始变慢：相比 `importance_weight=0.50` 多 32,093 个 Gaussians，换来 +0.0317 PSNR、+0.0028 SSIM、LPIPS 改善 -0.0055。它相对 top-k 15% 多 7,166 个点，PSNR 高 +0.0061、SSIM 高 +0.0010、LPIPS 改善 -0.0022，因此可作为高质量预算点，但预算效率不如 `importance_weight=0.50` 清晰。
 - `support_ratio` 快速验证在 620-step 下得到 61,517 个 Gaussians，PSNR 20.8465、SSIM 0.4756、LPIPS 0.5468；它与历史 top-k 15% 快速验证的 61,555 个点基本一致，说明额外的 support-count raster pass 没有破坏 densification 链路。
 - `support_ratio + importance_weight=0.50` 30k 最终 432,948 个 Gaussians，比普通 i0.50 少 7,123 个点，但质量回落 -0.0272 PSNR、-0.0018 SSIM、LPIPS 差 +0.0036，训练时间也多 8.05s。它仍优于 cadence control（+0.0407 PSNR、+0.0045 SSIM、LPIPS 改善 -0.0086），但不如直接 partial importance i0.50，因此支持度归一化不是当前最佳预算效率方向。
 - 高置信 VFM 区域保护的 620-step 快速验证使用 `vfm_prune_protect_weight=0.25`、`vfm_prune_protect_mode=rgb_aware`、`vfm_prune_protect_min_count=5`、`vfm_prune_protect_power=2.0`。它完成 train、render 和 metrics，最终 61,604 个 Gaussians，PSNR 20.8808、SSIM 0.4757、LPIPS 0.5457，说明 protection score 可以同时接入 densification 评分和后期 pruning-only 评分路径。
 - 高置信 VFM 区域保护的 30k 正式对照最终 441,352 个 Gaussians，比普通 `importance_weight=0.50` 多 1,281 个点；PSNR 低 -0.0056、SSIM 低 -0.0001，LPIPS 仅改善 -0.0003，训练时间多 3.36s。它没有形成比 i0.50 更好的预算效率点，说明简单保护高 VFM 命中区域不能解决当前的预算-质量矛盾。
 - staged 490,832、final 490,832、high-score final 490,832 和 `rgb_only` 分别暴露了四类问题：中期反复压 cap 会损伤结构生长，终局一次性低分裁剪排序不够可靠，终局高分裁剪更不可靠，完全关闭 VFM densification 又会交回主要质量收益。`importance_weight=0.25/0.50/0.75` 给出连续正向曲线，因此 partial VFM importance 是当前最有效的预算控制旋钮。
-- 这一路径不引入在线 DINO inference，成本明显低于 descriptor 系列。当前 0001 在 bicycle 上的最佳质量结论仍定为 top-k 25% 完整对照；预算方向把 `importance_weight=0.50` 作为约 440k 点数下的效率点，把 `importance_weight=0.75` 作为略优于 top-k 15% 的高质量预算点。`garden` 复验支持 i0.50 的跨场景有效性。继续把权重推到 1.0 基本回到完整 top-k25 已知上界；support-normalized score 和高置信 prune-protect 都未优于普通 partial importance。下一步应优先做少量跨场景复验和自动容量保护，而不是追加同类 scorer 单点。
+- 这一路径不引入在线 DINO inference，成本明显低于 descriptor 系列。当前 0001 在 bicycle 上的最佳质量结论仍定为 top-k 25% 完整对照；预算方向把 `importance_weight=0.50` 作为约 440k 点数下的效率点，把 `importance_weight=0.75` 作为略优于 top-k 15% 的高质量预算点。`garden` 和 `counter` 复验支持 i0.50 的跨场景有效性，尤其 `counter` 在仅 +5.9% Gaussian 的条件下获得三项指标提升。继续把权重推到 1.0 基本回到完整 top-k25 已知上界；support-normalized score 和高置信 prune-protect 都未优于普通 partial importance。下一步应优先做少量跨场景复验和自动容量保护，而不是追加同类 scorer 单点。
 
 ## 2026-05-07 DINOv2 Descriptor 打分器快速验证
 
