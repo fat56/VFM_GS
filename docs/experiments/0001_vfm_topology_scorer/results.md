@@ -493,6 +493,7 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 | `output/0001/vfm_dinov2_token_edge_topk015_bicycle_30k_r8` | `dinov2_token_edge_l1` | top-k 15% | 30,000 | 27.0223 | 0.8322 | 0.1810 | 140.40s | 464,998 | 136M | 完整对照，质量低于默认 DINO token-edge，但更省点更快 |
 | `output/0001/vfm_dinov2_token_edge_topk025_bicycle_30k_r8` | `dinov2_token_edge_l1` | top-k 25% | 30,000 | 27.0636 | 0.8354 | 0.1748 | 146.76s | 497,328 | 144M | 当前 bicycle 30k 质量最佳 |
 | `output/0001/vfm_dinov2_token_edge_topk025_budget490832_staged105_bicycle_30k_r8` | `dinov2_token_edge_l1` | top-k 25%, staged 490,832 | 30,000 | 27.0001 | 0.8286 | 0.1887 | 146.81s | 453,505 | 133M | 预算更低，但质量明显回落 |
+| `output/0001/vfm_dinov2_token_edge_topk025_budget490832_final_bicycle_30k_r8` | `dinov2_token_edge_l1` | top-k 25%, final 490,832 | 30,000 | 26.8466 | 0.8244 | 0.1858 | 141.91s | 490,832 | 142M | 仅最终裁剪 6,723 个点，质量明显回落 |
 
 解读：
 
@@ -502,8 +503,10 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 - 相比默认 DINO token-edge，top-k 15% 少 25,834 个 Gaussians，训练少 25.71s，但质量下降 -0.0354 PSNR、-0.0023 SSIM、LPIPS 差 +0.0043。它是更高效的 DINO token-edge 变体，但没有刷新质量上界。
 - top-k 25% 刷新了当前 bicycle 30k 质量上界。相比默认 DINO token-edge，它提升 +0.0059 PSNR、+0.0009 SSIM、LPIPS 改善 -0.0019，但多 6,496 个 Gaussians；相比原始 baseline，它提升 +0.3604 PSNR、+0.0287 SSIM、LPIPS 改善 -0.0530。
 - top-k 25% staged 490,832 从 iteration 7500 到 14500 触发 15 次 staged pruning，最终自然落到 453,505 个 Gaussians，低于 target 因而跳过最终裁剪。它相比 top-k 25% 完整对照少 43,823 个点，但质量下降 -0.0634 PSNR、-0.0068 SSIM、LPIPS 差 +0.0139。
-- staged 490,832 仍优于原始 baseline 和 `fastgs_densify100` cadence control，但不如 top-k 15% 完整对照，也低于默认 DINO token-edge。说明当前 staged pruning 对 DINO token-edge top-k 的中期结构仍有损伤；如果要做预算约束，下一步应采用更晚启动、更大 margin 或容量保护，而不是从 7500 iteration 开始反复压 cap。
-- 这一路径不引入在线 DINO inference，成本明显低于 descriptor 系列。当前 0001 在 bicycle 上的最佳质量结论应定为 top-k 25% 完整对照；预算方向则保留 top-k 15% 作为更高效但略弱的选择。
+- top-k 25% final 490,832 不做中期裁剪，训练结束时从 497,555 个 Gaussians 只裁到 490,832，实际删除 6,723 个点。但它相比 top-k 25% 完整对照下降 -0.2170 PSNR、-0.0110 SSIM、LPIPS 差 +0.0110；相比默认 DINO token-edge 也低 -0.2111 PSNR、-0.0101 SSIM、LPIPS 差 +0.0091。
+- final 490,832 仍优于原始 baseline（+0.1434 PSNR、+0.0177 SSIM、LPIPS 改善 -0.0420），但相对 `fastgs_densify100` cadence control 变成 PSNR 更低、SSIM 基本持平、LPIPS 更好。这个负例说明当前 final target-prune 的排序即使只裁约 1.35% Gaussians，也会误删对结构质量敏感的点。
+- staged 490,832 和 final 490,832 分别暴露了两类问题：前者的中期反复压 cap 会损伤结构生长，后者的终局一次性低分裁剪排序不够可靠。因此预算约束下一步不应继续依赖最终硬裁剪，而应改成预算感知 scorer、support-normalized pruning score、或把 VFM 信号用于 prune-protect 而不是直接放大 densification。
+- 这一路径不引入在线 DINO inference，成本明显低于 descriptor 系列。当前 0001 在 bicycle 上的最佳质量结论仍定为 top-k 25% 完整对照；预算方向则保留 top-k 15% 作为更高效但略弱的选择，490,832 staged/final 两个预算 run 均作为负例。
 
 ## 2026-05-07 DINOv2 Descriptor 打分器快速验证
 

@@ -2,12 +2,12 @@
 
 ## 进行中
 
-- `0001_vfm_topology_scorer`: 第一版实验进入收束阶段。`cached_edge_l1 + staged target ~= 1.42x baseline count` 已完成 MipNeRF360 全 9 场景评估，平均 PSNR/SSIM/LPIPS 均超过 baseline，是 0001 v1 的正向控制组；但平均 Gaussian 数量增加约 24.5%，训练时间增加约 11.1%，且 `treehill` 是明确负例。Tandt/DB 新增全场景评估显示跨数据集差异：DB 两场景平均正向，Tandt 两场景平均负向且 Gaussian 数量下降约 37.3%。已增加默认关闭的 `prune_min_gaussian_count` 并完成 Tandt 容量保护诊断：平均结果从 cached edge v1 的 PSNR 25.5799、SSIM 0.9316、LPIPS 0.0608 恢复到 25.7806、0.9337、0.0585，但仍低于 baseline 的 25.9551、0.9377、0.0541。下一步应把容量保护升级为自动场景自适应机制，并继续处理 edge/cadence/pruning trajectory 的耦合。DINOv2 descriptor 路径已从 cache、在线 descriptor、top-k/smoothing、soft top-k、percentile、`rgb_only`、staged 预算对齐推进到 dense recovery；当前结论是 descriptor unpruned 有真实质量收益，但接近 410k budget、降低 top-k ratio、只参与 support/pruning、percentile mask、多层 soft 计数、严格 240k dense recovery 或 staged 后 dense recovery 后，仍未稳定超过 `fastgs_densify100` cadence control。DINO token-edge top-k 25% 完成 bicycle 30k 对照，达到 PSNR 27.0636、SSIM 0.8354、LPIPS 0.1748，刷新当前 bicycle 质量上界；staged 490,832 预算版回落到 27.0001 / 0.8286 / 0.1887，说明预算压缩需要更温和时序。
+- `0001_vfm_topology_scorer`: 第一版实验进入收束阶段。`cached_edge_l1 + staged target ~= 1.42x baseline count` 已完成 MipNeRF360 全 9 场景评估，平均 PSNR/SSIM/LPIPS 均超过 baseline，是 0001 v1 的正向控制组；但平均 Gaussian 数量增加约 24.5%，训练时间增加约 11.1%，且 `treehill` 是明确负例。Tandt/DB 新增全场景评估显示跨数据集差异：DB 两场景平均正向，Tandt 两场景平均负向且 Gaussian 数量下降约 37.3%。已增加默认关闭的 `prune_min_gaussian_count` 并完成 Tandt 容量保护诊断：平均结果从 cached edge v1 的 PSNR 25.5799、SSIM 0.9316、LPIPS 0.0608 恢复到 25.7806、0.9337、0.0585，但仍低于 baseline 的 25.9551、0.9377、0.0541。下一步应把容量保护升级为自动场景自适应机制，并继续处理 edge/cadence/pruning trajectory 的耦合。DINOv2 descriptor 路径已从 cache、在线 descriptor、top-k/smoothing、soft top-k、percentile、`rgb_only`、staged 预算对齐推进到 dense recovery；当前结论是 descriptor unpruned 有真实质量收益，但接近 410k budget、降低 top-k ratio、只参与 support/pruning、percentile mask、多层 soft 计数、严格 240k dense recovery 或 staged 后 dense recovery 后，仍未稳定超过 `fastgs_densify100` cadence control。DINO token-edge top-k 25% 完成 bicycle 30k 对照，达到 PSNR 27.0636、SSIM 0.8354、LPIPS 0.1748，刷新当前 bicycle 质量上界；staged 490,832 预算版回落到 27.0001 / 0.8286 / 0.1887，final 490,832 只裁 6,723 个点仍回落到 26.8466 / 0.8244 / 0.1858，说明当前硬预算裁剪排序不可靠。
 
 ## 排队
 
 - 下一版优先设计预算感知 scorer 和自动容量保护，而不是继续堆叠 descriptor mask ratio：候选方向包括按 Gaussian 支持度归一化 VFM score、把 VFM 用作 prune-protect 而非 densify-amplify、当自然点数显著低于 baseline 预测值时回退 pruning 强度、在 staged pruning 后立即短恢复而非训练结束统一恢复。
-- 若继续做 0001 追加验证，只保留跨场景复验或明确改变训练时序的实验，不再追加同类 top-k / percentile / soft-top-k 单点。
+- 若继续做 0001 追加验证，只保留跨场景复验或明确改变预算行为的实验，不再追加同类 top-k / percentile / soft-top-k 单点，也不再追加单纯 final hard-prune 预算点。
 
 ## 阻塞
 
@@ -63,6 +63,7 @@
 - 完成 DINO token-edge top-k 15% bicycle 30k 对照；PSNR 27.0223、SSIM 0.8322、LPIPS 0.1810，464,998 个 Gaussians，训练 140.40s。相比原始 baseline 清晰正向；相比默认 DINO token-edge 少 25,834 个点、训练少 25.71s，但质量略低。
 - 完成 DINO token-edge top-k 25% bicycle 30k 对照；PSNR 27.0636、SSIM 0.8354、LPIPS 0.1748，497,328 个 Gaussians，训练 146.76s。相比默认 DINO token-edge 三项指标小幅提升，相比原始 baseline 提升 +0.3604 PSNR、+0.0287 SSIM、LPIPS 改善 -0.0530。
 - 完成 DINO token-edge top-k 25% staged 490,832 预算探测；最终 453,505 个 Gaussians，PSNR 27.0001、SSIM 0.8286、LPIPS 0.1887。它仍优于 baseline 和 cadence control，但低于 top-k 15%、默认 DINO token-edge 和 top-k 25% 完整对照。
+- 完成 DINO token-edge top-k 25% final 490,832 预算探测；训练结束从 497,555 裁到 490,832，只删除 6,723 个点，但 PSNR/SSIM/LPIPS 回落到 26.8466、0.8244、0.1858，说明当前 low-score final target-prune 排序不适合作为温和预算约束。
 - 完成 no-effect/cadence control；`fastgs_photometric + densification_interval=100` 与 zero-weight VFM runs 都在约 410k Gaussians，说明此前 no-effect 高点数主要来自 densification cadence。
 - 增加 `post_prune_finetune_iterations` 并完成 final-prune-plus-fine-tune 探测；严格 240k 预算下质量明显优于 final-only，但仍低于 baseline 与 350k staged 正向控制组。
 - 增加 dense recovery 调度参数；支持恢复阶段独立 optimizer step interval、SH step interval、局部 xyz LR 和 staged/any-prune 触发。260-step 快速验证已完成，能从 88,194 裁到 65,000 并保存 `ours_280`。
