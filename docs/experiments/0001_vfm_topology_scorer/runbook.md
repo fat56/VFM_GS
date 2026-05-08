@@ -426,7 +426,9 @@ uv run --active python scripts/summarize_0001_cross_dataset_selector.py
 - `output/0001/cross_dataset_selector/recommendations.csv`
 - `output/0001/cross_dataset_selector/recommendation_averages.csv`
 
-`recommendations.csv` 中的 `best_psnr_method` 和 `best_lpips_method` 表示单指标最优；`qcgi_pick_method` 表示按质量-容量收益指数选择；`validated_policy_method` 是当前保守策略：DINO weighted i0.50 只有同时三项优于 baseline 和 cached-edge 时才选，cached-edge 三项优于 baseline 时次优先，否则回退 baseline；`budget_no_worse_method` 表示在不低于 baseline 三项指标的候选中选择 Gaussian 数最少者，baseline 本身也会参与这个保守预算选择；`vfm_psnr_pick` 只在 VFM 后端内部按 PSNR 选择。当前 13 场景合并后，DINO weighted i0.50 相对 baseline 平均提升 +0.1430 PSNR、+0.0076 SSIM、LPIPS 改善 -0.0152；相对 cached-edge v1 平均提升 +0.0848 PSNR、+0.0061 SSIM、LPIPS 改善 -0.0112。但逐场景推荐不是单一后端：8 个场景 PSNR 选择 DINO weighted i0.50，2 个场景选择 cached-edge v1，3 个场景选择 baseline。当前 `qcgi_pick_method`、`validated_policy_method` 与 PSNR oracle 一致，均值为 28.6786 / 0.8868 / 0.1182。
+`recommendations.csv` 中的 `best_psnr_method` 和 `best_lpips_method` 表示单指标最优；`best_dino_method` 表示 DINO weighted i0.50/i0.75/i0.90 内部的 PSNR 最优档；`qcgi_pick_method` 表示按质量-容量收益指数选择；`validated_policy_method` 是当前保守策略：DINO weighted 候选只有同时三项优于 baseline 和 cached-edge 时才选，cached-edge 三项优于 baseline 时次优先，否则回退 baseline；`budget_no_worse_method` 表示在不低于 baseline 三项指标的候选中选择 Gaussian 数最少者，baseline 本身也会参与这个保守预算选择；`vfm_psnr_pick` 只在 VFM 后端内部按 PSNR 选择。
+
+截至 2026-05-09，selector 已读取 baseline、cached-edge v1、DINO weighted i0.50/i0.75/i0.90。13 场景固定三档中，i0.50/i0.75/i0.90 均值分别为 28.6061 / 0.8873 / 0.1154、28.6066 / 0.8872 / 0.1153、28.5919 / 0.8872 / 0.1154；固定档位不是主结论。场景级 `validated_policy` 与 PSNR oracle 一致，均值为 28.6981 / 0.8872 / 0.1179、178,903 个 Gaussians，相对 baseline 为 +0.2350 PSNR、+0.0075 SSIM、LPIPS 改善 -0.0127。`qcgi_pick_method` 均值为 28.6930 / 0.8881 / 0.1147、188,542 个 Gaussians，更偏综合质量收益。逐场景推荐也不是单一后端：9 个场景 PSNR 选择 DINO weighted，1 个场景选择 cached-edge v1，3 个场景选择 baseline。
 
 QCGI 的当前定义用于实验统筹，而不是训练时约束：
 

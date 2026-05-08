@@ -102,14 +102,18 @@
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
 | DB 平均 | cached-edge v1 vs baseline | 30.5631 | +0.4451 | 0.9361 | +0.0037 | 0.0637 | -0.0021 | 62,092 | +7,408 | 133.78s | +12.56s | 两个 DB 场景均正向 |
 | DB 平均 | DINO weighted i0.50 vs baseline | 30.3603 | +0.2423 | 0.9360 | +0.0035 | 0.0641 | -0.0017 | 62,261 | +7,576 | 141.48s | +20.26s | 相对 baseline 平均正向；低于 DB cached-edge v1 |
+| DB 平均 | DINO weighted i0.90 vs baseline | 30.6074 | +0.4894 | 0.9376 | +0.0051 | 0.0620 | -0.0038 | 63,006 | +8,320 | 197.47s | +76.24s | 高权重 DINO 在 DB 上超过 baseline 与 cached-edge |
+| DB 平均 | DINO weighted i0.90 vs cached-edge v1 | 30.6074 | +0.0443 | 0.9376 | +0.0015 | 0.0620 | -0.0017 | 63,006 | +913 | 197.47s | +63.68s | 质量正向但训练开销较高 |
 | drjohnson | cached-edge v1 vs baseline | 30.6034 | +0.1055 | 0.9283 | +0.0018 | 0.0726 | -0.0029 | 78,899 | +7,937 | 130.54s | +8.06s | 三项正向 |
 | drjohnson | DINO weighted i0.50 vs baseline | 30.6889 | +0.1911 | 0.9299 | +0.0034 | 0.0706 | -0.0050 | 80,243 | +9,281 | 143.40s | +20.92s | 同时超过 baseline 和 cached-edge v1 |
+| playroom | DINO weighted i0.90 vs cached-edge v1 | 30.6165 | +0.0938 | 0.9450 | +0.0011 | 0.0548 | -0.0000 | 42,768 | -2,518 | 195.49s | +58.46s | i0.90 修复 i0.50 低于 cached-edge 的问题 |
 | playroom | cached-edge v1 vs baseline | 30.5228 | +0.7847 | 0.9439 | +0.0055 | 0.0548 | -0.0013 | 45,286 | +6,878 | 137.03s | +17.07s | 强正向 |
 | Tandt 平均 | 容量保护 vs cached-edge v1 | 25.7806 | +0.2007 | 0.9337 | +0.0021 | 0.0585 | -0.0023 | 50,370 | +18,808 | 144.04s | -0.81s | 回退保护有效，但仍低于 baseline |
 | Tandt 平均 | DINO weighted i0.50 vs cached-edge v1 | 25.7519 | +0.1721 | 0.9346 | +0.0031 | 0.0575 | -0.0033 | 38,394 | +6,832 | 151.05s | +6.20s | 修复 cached-edge 负例的一部分；仍低于 baseline |
 | 13 场景合并 | DINO weighted i0.50 vs baseline | 28.6061 | +0.1430 | 0.8873 | +0.0076 | 0.1154 | -0.0152 | 191,841 | +55,674 | 140.27s | +13.24s | 跨数据集平均质量最高，但不是预算中性 |
 | 13 场景合并 | DINO weighted i0.50 vs cached-edge v1 | 28.6061 | +0.0848 | 0.8873 | +0.0061 | 0.1154 | -0.0112 | 191,841 | +27,985 | 140.27s | +0.95s | 平均优于 cached-edge，但逐场景仍需选择 |
-| 13 场景合并 | validated policy vs baseline | 28.6786 | +0.2155 | 0.8868 | +0.0071 | 0.1182 | -0.0124 | 177,134 | +40,967 | 137.07s | +10.05s | 事后场景选择策略，当前 13 场景与 PSNR oracle 一致 |
+| 13 场景合并 | validated policy vs baseline | 28.6981 | +0.2350 | 0.8872 | +0.0075 | 0.1179 | -0.0127 | 178,903 | +42,735 | 154.24s | +27.21s | 多档场景选择策略，当前 13 场景与 PSNR oracle 一致 |
+| 13 场景合并 | QCGI pick vs baseline | 28.6930 | +0.2300 | 0.8881 | +0.0083 | 0.1147 | -0.0159 | 188,542 | +52,375 | 162.15s | +35.12s | 更偏 SSIM/LPIPS 与容量综合收益 |
 
 ## 质量-容量收益指数
 
@@ -132,12 +136,14 @@ QCGI = quality_gain - gs_penalty
 | MipNeRF360 `treehill` DINO weighted i0.50 vs baseline | -0.0416 | +0.0107 | -0.0391 | +171,417 | `gte_0.10M` | -0.0182 | 增点较多且 PSNR 低于 baseline，应回退 |
 | MipNeRF360 `counter` weighted i0.90 vs weighted i0.50 | +0.0583 | +0.0005 | -0.0010 | +3,235 | `sub_0.01M` | +0.0694 | 少量增点换来三项质量提升，适合质量档选择 |
 | MipNeRF360 `treehill` weighted i0.90 vs weighted i0.50 | -0.0003 | +0.0024 | -0.0030 | -13,534 | `no_growth` | +0.0623 | PSNR 几乎持平且省点，SSIM/LPIPS 明显改善，适合 QCGI 选择 |
+| DB `playroom` DINO weighted i0.90 vs cached-edge v1 | +0.0938 | +0.0011 | -0.0000 | -2,518 | `no_growth` | +0.1153 | 高权重 DINO 在 DB 上少点且超过 cached-edge |
 | 13 场景平均 DINO weighted i0.50 vs baseline | +0.1430 | +0.0076 | -0.0152 | +55,674 | `0.01M_to_0.10M` | +0.3155 | 跨数据集平均质量正向，容量增长处于可接受区间 |
+| 13 场景 validated policy vs baseline | +0.2350 | +0.0075 | -0.0127 | +42,735 | `0.01M_to_0.10M` | +0.4051 | 多档场景选择带来更高 PSNR，容量增长仍在可接受区间 |
 
-`scripts/summarize_0001_cross_dataset_selector.py` 已把 `quality_gain`、`quality_gain_per_10k_gs`、`gs_growth_band`、`gs_penalty` 和 `qcgi` 写入 comparison 表，并新增 `qcgi_pick_method`。在当前 13 个跨数据集场景中，QCGI 选择与 `validated_policy`、PSNR oracle 一致，平均 PSNR/SSIM/LPIPS 为 28.6786 / 0.8868 / 0.1182，Gaussian 数为 177,134。`scripts/summarize_0001_weighted_candidates.py` 也已把 QCGI 接入 weighted 档位选择；在 MipNeRF360 weighted 三档中，严格 `quality_pick` 均值为 28.8641 / 0.8665 / 0.1392、257,326 个 Gaussians，`QCGI pick` 均值为 28.8641 / 0.8667 / 0.1388、255,822 个 Gaussians。下一阶段可以先继续把它作为离线选择准则；当更多数据集验证稳定后，再把 QCGI 或其分档信号接入 density/prune 强度的自适应控制。
+`scripts/summarize_0001_cross_dataset_selector.py` 已把 `quality_gain`、`quality_gain_per_10k_gs`、`gs_growth_band`、`gs_penalty` 和 `qcgi` 写入 comparison 表，并新增 `qcgi_pick_method`。它现在会读取 DINO weighted i0.50/i0.75/i0.90 三档：13 场景 `validated_policy` 与 PSNR oracle 一致，平均为 28.6981 / 0.8872 / 0.1179、178,903 个 Gaussians；`QCGI pick` 为 28.6930 / 0.8881 / 0.1147、188,542 个 Gaussians。`scripts/summarize_0001_weighted_candidates.py` 也已把 QCGI 接入 MipNeRF360 weighted 档位选择；严格 `quality_pick` 均值为 28.8641 / 0.8665 / 0.1392、257,326 个 Gaussians，`QCGI pick` 均值为 28.8641 / 0.8667 / 0.1388、255,822 个 Gaussians。下一阶段可以先继续把它作为离线选择准则；当更多数据集验证稳定后，再把 QCGI 或其分档信号接入 density/prune 强度的自适应控制。
 
 ## 简短结论
 
 当前应保留五条主线：`cached_edge_l1` 是 proxy 正向控制组，在 MipNeRF360 和 DB 上平均正向；`DINO top-k25 + importance_weight=0.50` 是 MipNeRF360 全场景质量候选，相对 baseline 平均 +0.2051 PSNR、+0.0115 SSIM、LPIPS -0.0234；`weighted + i0.50` 是全场景预算效率候选，相对普通 i0.50 平均少 8,836 点、训练少 2.87s，质量只小幅回落；`weighted quality/QCGI pick` 是新的场景选择质量档，在 9 场景平均上超过固定 weighted i0.50 和普通 i0.50，且 QCGI 版本只比 weighted i0.50 多 1,086 个点；QCGI 是下一步场景选择和自适应容量控制的离线指导指标。
 
-边界也很清楚：DINO i0.50 仍不是预算中性方案，固定 weighted i0.75/i0.90 都不是默认档，Tandt 上 cached-edge v1 不是质量正例，容量保护只适合作为默认关闭的诊断/回退防线。Tandt DINO weighted i0.50 只相对 cached-edge v1 正向，平均仍低于 baseline -0.2032 PSNR、-0.0031 SSIM、LPIPS 差 +0.0035，因此应记录为恢复型结果而不是默认替代方案。DB DINO weighted i0.50 相对 baseline 平均正向，但低于 DB cached-edge v1，说明它是跨数据集候选而不是固定最优后端。13 场景选择表显示 PSNR 最优分布为 8 个 DINO weighted、2 个 cached-edge、3 个 baseline，`validated_policy` 当前与 PSNR oracle 一致，但它仍是事后策略，必须用下一批新场景验证泛化。`adaptive_weighted + quadratic 430k` 在 treehill 第二场景没有复现 bicycle 收益，因此不放入正向主线。
+边界也很清楚：固定 weighted i0.75/i0.90 不是跨数据集默认档，Tandt 上高权重会继续退化，容量保护只适合作为默认关闭的诊断/回退防线。DB DINO weighted i0.90 是新的强正例，但训练时间明显增加，不能简单当作全局默认。13 场景选择表显示 PSNR 最优分布为 9 个 DINO weighted、1 个 cached-edge、3 个 baseline，`validated_policy` 当前与 PSNR oracle 一致，但它仍是事后策略，必须用下一批新场景验证泛化。`adaptive_weighted + quadratic 430k` 在 treehill 第二场景没有复现 bicycle 收益，因此不放入正向主线。

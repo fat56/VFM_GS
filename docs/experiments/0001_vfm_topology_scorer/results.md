@@ -285,6 +285,84 @@ QCGI = quality_gain - gs_penalty
 - 单一后端不能解释所有场景：DB `playroom` 和 MipNeRF360 `flowers` 更偏 cached-edge，Tandt 两场景和 MipNeRF360 `treehill` 的 PSNR 最优仍是 baseline。
 - 下一版不应继续只追加固定后端单点，而应做场景级选择或自动回退：先判断是否启用 VFM，再在 cached-edge 与 DINO weighted 之间选择。如果只能保守上线，应以 baseline 作为预算安全回退，以 DINO weighted/cached-edge 作为有证据的场景级增强。
 
+## 2026-05-09 Tandt/DB DINO weighted 多档复验
+
+目标：把 MipNeRF360 上已经完成的 `weighted i0.75/i0.90` 扩展到 `datasets/tandt_db`，验证更激进的 VFM importance 是否能改善跨数据集结果。实验仍使用 `-r 8`、30,000 iterations、`--eval`，DINO cache 复用 `output/0001/vfm_cache`，输出分别在 `output/0001/dino_weighted_i075_tandt`、`output/0001/dino_weighted_i090_tandt`、`output/0001/dino_weighted_i075_db` 和 `output/0001/dino_weighted_i090_db`。
+
+Tandt 结果：
+
+| 方法 | 场景数 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 | 结论 |
+|---|---:|---:|---:|---:|---:|---:|---|
+| baseline | 2 | 25.9551 | 0.9377 | 0.0541 | 50,370 | 140.26s | Tandt 当前质量上界 |
+| cached-edge v1 | 2 | 25.5799 | 0.9316 | 0.0608 | 31,562 | 144.85s | 明确负例 |
+| DINO weighted i0.50 | 2 | 25.7519 | 0.9346 | 0.0575 | 38,394 | 151.05s | 相对 cached-edge 修复，但仍低于 baseline |
+| DINO weighted i0.75 | 2 | 25.6201 | 0.9328 | 0.0585 | 37,986 | 214.65s | 低于 i0.50，不保留为默认 |
+| DINO weighted i0.90 | 2 | 25.5329 | 0.9323 | 0.0611 | 37,523 | 212.83s | 继续退化，不保留 |
+
+DB 结果：
+
+| 方法 | 场景数 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 | 结论 |
+|---|---:|---:|---:|---:|---:|---:|---|
+| baseline | 2 | 30.1179 | 0.9324 | 0.0658 | 54,685 | 121.22s | 控制组 |
+| cached-edge v1 | 2 | 30.5631 | 0.9361 | 0.0637 | 62,092 | 133.78s | 早期 proxy 正向控制组 |
+| DINO weighted i0.50 | 2 | 30.3603 | 0.9360 | 0.0641 | 62,261 | 141.48s | 相对 baseline 正向，低于 cached-edge |
+| DINO weighted i0.75 | 2 | 30.5446 | 0.9358 | 0.0633 | 63,034 | 181.81s | 接近 cached-edge，两个场景都高于 baseline |
+| DINO weighted i0.90 | 2 | 30.6074 | 0.9376 | 0.0620 | 63,006 | 197.47s | 同时超过 baseline 和 cached-edge，是 DB 当前 DINO 高质量档 |
+
+DB i0.90 逐场景对比：
+
+| 场景 | 参照 | ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| drjohnson | baseline | +0.1004 | +0.0037 | -0.0063 | +12,281 | +76.96s |
+| drjohnson | cached-edge v1 | -0.0052 | +0.0019 | -0.0033 | +4,344 | +68.91s |
+| playroom | baseline | +0.8785 | +0.0066 | -0.0013 | +4,360 | +75.52s |
+| playroom | cached-edge v1 | +0.0938 | +0.0011 | -0.0000 | -2,518 | +58.46s |
+
+解读：
+
+- Tandt 高权重档位是负向证据。i0.75/i0.90 都比 i0.50 更低，且训练时间明显增加，因此 Tandt 当前策略应回退 baseline，或只把 i0.50 作为“相对 cached-edge 修复”的诊断分支。
+- DB 高权重档位是正向证据。i0.90 在两个场景上都相对 baseline 三项正向，平均也超过 cached-edge v1；`playroom` 尤其说明高权重 DINO 可以修复 i0.50 低于 cached-edge 的问题。
+- 同一个 fixed weight 不能跨数据集通吃。真正有价值的是把 i0.50/i0.75/i0.90 作为场景候选池，再由 QCGI 或严格质量门槛选择。
+
+## 2026-05-09 跨数据集多档 selector 汇总
+
+`scripts/summarize_0001_cross_dataset_selector.py` 已扩展为读取 MipNeRF360/Tandt/DB 的 DINO weighted i0.50/i0.75/i0.90，并把 `best_dino_method`、`best_dino_vs_baseline_status`、`dino_weighted_i075_vs_baseline_status` 和 `dino_weighted_i090_vs_baseline_status` 写入 `recommendations.csv`。最终产物仍在 `output/0001/cross_dataset_selector`。
+
+13 场景固定方法均值：
+
+| 方法 | 场景数 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---:|---:|---:|---:|---:|---:|
+| baseline | 13 | 28.4631 | 0.8797 | 0.1306 | 136,168 | 127.03s |
+| cached-edge v1 | 13 | 28.5213 | 0.8813 | 0.1266 | 163,856 | 139.32s |
+| DINO weighted i0.50 | 13 | 28.6061 | 0.8873 | 0.1154 | 191,841 | 140.27s |
+| DINO weighted i0.75 | 13 | 28.6066 | 0.8872 | 0.1153 | 193,959 | 177.55s |
+| DINO weighted i0.90 | 13 | 28.5919 | 0.8872 | 0.1154 | 191,096 | 198.78s |
+
+选择策略均值：
+
+| 选择器 | 场景数 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 | 说明 |
+|---|---:|---:|---:|---:|---:|---:|---|
+| `best_psnr_oracle` | 13 | 28.6981 | 0.8872 | 0.1179 | 178,903 | 154.24s | PSNR 事后上界 |
+| `best_lpips_oracle` | 13 | 28.6800 | 0.8885 | 0.1139 | 194,663 | 167.83s | LPIPS 事后上界 |
+| `qcgi_pick` | 13 | 28.6930 | 0.8881 | 0.1147 | 188,542 | 162.15s | QCGI 更偏 SSIM/LPIPS 和容量收益 |
+| `validated_policy` | 13 | 28.6981 | 0.8872 | 0.1179 | 178,903 | 154.24s | 当前与 PSNR oracle 一致 |
+| `budget_no_worse` | 13 | 28.4794 | 0.8799 | 0.1303 | 135,011 | 132.55s | 预算保守选择 |
+| `vfm_psnr_pick` | 13 | 28.6636 | 0.8875 | 0.1154 | 190,246 | 157.32s | 只在 VFM 后端内部选 PSNR |
+
+逐场景 PSNR 最优分布：
+
+| 最优方法 | 场景 | 数量 |
+|---|---|---:|
+| DINO weighted | DB `drjohnson/playroom`；MipNeRF360 `bicycle/bonsai/counter/garden/kitchen/room/stump` | 9 |
+| cached-edge v1 | MipNeRF360 `flowers` | 1 |
+| baseline | MipNeRF360 `treehill`；Tandt `train/truck` | 3 |
+
+解读：
+
+- 纳入 i0.75/i0.90 后，13 场景 `validated_policy` 从 28.6786 / 0.8868 / 0.1182 提升到 28.6981 / 0.8872 / 0.1179，相对 baseline 为 +0.2350 PSNR、+0.0075 SSIM、LPIPS 改善 -0.0127，平均 Gaussian 数量增加 42,735。
+- 固定 i0.75/i0.90 不是答案：i0.75 平均 PSNR 只比 i0.50 高 +0.0005，训练时间多 37.28s；i0.90 平均 PSNR 反而低 -0.0142，训练时间多 58.51s。多档策略的收益来自场景选择，而不是全局提高权重。
+- QCGI pick 的 PSNR 略低于 validated policy，但 SSIM/LPIPS 更好，说明 QCGI 更适合作为“质量-容量综合指标”，后续可用于自适应 density/prune 强度；若论文主指标优先 PSNR，则 validated policy 更适合作为保守展示线。
+
 ## 2026-04-28 Mock v1 快速验证
 
 数据集：`datasets/mipnerf360/bicycle`，test split，`-r 8`，220 iterations，`densify_from_iter=50`，`densification_interval=50`。

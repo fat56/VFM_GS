@@ -15,11 +15,17 @@ METHOD_MAP = {
     "cached_edge_staged142": "cached_edge_staged142",
     "weighted_i050": "dino_weighted_i050",
     "dinov2_token_edge_weighted_i050": "dino_weighted_i050",
+    "weighted_i075": "dino_weighted_i075",
+    "dinov2_token_edge_weighted_i075": "dino_weighted_i075",
+    "weighted_i090": "dino_weighted_i090",
+    "dinov2_token_edge_weighted_i090": "dino_weighted_i090",
 }
 METHOD_ORDER = {
     "baseline": 0,
     "cached_edge_staged142": 1,
     "dino_weighted_i050": 2,
+    "dino_weighted_i075": 3,
+    "dino_weighted_i090": 4,
 }
 METRIC_KEYS = ("psnr", "ssim", "lpips")
 GS_UNIT = 10_000.0
@@ -120,7 +126,10 @@ def append_rows(
     path: Path,
     allowed_methods: set[str],
     source: str,
+    missing_ok: bool = False,
 ) -> None:
+    if missing_ok and not path.exists():
+        return
     for item in read_csv(path):
         raw_method = str(item.get("method", ""))
         if raw_method not in allowed_methods:
@@ -164,7 +173,7 @@ def build_summary(args: argparse.Namespace) -> list[dict[str, Any]]:
         rows,
         dataset="mipnerf360",
         path=args.mipnerf_weighted_summary,
-        allowed_methods={"weighted_i050"},
+        allowed_methods={"weighted_i050", "weighted_i075", "weighted_i090"},
         source=str(args.mipnerf_weighted_summary),
     )
     append_rows(
@@ -183,6 +192,22 @@ def build_summary(args: argparse.Namespace) -> list[dict[str, Any]]:
     )
     append_rows(
         rows,
+        dataset="tandt",
+        path=args.tandt_weighted_i075_summary,
+        allowed_methods={"dinov2_token_edge_weighted_i075"},
+        source=str(args.tandt_weighted_i075_summary),
+        missing_ok=True,
+    )
+    append_rows(
+        rows,
+        dataset="tandt",
+        path=args.tandt_weighted_i090_summary,
+        allowed_methods={"dinov2_token_edge_weighted_i090"},
+        source=str(args.tandt_weighted_i090_summary),
+        missing_ok=True,
+    )
+    append_rows(
+        rows,
         dataset="db",
         path=args.db_summary,
         allowed_methods={"baseline", "cached_edge_staged142"},
@@ -194,6 +219,22 @@ def build_summary(args: argparse.Namespace) -> list[dict[str, Any]]:
         path=args.db_weighted_summary,
         allowed_methods={"dinov2_token_edge_weighted_i050"},
         source=str(args.db_weighted_summary),
+    )
+    append_rows(
+        rows,
+        dataset="db",
+        path=args.db_weighted_i075_summary,
+        allowed_methods={"dinov2_token_edge_weighted_i075"},
+        source=str(args.db_weighted_i075_summary),
+        missing_ok=True,
+    )
+    append_rows(
+        rows,
+        dataset="db",
+        path=args.db_weighted_i090_summary,
+        allowed_methods={"dinov2_token_edge_weighted_i090"},
+        source=str(args.db_weighted_i090_summary),
+        missing_ok=True,
     )
     return sorted(rows, key=lambda row: (str(row["dataset"]), str(row["scene"]), method_sort_key(row)))
 
@@ -265,19 +306,23 @@ def quality_status(candidate: dict[str, Any] | None, reference: dict[str, Any] |
 def select_validated_policy(
     baseline: dict[str, Any] | None,
     cached: dict[str, Any] | None,
-    dino: dict[str, Any] | None,
+    dino_candidates: list[dict[str, Any]],
     best_psnr: dict[str, Any],
 ) -> tuple[dict[str, Any], str]:
     cached_vs_baseline = quality_status(cached, baseline)
-    dino_vs_baseline = quality_status(dino, baseline)
-    dino_vs_cached = quality_status(dino, cached)
+    dino_vs_baseline_candidates = [
+        row for row in dino_candidates if quality_status(row, baseline) == "all3_positive"
+    ]
+    dino_vs_both_candidates = [
+        row for row in dino_vs_baseline_candidates if quality_status(row, cached) == "all3_positive"
+    ]
 
-    if dino is not None and dino_vs_baseline == "all3_positive" and dino_vs_cached == "all3_positive":
-        return dino, "dino_all3_vs_baseline_and_cached"
+    if dino_vs_both_candidates:
+        return max(dino_vs_both_candidates, key=psnr_key), "dino_all3_vs_baseline_and_cached"
     if cached is not None and cached_vs_baseline == "all3_positive":
         return cached, "cached_all3_vs_baseline"
-    if dino is not None and dino_vs_baseline == "all3_positive":
-        return dino, "dino_all3_vs_baseline"
+    if dino_vs_baseline_candidates:
+        return max(dino_vs_baseline_candidates, key=psnr_key), "dino_all3_vs_baseline"
     if baseline is not None:
         return baseline, "baseline_fallback"
     return best_psnr, "best_psnr_fallback"
@@ -319,12 +364,19 @@ def build_recommendations(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         ordered = list(methods.values())
         baseline = methods.get("baseline")
         cached = methods.get("cached_edge_staged142")
-        dino = methods.get("dino_weighted_i050")
+        dino_candidates = [
+            methods[name]
+            for name in ("dino_weighted_i050", "dino_weighted_i075", "dino_weighted_i090")
+            if name in methods
+        ]
+        best_dino = max(dino_candidates, key=psnr_key) if dino_candidates else None
         best_psnr = max(ordered, key=psnr_key)
         best_lpips = max(ordered, key=lpips_key)
         qcgi_pick = max(ordered, key=lambda row: qcgi_pick_key(row, baseline))
         qcgi_pick_score = 0.0 if qcgi_pick["method"] == "baseline" or baseline is None else qcgi(qcgi_pick, baseline)
-        validated_policy, validated_policy_reason = select_validated_policy(baseline, cached, dino, best_psnr)
+        validated_policy, validated_policy_reason = select_validated_policy(
+            baseline, cached, dino_candidates, best_psnr
+        )
 
         budget_candidates = ordered
         if baseline is not None:
@@ -341,8 +393,10 @@ def build_recommendations(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             reason = "baseline 的 PSNR 最高，当前场景不应默认启用 VFM 后端。"
         elif best_psnr["method"] == "cached_edge_staged142":
             reason = "cached-edge 是该场景 PSNR 最优的 VFM proxy。"
+        elif str(best_psnr["method"]).startswith("dino_weighted_"):
+            reason = "{} 是该场景 PSNR 最优的 DINO weighted 候选。".format(best_psnr["method"])
         else:
-            reason = "DINO weighted i0.50 是该场景 PSNR 最优的 VFM 候选。"
+            reason = "{} 是该场景 PSNR 最优的 VFM 候选。".format(best_psnr["method"])
 
         recommendations.append(
             {
@@ -352,6 +406,8 @@ def build_recommendations(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "best_psnr": best_psnr["psnr"],
                 "best_lpips_method": best_lpips["method"],
                 "best_lpips": best_lpips["lpips"],
+                "best_dino_method": best_dino["method"] if best_dino is not None else "",
+                "best_dino_psnr": best_dino["psnr"] if best_dino is not None else "",
                 "qcgi_pick_method": qcgi_pick["method"],
                 "qcgi_pick_score": qcgi_pick_score,
                 "validated_policy_method": validated_policy["method"],
@@ -360,8 +416,12 @@ def build_recommendations(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "budget_no_worse_gs_num": budget_pick["gs_num"],
                 "vfm_psnr_pick": vfm_pick["method"],
                 "cached_vs_baseline_status": quality_status(cached, baseline),
-                "dino_weighted_vs_baseline_status": quality_status(dino, baseline),
-                "dino_weighted_vs_cached_status": quality_status(dino, cached),
+                "dino_weighted_vs_baseline_status": quality_status(methods.get("dino_weighted_i050"), baseline),
+                "dino_weighted_vs_cached_status": quality_status(methods.get("dino_weighted_i050"), cached),
+                "best_dino_vs_baseline_status": quality_status(best_dino, baseline),
+                "best_dino_vs_cached_status": quality_status(best_dino, cached),
+                "dino_weighted_i075_vs_baseline_status": quality_status(methods.get("dino_weighted_i075"), baseline),
+                "dino_weighted_i090_vs_baseline_status": quality_status(methods.get("dino_weighted_i090"), baseline),
                 "reason": reason,
             }
         )
@@ -530,9 +590,29 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--tandt-weighted-summary", type=Path, default=Path("output/0001/dino_weighted_i050_tandt/summary.csv")
     )
+    parser.add_argument(
+        "--tandt-weighted-i075-summary",
+        type=Path,
+        default=Path("output/0001/dino_weighted_i075_tandt/summary.csv"),
+    )
+    parser.add_argument(
+        "--tandt-weighted-i090-summary",
+        type=Path,
+        default=Path("output/0001/dino_weighted_i090_tandt/summary.csv"),
+    )
     parser.add_argument("--db-summary", type=Path, default=Path("output/0001/full_tandt_db_v1/db/summary.csv"))
     parser.add_argument(
         "--db-weighted-summary", type=Path, default=Path("output/0001/dino_weighted_i050_db/summary.csv")
+    )
+    parser.add_argument(
+        "--db-weighted-i075-summary",
+        type=Path,
+        default=Path("output/0001/dino_weighted_i075_db/summary.csv"),
+    )
+    parser.add_argument(
+        "--db-weighted-i090-summary",
+        type=Path,
+        default=Path("output/0001/dino_weighted_i090_db/summary.csv"),
     )
     return parser.parse_args()
 
