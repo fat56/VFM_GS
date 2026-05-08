@@ -407,6 +407,17 @@ def _budget_aware_importance_weight(base_weight, gaussians, args):
 
     span = max(1, budget_count - start_count)
     progress = float(current_count - start_count) / float(span)
+    curve = str(getattr(args, "vfm_importance_budget_curve", "linear") or "linear").lower()
+    if curve == "linear":
+        pass
+    elif curve == "quadratic":
+        progress = progress * progress
+    elif curve == "sqrt":
+        progress = math.sqrt(progress)
+    else:
+        raise ValueError(
+            "Unsupported vfm_importance_budget_curve {!r}. Available: linear, quadratic, sqrt.".format(curve)
+        )
     return base_weight - progress * (base_weight - min_weight)
 
 
