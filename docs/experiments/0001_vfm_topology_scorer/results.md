@@ -497,6 +497,7 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 | `output/0001/vfm_dinov2_token_edge_topk025_rgb_only_bicycle_30k_r8` | `dinov2_token_edge_l1` | top-k 25%, `rgb_only` | 30,000 | 26.9340 | 0.8236 | 0.1981 | 139.06s | 411,539 | 123M | 预算贴近 cadence control，但质量不构成清晰正向 |
 | `output/0001/vfm_dinov2_token_edge_topk025_i025_bicycle_30k_r8` | `dinov2_token_edge_l1` | top-k 25%, `importance_weight=0.25` | 30,000 | 26.9515 | 0.8262 | 0.1920 | 143.26s | 420,361 | 125M | 接近 cadence 预算，三项指标均小幅优于 cadence control |
 | `output/0001/vfm_dinov2_token_edge_topk025_i050_bicycle_30k_r8` | `dinov2_token_edge_l1` | top-k 25%, `importance_weight=0.50` | 30,000 | 26.9966 | 0.8303 | 0.1842 | 141.34s | 440,071 | 130M | partial importance 曲线继续正向，当前预算效率最佳 |
+| `output/0001/vfm_dinov2_token_edge_topk025_i075_bicycle_30k_r8` | `dinov2_token_edge_l1` | top-k 25%, `importance_weight=0.75` | 30,000 | 27.0284 | 0.8332 | 0.1788 | 155.18s | 472,164 | 137M | 高质量预算点，略优于 top-k 15% |
 
 解读：
 
@@ -511,8 +512,9 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 - top-k 25% `rgb_only` 关闭直接 VFM densification，只保留 VFM support/pruning 侧影响。它最终 411,539 个 Gaussians，几乎贴住 `fastgs_densify100` 的 412,078；相比 cadence control，PSNR 只高 +0.0053，SSIM 低 -0.0005，LPIPS 差 +0.0017。因此“只做 prune-protect / support 重排”可以控制预算，但没有保住 top-k 25% 完整对照的质量收益。
 - top-k 25% `importance_weight=0.25` 保留少量 VFM densification，而不是像 `rgb_only` 一样完全关闭。它最终 420,361 个 Gaussians，比 cadence control 多 8,283 个；相比 cadence control，PSNR 高 +0.0228、SSIM 高 +0.0021、LPIPS 改善 -0.0044。相比 `rgb_only`，它多 8,822 个点，但 PSNR 高 +0.0175、SSIM 高 +0.0027、LPIPS 改善 -0.0061，说明 partial VFM importance 是比完全关闭 VFM densification 更合理的预算方向。
 - top-k 25% `importance_weight=0.50` 进一步把预算推到 440,071 个 Gaussians，相比 `importance_weight=0.25` 多 19,710 个点，但换来 +0.0451 PSNR、+0.0041 SSIM、LPIPS 改善 -0.0078。相比 cadence control，它多 27,993 个点，PSNR 高 +0.0679、SSIM 高 +0.0062、LPIPS 改善 -0.0122，并且训练时间更短。这个点是当前 partial importance 曲线上最好的预算效率折中。
-- staged 490,832、final 490,832 和 `rgb_only` 分别暴露了三类问题：中期反复压 cap 会损伤结构生长，终局一次性低分裁剪排序不够可靠，完全关闭 VFM densification 又会交回主要质量收益。`importance_weight=0.25/0.50` 给出连续正向信号，因此下一步应继续扫描更高 partial VFM importance，并结合 support-normalized score 或高置信区域保护来减少无效点数增长。
-- 这一路径不引入在线 DINO inference，成本明显低于 descriptor 系列。当前 0001 在 bicycle 上的最佳质量结论仍定为 top-k 25% 完整对照；预算方向则把 `importance_weight=0.50` 作为当前最好的约 440k 点数方案，top-k 15% 作为更高质量预算但更密的选择，490,832 staged/final 两个预算 run 作为负例。
+- top-k 25% `importance_weight=0.75` 继续改善质量，但收益开始变慢：相比 `importance_weight=0.50` 多 32,093 个 Gaussians，换来 +0.0317 PSNR、+0.0028 SSIM、LPIPS 改善 -0.0055。它相对 top-k 15% 多 7,166 个点，PSNR 高 +0.0061、SSIM 高 +0.0010、LPIPS 改善 -0.0022，因此可作为高质量预算点，但预算效率不如 `importance_weight=0.50` 清晰。
+- staged 490,832、final 490,832 和 `rgb_only` 分别暴露了三类问题：中期反复压 cap 会损伤结构生长，终局一次性低分裁剪排序不够可靠，完全关闭 VFM densification 又会交回主要质量收益。`importance_weight=0.25/0.50/0.75` 给出连续正向曲线，因此 partial VFM importance 是当前最有效的预算控制旋钮。
+- 这一路径不引入在线 DINO inference，成本明显低于 descriptor 系列。当前 0001 在 bicycle 上的最佳质量结论仍定为 top-k 25% 完整对照；预算方向把 `importance_weight=0.50` 作为约 440k 点数下的效率点，把 `importance_weight=0.75` 作为略优于 top-k 15% 的高质量预算点。继续把权重推到 1.0 基本回到完整 top-k25 已知上界，下一步更应做 support-normalized score 或高置信区域保护，而不是追加同类单点。
 
 ## 2026-05-07 DINOv2 Descriptor 打分器快速验证
 
