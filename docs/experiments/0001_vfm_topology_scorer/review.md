@@ -8,7 +8,7 @@ Tandt 的 DINO weighted i0.50 跨数据集复验显示：相对 `cached_edge_l1 
 
 DB 的 DINO weighted i0.50 复验平均为 PSNR 30.3603、SSIM 0.9360、LPIPS 0.0641，相对 baseline 平均提升 +0.2423 PSNR、+0.0035 SSIM、LPIPS 改善 -0.0017；但相对 DB cached-edge v1 平均低 -0.2028 PSNR、-0.0001 SSIM、LPIPS 差 +0.0004。`drjohnson` 同时超过 baseline 与 cached-edge，`playroom` 则低于 cached-edge 且 LPIPS 低于 baseline。因此跨数据集结论进一步收束为：DINO weighted i0.50 可作为 baseline 正向候选和 cached-edge 负例修复项，但 DB 的最佳 proxy 对照仍是 cached-edge v1。
 
-跨数据集选择汇总脚本已把 13 个场景的 baseline、cached-edge v1 和 DINO weighted i0.50 放到同一张表。整体平均上，DINO weighted i0.50 相对 baseline 提升 +0.1430 PSNR、+0.0076 SSIM、LPIPS 改善 -0.0152；相对 cached-edge v1 提升 +0.0848 PSNR、+0.0061 SSIM、LPIPS 改善 -0.0112。但逐场景 PSNR 最优分布为：8 个场景选 DINO weighted i0.50，2 个场景选 cached-edge v1，3 个场景选 baseline。按场景 PSNR 择优的 oracle 均值为 28.6786 / 0.8868 / 0.1182，保守预算选择则为 28.4887 / 0.8800 / 0.1302、135,162 个 Gaussians。下一版应把 0001 收束为“场景级后端选择/自动回退”问题，而不是继续追求单一固定后端覆盖所有数据集。
+跨数据集选择汇总脚本已把 13 个场景的 baseline、cached-edge v1 和 DINO weighted i0.50 放到同一张表。整体平均上，DINO weighted i0.50 相对 baseline 提升 +0.1430 PSNR、+0.0076 SSIM、LPIPS 改善 -0.0152；相对 cached-edge v1 提升 +0.0848 PSNR、+0.0061 SSIM、LPIPS 改善 -0.0112。但逐场景 PSNR 最优分布为：8 个场景选 DINO weighted i0.50，2 个场景选 cached-edge v1，3 个场景选 baseline。当前保守 `validated_policy` 要求 DINO 同时三项优于 baseline/cached-edge，或 cached-edge 三项优于 baseline，否则回退 baseline；该策略在现有 13 场景上与 PSNR oracle 一致，均值为 28.6786 / 0.8868 / 0.1182。保守预算选择则为 28.4887 / 0.8800 / 0.1302、135,162 个 Gaussians。下一版应把 0001 收束为“场景级后端选择/自动回退”问题，而不是继续追求单一固定后端覆盖所有数据集。
 
 ## 发现
 

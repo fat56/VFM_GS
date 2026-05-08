@@ -189,6 +189,27 @@ def quality_status(candidate: dict[str, Any] | None, reference: dict[str, Any] |
     return "below_reference"
 
 
+def select_validated_policy(
+    baseline: dict[str, Any] | None,
+    cached: dict[str, Any] | None,
+    dino: dict[str, Any] | None,
+    best_psnr: dict[str, Any],
+) -> tuple[dict[str, Any], str]:
+    cached_vs_baseline = quality_status(cached, baseline)
+    dino_vs_baseline = quality_status(dino, baseline)
+    dino_vs_cached = quality_status(dino, cached)
+
+    if dino is not None and dino_vs_baseline == "all3_positive" and dino_vs_cached == "all3_positive":
+        return dino, "dino_all3_vs_baseline_and_cached"
+    if cached is not None and cached_vs_baseline == "all3_positive":
+        return cached, "cached_all3_vs_baseline"
+    if dino is not None and dino_vs_baseline == "all3_positive":
+        return dino, "dino_all3_vs_baseline"
+    if baseline is not None:
+        return baseline, "baseline_fallback"
+    return best_psnr, "best_psnr_fallback"
+
+
 def psnr_key(row: dict[str, Any]) -> tuple[float, float, float]:
     return (
         optional_float(row["psnr"]) or float("-inf"),
@@ -218,6 +239,7 @@ def build_recommendations(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         dino = methods.get("dino_weighted_i050")
         best_psnr = max(ordered, key=psnr_key)
         best_lpips = max(ordered, key=lpips_key)
+        validated_policy, validated_policy_reason = select_validated_policy(baseline, cached, dino, best_psnr)
 
         budget_candidates = ordered
         if baseline is not None:
@@ -245,6 +267,8 @@ def build_recommendations(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "best_psnr": best_psnr["psnr"],
                 "best_lpips_method": best_lpips["method"],
                 "best_lpips": best_lpips["lpips"],
+                "validated_policy_method": validated_policy["method"],
+                "validated_policy_reason": validated_policy_reason,
                 "budget_no_worse_method": budget_pick["method"],
                 "budget_no_worse_gs_num": budget_pick["gs_num"],
                 "vfm_psnr_pick": vfm_pick["method"],
@@ -276,6 +300,7 @@ def build_recommendation_averages(
     pick_columns = (
         ("best_psnr_method", "best_psnr_oracle"),
         ("best_lpips_method", "best_lpips_oracle"),
+        ("validated_policy_method", "validated_policy"),
         ("budget_no_worse_method", "budget_no_worse"),
         ("vfm_psnr_pick", "vfm_psnr_pick"),
     )
