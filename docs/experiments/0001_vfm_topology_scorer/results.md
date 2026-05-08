@@ -197,6 +197,38 @@
 - 它仍低于 Tandt baseline，且训练时间更长。与容量保护不同，它没有把点数拉回 baseline，而是在少于 baseline 平均 11,976 个 Gaussians 的条件下修复一部分 cached-edge 损伤。
 - 因此该结果应作为“VFM 分支之间的正向替代”记录，而不是 Tandt 的最终默认方案。下一步更值得继续跑 DB 两场景：如果 DB 上也相对 cached-edge 或 baseline 保持正向，就能更清楚地区分室内/受控场景与 Tandt 户外轨迹场景的选择规则。
 
+## 2026-05-08 DB DINO weighted i0.50 跨数据集复验
+
+目标：用同一脚本复验 DB 两场景，判断 DINO weighted i0.50 是否能在更接近室内/受控轨迹的数据集上超过 baseline 或替代 cached-edge v1。实验使用 `datasets/tandt_db/db`，场景为 `drjohnson` 和 `playroom`，其他设置与 Tandt 复验一致。
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 | 输出路径 |
+|---|---|---:|---:|---:|---:|---:|---|
+| drjohnson | DINO weighted i0.50 | 30.6889 | 0.9299 | 0.0706 | 80,243 | 143.40s | `output/0001/dino_weighted_i050_db/drjohnson/vfm_dinov2_token_edge_topk025_weighted_i050_30k_r8` |
+| playroom | DINO weighted i0.50 | 30.0316 | 0.9420 | 0.0576 | 44,279 | 139.56s | `output/0001/dino_weighted_i050_db/playroom/vfm_dinov2_token_edge_topk025_weighted_i050_30k_r8` |
+| **平均** | **DINO weighted i0.50** | **30.3603** | **0.9360** | **0.0641** | **62,261** | **141.48s** | - |
+
+对比：
+
+| 参照 | ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | 结论 |
+|---|---:|---:|---:|---:|---:|---|
+| 相对 baseline | +0.2423 | +0.0035 | -0.0017 | +7,576 | +20.26s | 平均三项指标正向，但 `playroom` 的 LPIPS 单项变差 |
+| 相对 cached edge v1 | -0.2028 | -0.0001 | +0.0004 | +169 | +7.70s | 平均略低于 cached-edge，不能替代 DB proxy 正向控制组 |
+
+逐场景差值：
+
+| 场景 | 参照 | ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| drjohnson | baseline | +0.1911 | +0.0034 | -0.0050 | +9,281 | +20.92s |
+| drjohnson | cached edge v1 | +0.0856 | +0.0016 | -0.0020 | +1,344 | +12.86s |
+| playroom | baseline | +0.2935 | +0.0036 | +0.0015 | +5,871 | +19.60s |
+| playroom | cached edge v1 | -0.4912 | -0.0019 | +0.0028 | -1,007 | +2.54s |
+
+解读：
+
+- DB 上 DINO weighted i0.50 相对 baseline 的平均结果是正向的，尤其 `drjohnson` 同时超过 baseline 和 cached-edge v1，说明 DINO topology 在室内/受控场景中仍有可用质量信号。
+- `playroom` 暴露了边界：它相对 baseline 提升 PSNR/SSIM，但 LPIPS 变差；相对 cached-edge v1 则三项指标均回落。因此 DB 的当前默认正向控制组仍应保留 `cached_edge_l1`，DINO weighted i0.50 不能无条件替代。
+- 结合 Tandt 结果，跨数据集选择规则更清楚：DINO weighted i0.50 比 cached-edge 更适合修复 Tandt 这类 edge proxy 负例，但在 DB 上 cached-edge 仍更强。下一版应把 scene-level 选择规则纳入批量评估，而不是假设单一 VFM 后端跨数据集最优。
+
 ## 2026-04-28 Mock v1 快速验证
 
 数据集：`datasets/mipnerf360/bicycle`，test split，`-r 8`，220 iterations，`densify_from_iter=50`，`densification_interval=50`。

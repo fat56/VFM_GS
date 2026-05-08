@@ -6,6 +6,8 @@
 
 Tandt 的 DINO weighted i0.50 跨数据集复验显示：相对 `cached_edge_l1 + staged target`，`train/truck` 两场景均提升 PSNR/SSIM 并降低 LPIPS，平均为 PSNR 25.7519、SSIM 0.9346、LPIPS 0.0575，较 cached-edge v1 分别改善 +0.1721、+0.0031、-0.0033。但它仍低于 Tandt baseline，平均差距为 -0.2032 PSNR、-0.0031 SSIM、LPIPS 差 +0.0035。因此该结果只升级为“修复 cached-edge Tandt 负例的 VFM 分支正向替代”，不能作为 Tandt 默认 baseline 替代方案。
 
+DB 的 DINO weighted i0.50 复验平均为 PSNR 30.3603、SSIM 0.9360、LPIPS 0.0641，相对 baseline 平均提升 +0.2423 PSNR、+0.0035 SSIM、LPIPS 改善 -0.0017；但相对 DB cached-edge v1 平均低 -0.2028 PSNR、-0.0001 SSIM、LPIPS 差 +0.0004。`drjohnson` 同时超过 baseline 与 cached-edge，`playroom` 则低于 cached-edge 且 LPIPS 低于 baseline。因此跨数据集结论进一步收束为：DINO weighted i0.50 可作为 baseline 正向候选和 cached-edge 负例修复项，但 DB 的最佳 proxy 对照仍是 cached-edge v1。
+
 ## 发现
 
 - `vfm_topology_scorer` 已返回与 `fastgs_photometric` 一致的 `(importance_score, pruning_score)` 契约。

@@ -92,7 +92,9 @@
 | 数据集/场景 | 方法 | PSNR | ΔPSNR | SSIM | ΔSSIM | LPIPS | ΔLPIPS | Gaussian 数 | ΔGaussian | 训练时间 | Δ训练时间 | 结论 |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
 | DB 平均 | cached-edge v1 vs baseline | 30.5631 | +0.4451 | 0.9361 | +0.0037 | 0.0637 | -0.0021 | 62,092 | +7,408 | 133.78s | +12.56s | 两个 DB 场景均正向 |
+| DB 平均 | DINO weighted i0.50 vs baseline | 30.3603 | +0.2423 | 0.9360 | +0.0035 | 0.0641 | -0.0017 | 62,261 | +7,576 | 141.48s | +20.26s | 相对 baseline 平均正向；低于 DB cached-edge v1 |
 | drjohnson | cached-edge v1 vs baseline | 30.6034 | +0.1055 | 0.9283 | +0.0018 | 0.0726 | -0.0029 | 78,899 | +7,937 | 130.54s | +8.06s | 三项正向 |
+| drjohnson | DINO weighted i0.50 vs baseline | 30.6889 | +0.1911 | 0.9299 | +0.0034 | 0.0706 | -0.0050 | 80,243 | +9,281 | 143.40s | +20.92s | 同时超过 baseline 和 cached-edge v1 |
 | playroom | cached-edge v1 vs baseline | 30.5228 | +0.7847 | 0.9439 | +0.0055 | 0.0548 | -0.0013 | 45,286 | +6,878 | 137.03s | +17.07s | 强正向 |
 | Tandt 平均 | 容量保护 vs cached-edge v1 | 25.7806 | +0.2007 | 0.9337 | +0.0021 | 0.0585 | -0.0023 | 50,370 | +18,808 | 144.04s | -0.81s | 回退保护有效，但仍低于 baseline |
 | Tandt 平均 | DINO weighted i0.50 vs cached-edge v1 | 25.7519 | +0.1721 | 0.9346 | +0.0031 | 0.0575 | -0.0033 | 38,394 | +6,832 | 151.05s | +6.20s | 修复 cached-edge 负例的一部分；仍低于 baseline |
@@ -101,4 +103,4 @@
 
 当前应保留四条主线：`cached_edge_l1` 是 proxy 正向控制组，在 MipNeRF360 和 DB 上平均正向；`DINO top-k25 + importance_weight=0.50` 是 MipNeRF360 全场景质量候选，相对 baseline 平均 +0.2051 PSNR、+0.0115 SSIM、LPIPS -0.0234；`weighted + i0.50` 是全场景预算效率候选，相对普通 i0.50 平均少 8,836 点、训练少 2.87s，质量只小幅回落；`weighted + i0.75` 是有条件高质量档位候选，在 bicycle、stump 和 room 上相对 weighted i0.50 都有 PSNR 提升，但 bonsai 复验未超过 weighted i0.50，因此不能无条件替代 i0.50。
 
-边界也很清楚：DINO i0.50 仍不是预算中性方案，Tandt 上 cached-edge v1 不是质量正例，容量保护只适合作为默认关闭的诊断/回退防线。Tandt DINO weighted i0.50 只相对 cached-edge v1 正向，平均仍低于 baseline -0.2032 PSNR、-0.0031 SSIM、LPIPS 差 +0.0035，因此应记录为恢复型结果而不是默认替代方案。`adaptive_weighted + quadratic 430k` 在 treehill 第二场景没有复现 bicycle 收益，因此不放入正向主线。下一步更值得做的是场景自适应预算，以及把 `weighted i0.50/i0.75` 的选择规则实现为可复用策略。
+边界也很清楚：DINO i0.50 仍不是预算中性方案，Tandt 上 cached-edge v1 不是质量正例，容量保护只适合作为默认关闭的诊断/回退防线。Tandt DINO weighted i0.50 只相对 cached-edge v1 正向，平均仍低于 baseline -0.2032 PSNR、-0.0031 SSIM、LPIPS 差 +0.0035，因此应记录为恢复型结果而不是默认替代方案。DB DINO weighted i0.50 相对 baseline 平均正向，但低于 DB cached-edge v1，说明它是跨数据集候选而不是固定最优后端。`adaptive_weighted + quadratic 430k` 在 treehill 第二场景没有复现 bicycle 收益，因此不放入正向主线。下一步更值得做的是场景自适应预算，以及把 `weighted i0.50/i0.75` 的选择规则实现为可复用策略。
