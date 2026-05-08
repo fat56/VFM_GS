@@ -1077,6 +1077,38 @@ uv run --active python -m vfm_gs.cli.metrics \
   -m output/0001/vfm_dinov2_token_edge_topk025_weighted_i050_stump_30k_r8
 ```
 
+RGB/VFM 加权融合高质量档位在室外树桩场景的复验：
+
+```bash
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_dinov2_token_edge_topk.yaml \
+  -s datasets/mipnerf360/stump \
+  -i images \
+  -m output/0001/vfm_dinov2_token_edge_topk025_weighted_i075_stump_30k_r8 \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0001/vfm_cache/stump_dinov2_vits14 \
+  --vfm_metric_topk 0.25 \
+  --vfm_importance_weight 0.75 \
+  --vfm_importance_mode weighted \
+  -r 8
+
+uv run --active python -m vfm_gs.cli.render \
+  -m output/0001/vfm_dinov2_token_edge_topk025_weighted_i075_stump_30k_r8 \
+  --iteration -1 \
+  --skip_train \
+  --quiet
+
+uv run --active python -m vfm_gs.cli.metrics \
+  -m output/0001/vfm_dinov2_token_edge_topk025_weighted_i075_stump_30k_r8
+```
+
+结果：PSNR 27.6183、SSIM 0.8178、LPIPS 0.1929，最终 370,556 个 Gaussians，训练 138.82s，输出目录约 104M。相比 `stump weighted i0.50`，点数多 16,510 个、训练多 2.46s，但 PSNR 高 +0.0036、SSIM 高 +0.0008、LPIPS 改善 -0.0005；相比普通 `stump i0.50`，点数多 4,972 个、训练多 0.92s，PSNR 高 +0.0077、SSIM 高 +0.0010、LPIPS 改善 -0.0006。因此 `weighted i0.75` 在第二个大收益场景也提升质量，但它在 stump 上不是省点方案，应归为高质量档位。
+
 partial importance 曲线的高质量预算点：
 
 ```bash
