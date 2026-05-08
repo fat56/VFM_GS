@@ -263,6 +263,31 @@ uv run --active python -m vfm_gs.cli.render -m output/0001/vfm_dinov2_token_edge
 uv run --active python -m vfm_gs.cli.metrics -m output/0001/vfm_dinov2_token_edge_bicycle_smoke
 ```
 
+### Weighted 档位复用配置
+
+当前已把 DINO token-edge 的 weighted 路径固化成两个可复用配置，避免后续换场景时继续依赖临时命令参数。
+
+- `configs/experiments/0001_vfm_topology_dinov2_token_edge_weighted_i050.yaml`：预算效率档。全 9 场景均值接近普通 i0.50，同时平均少 8,836 个 Gaussians、训练少 2.87s。
+- `configs/experiments/0001_vfm_topology_dinov2_token_edge_weighted_i075.yaml`：高质量档。已在 bicycle、stump、room 复验，三者 PSNR 均高于 weighted i0.50，但点数或 LPIPS 不一定同步最优。
+
+换场景时保留配置文件，只覆盖数据路径、输出目录和对应 cache 路径：
+
+```bash
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_dinov2_token_edge_weighted_i075.yaml \
+  -s datasets/mipnerf360/<scene> \
+  -i images \
+  -m output/0001/vfm_dinov2_token_edge_topk025_weighted_i075_<scene>_30k_r8 \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0001/vfm_cache/<scene>_dinov2_vits14 \
+  -r 8
+```
+
 ### Token-Edge Top-k 探测
 
 `0001_vfm_topology_dinov2_token_edge_topk.yaml` 保持 `dinov2_token_edge_l1` 后端不变，只把 metric map 改为 top-k 15% 高误差区域。先用 620-step 验证链路，再进入 30k 完整对照。
