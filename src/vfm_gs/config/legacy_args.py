@@ -117,6 +117,10 @@ class OptimizationParams(ParamGroup):
         self.vfm_importance_normalizer = "none"
         self.vfm_support_ratio_power = 1.0
         self.vfm_support_min_count = 1.0
+        self.vfm_prune_protect_weight = 0.0
+        self.vfm_prune_protect_mode = "vfm"
+        self.vfm_prune_protect_min_count = 1.0
+        self.vfm_prune_protect_power = 1.0
         self.vfm_use_albedo_sh0 = True
         self.vfm_dinov2_repo = ""
         self.vfm_dinov2_device = "cuda"

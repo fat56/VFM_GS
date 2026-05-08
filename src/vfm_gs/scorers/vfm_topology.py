@@ -363,6 +363,31 @@ def _normalize_vfm_counts_by_support(vfm_counts, support_counts, args):
     return vfm_counts.to(torch.float32) * hit_ratio
 
 
+def _build_prune_protection(vfm_counts, rgb_pruning, args):
+    weight = max(0.0, float(getattr(args, "vfm_prune_protect_weight", 0.0) or 0.0))
+    if weight <= 0.0:
+        return None, 0.0
+
+    mode = str(getattr(args, "vfm_prune_protect_mode", "vfm") or "vfm").lower()
+    min_count = max(0.0, float(getattr(args, "vfm_prune_protect_min_count", 1.0) or 0.0))
+    power = max(0.0, float(getattr(args, "vfm_prune_protect_power", 1.0) or 0.0))
+
+    protect = vfm_counts.to(torch.float32)
+    if min_count > 0.0:
+        protect = torch.where(protect >= min_count, protect, torch.zeros_like(protect))
+    protect = normalize01(protect)
+    if power != 1.0:
+        protect = torch.pow(protect, power)
+
+    if mode == "vfm":
+        return protect, weight
+    if mode == "rgb_aware":
+        return protect * (1.0 - rgb_pruning.to(torch.float32)), weight
+    raise ValueError(
+        "Unsupported vfm_prune_protect_mode {!r}. Available: vfm, rgb_aware.".format(mode)
+    )
+
+
 def compute_gaussian_score_fastgs_with_vfm(camlist, gaussians, pipe, bg, args, DENSIFY=False):
     """Compute FastGS scores with an auxiliary VFM-style topology signal.
 
@@ -384,6 +409,8 @@ def compute_gaussian_score_fastgs_with_vfm(camlist, gaussians, pipe, bg, args, D
     vfm_importance_weight = max(0.0, getattr(args, "vfm_importance_weight", 1.0))
     vfm_importance_mode = getattr(args, "vfm_importance_mode", "max").lower()
     vfm_importance_normalizer = getattr(args, "vfm_importance_normalizer", "none").lower()
+    vfm_prune_protect_weight = max(0.0, float(getattr(args, "vfm_prune_protect_weight", 0.0) or 0.0))
+    needs_vfm_counts = DENSIFY or vfm_prune_protect_weight > 0.0
     use_albedo_sh0 = getattr(args, "vfm_use_albedo_sh0", True)
     cache_dir = getattr(args, "vfm_cache_dir", "")
     dinov2_repo = getattr(args, "vfm_dinov2_repo", "")
@@ -425,12 +452,12 @@ def compute_gaussian_score_fastgs_with_vfm(camlist, gaussians, pipe, bg, args, D
             else:
                 counts += layer_counts
 
-        if DENSIFY:
+        if needs_vfm_counts:
             if vfm_counts_total is None:
                 vfm_counts_total = counts.clone()
             else:
                 vfm_counts_total += counts
-            if vfm_importance_normalizer == "support_ratio":
+            if DENSIFY and vfm_importance_normalizer == "support_ratio":
                 support_pkg = render_fastgs(
                     viewpoint_cam,
                     gaussians,
@@ -454,6 +481,9 @@ def compute_gaussian_score_fastgs_with_vfm(camlist, gaussians, pipe, bg, args, D
 
     vfm_pruning = normalize01(vfm_pruning_total)
     pruning_score = normalize01(rgb_pruning + vfm_weight * vfm_pruning)
+    protection, protection_weight = _build_prune_protection(vfm_counts_total, rgb_pruning, args)
+    if protection is not None:
+        pruning_score = normalize01(pruning_score - protection_weight * protection)
 
     if DENSIFY:
         if vfm_importance_normalizer != "none":
