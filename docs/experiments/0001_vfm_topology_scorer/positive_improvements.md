@@ -62,7 +62,7 @@
 | room | weighted i0.75 | 33.1334 | +0.1558 | +0.1649 | +0.0613 | 0.9626 | +0.0029 | +0.0006 | +0.0004 | 0.0575 | -0.0037 | -0.0003 | +0.0000 | 101,965 | -1,855 | 120.08s | -13.66s | 高质量档位复验：PSNR 继续提升，LPIPS 基本持平 |
 | **平均** | **weighted i0.50** | **28.8505** | **+0.1978** | **+0.1292** | **-0.0072** | **0.8660** | **+0.0109** | **+0.0081** | **-0.0006** | **0.1397** | **-0.0223** | **-0.0154** | **+0.0012** | **254,736** | **-8,836** | **137.60s** | **-2.87s** | **全场景预算效率正向，质量仅小幅低于普通 i0.50** |
 
-`weighted i0.50` 全 9 场景均值为 PSNR 28.8505、SSIM 0.8660、LPIPS 0.1397，几乎贴近普通 i0.50 的质量上界，同时平均少 8,836 个 Gaussians、训练少 2.87s。它相对 baseline 仍有 +0.1978 PSNR、+0.0109 SSIM、LPIPS 改善 -0.0223。`garden/flowers` 说明复杂纹理场景会交回部分质量，`stump/bonsai/room` 则说明 weighted 有时能少点且微升质量。因此 weighted 可以进入下一版场景自适应预算策略，但不应无条件替代普通 i0.50。`weighted i0.75` 已在 bicycle、stump 和 room 上完成高质量档位复验：三者 PSNR 均高于 weighted i0.50，bicycle 三项质量同时正向，stump 质量微升但点数增加，room 点数几乎不变且 PSNR 明显提升但 LPIPS 极小幅回落。因此它更像质量档位，而不是默认预算效率档位。
+`weighted i0.50` 全 9 场景均值为 PSNR 28.8505、SSIM 0.8660、LPIPS 0.1397，几乎贴近普通 i0.50 的质量上界，同时平均少 8,836 个 Gaussians、训练少 2.87s。它相对 baseline 仍有 +0.1978 PSNR、+0.0109 SSIM、LPIPS 改善 -0.0223。`garden/flowers` 说明复杂纹理场景会交回部分质量，`stump/bonsai/room` 则说明 weighted 有时能少点且微升质量。因此 weighted 可以进入下一版场景自适应预算策略，但不应无条件替代普通 i0.50。`weighted i0.75` 已在 bicycle、stump 和 room 上完成高质量档位复验：三者 PSNR 均高于 weighted i0.50，bicycle 三项质量同时正向，stump 质量微升但点数增加，room 点数几乎不变且 PSNR 明显提升但 LPIPS 极小幅回落。bonsai i0.75 虽然仍优于 baseline/cached-edge，但低于 bonsai weighted i0.50，因此不加入正向表。综合看，i0.75 更像需场景选择的质量档位，而不是默认预算效率档位。
 
 ## Bicycle 30k 消融中的正向点
 
@@ -90,6 +90,6 @@
 
 ## 简短结论
 
-当前应保留四条主线：`cached_edge_l1` 是 proxy 正向控制组，在 MipNeRF360 和 DB 上平均正向；`DINO top-k25 + importance_weight=0.50` 是 MipNeRF360 全场景质量候选，相对 baseline 平均 +0.2051 PSNR、+0.0115 SSIM、LPIPS -0.0234；`weighted + i0.50` 是全场景预算效率候选，相对普通 i0.50 平均少 8,836 点、训练少 2.87s，质量只小幅回落；`weighted + i0.75` 是高质量档位候选，在 bicycle、stump 和 room 上相对 weighted i0.50 都有 PSNR 提升，但不是每个场景都同时省点和改善 LPIPS。
+当前应保留四条主线：`cached_edge_l1` 是 proxy 正向控制组，在 MipNeRF360 和 DB 上平均正向；`DINO top-k25 + importance_weight=0.50` 是 MipNeRF360 全场景质量候选，相对 baseline 平均 +0.2051 PSNR、+0.0115 SSIM、LPIPS -0.0234；`weighted + i0.50` 是全场景预算效率候选，相对普通 i0.50 平均少 8,836 点、训练少 2.87s，质量只小幅回落；`weighted + i0.75` 是有条件高质量档位候选，在 bicycle、stump 和 room 上相对 weighted i0.50 都有 PSNR 提升，但 bonsai 复验未超过 weighted i0.50，因此不能无条件替代 i0.50。
 
 边界也很清楚：DINO i0.50 仍不是预算中性方案，Tandt 上 cached-edge v1 不是质量正例，容量保护只适合作为默认关闭的诊断/回退防线。`adaptive_weighted + quadratic 430k` 在 treehill 第二场景没有复现 bicycle 收益，因此不放入正向主线。下一步更值得做的是场景自适应预算，以及把 `weighted i0.50/i0.75` 的选择规则实现为可复用策略。
