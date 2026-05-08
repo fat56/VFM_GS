@@ -857,6 +857,36 @@ uv run --active python -m vfm_gs.cli.metrics \
   -m output/0001/vfm_dinov2_token_edge_budgetaware420k_i050_bicycle_30k_r8
 ```
 
+预算感知 importance 的放松衰减对照：
+
+```bash
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_dinov2_token_edge_budget_aware.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0001/vfm_dinov2_token_edge_budgetaware430k_s095_min010_i050_bicycle_30k_r8 \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0001/vfm_cache/bicycle_dinov2_vits14 \
+  --vfm_importance_budget_count 430000 \
+  --vfm_importance_budget_start_ratio 0.95 \
+  --vfm_importance_budget_min_weight 0.10 \
+  -r 8
+
+uv run --active python -m vfm_gs.cli.render \
+  -m output/0001/vfm_dinov2_token_edge_budgetaware430k_s095_min010_i050_bicycle_30k_r8 \
+  --iteration -1 \
+  --skip_train \
+  --quiet
+
+uv run --active python -m vfm_gs.cli.metrics \
+  -m output/0001/vfm_dinov2_token_edge_budgetaware430k_s095_min010_i050_bicycle_30k_r8
+```
+
 支持度归一化 importance 的链路验证：
 
 ```bash
