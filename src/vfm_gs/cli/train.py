@@ -55,6 +55,17 @@ def _target_gaussian_count(opt):
     return int(getattr(opt, "target_gaussian_count", 0) or 0)
 
 
+def _target_gaussian_prune_order(opt):
+    order = str(getattr(opt, "target_gaussian_prune_order", "lowest_score") or "lowest_score").lower()
+    if order not in ("lowest_score", "highest_score", "lowest_opacity"):
+        raise ValueError(
+            "Unsupported target_gaussian_prune_order {!r}. Available: lowest_score, highest_score, lowest_opacity.".format(
+                order
+            )
+        )
+    return order
+
+
 def _staged_target_gaussian_count(opt):
     target_count = _target_gaussian_count(opt)
     if target_count <= 0:
@@ -74,18 +85,24 @@ def _prune_to_target_budget(scene, gaussians, gaussian_scorer, pipe, bg, opt, ta
 
     camlist = sampling_cameras(my_viewpoint_stack)
     _, pruning_score = gaussian_scorer(camlist, gaussians, pipe, bg, opt)
-    pruned_count = gaussians.prune_to_target_count(target_count, pruning_score=pruning_score)
+    prune_order = _target_gaussian_prune_order(opt)
+    pruned_count = gaussians.prune_to_target_count(
+        target_count,
+        pruning_score=pruning_score,
+        order=prune_order,
+    )
     torch.cuda.synchronize()
     elapsed = time.time() - budget_start
     prefix = "[ITER {}] ".format(iteration) if iteration is not None else ""
     print(
-        "{}{} Gaussian prune: {} -> {} (removed {}, target {})".format(
+        "{}{} Gaussian prune: {} -> {} (removed {}, target {}, order {})".format(
             prefix,
             label,
             current_count,
             gaussians._xyz.shape[0],
             pruned_count,
             target_count,
+            prune_order,
         )
     )
     return pruned_count, elapsed

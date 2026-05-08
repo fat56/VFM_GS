@@ -595,15 +595,23 @@ class GaussianModel:
                     final_prune = protected_prune
         self.prune_points(final_prune)
 
-    def prune_to_target_count(self, target_count, pruning_score=None):
+    def prune_to_target_count(self, target_count, pruning_score=None, order="lowest_score"):
         target_count = int(target_count)
         current_count = self.get_xyz.shape[0]
         if target_count <= 0 or current_count <= target_count:
             return 0
 
+        order = str(order or "lowest_score").lower()
+        if order not in ("lowest_score", "highest_score", "lowest_opacity"):
+            raise ValueError(
+                "Unsupported target Gaussian prune order {!r}. Available: lowest_score, highest_score, lowest_opacity.".format(
+                    order
+                )
+            )
+
         remove_count = current_count - target_count
         device = self.get_xyz.device
-        if pruning_score is None:
+        if order == "lowest_opacity" or pruning_score is None:
             scores = self.get_opacity.detach().squeeze().to(dtype=torch.float32, device=device)
         else:
             scores = pruning_score.detach().squeeze().to(dtype=torch.float32, device=device)
@@ -616,7 +624,7 @@ class GaussianModel:
             scores = torch.nan_to_num(scores, nan=0.0, posinf=0.0, neginf=0.0)
 
         prune_mask = torch.zeros((current_count), dtype=bool, device=device)
-        prune_indices = torch.topk(scores, remove_count, largest=False).indices
+        prune_indices = torch.topk(scores, remove_count, largest=(order == "highest_score")).indices
         prune_mask[prune_indices] = True
         self.prune_points(prune_mask)
         return remove_count

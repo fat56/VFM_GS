@@ -615,6 +615,35 @@ uv run --active python -m vfm_gs.cli.metrics \
   -m output/0001/vfm_dinov2_token_edge_topk025_budget490832_final_bicycle_30k_r8
 ```
 
+最终预算裁剪排序诊断：
+
+```bash
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_dinov2_token_edge_topk.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0001/vfm_dinov2_token_edge_topk025_budget490832_highscore_final_bicycle_30k_r8 \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_metric_topk 0.25 \
+  --target_gaussian_count 490832 \
+  --target_gaussian_prune_order highest_score \
+  -r 8
+
+uv run --active python -m vfm_gs.cli.render \
+  -m output/0001/vfm_dinov2_token_edge_topk025_budget490832_highscore_final_bicycle_30k_r8 \
+  --iteration -1 \
+  --skip_train \
+  --quiet
+
+uv run --active python -m vfm_gs.cli.metrics \
+  -m output/0001/vfm_dinov2_token_edge_topk025_budget490832_highscore_final_bicycle_30k_r8
+```
+
 中期 staged 预算约束探测：
 
 ```bash

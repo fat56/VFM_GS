@@ -489,6 +489,8 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 
 再追加 `vfm_prune_protect_weight`、`vfm_prune_protect_mode`、`vfm_prune_protect_min_count`、`vfm_prune_protect_power`。这些参数默认关闭；开启后会把高置信 VFM 命中区域转成 pruning-side 保护分数，降低对应 Gaussian 的 `pruning_score`，让它们在训练期抽样裁剪、后期一致性裁剪和 target budget 裁剪中更不容易被删掉。`rgb_aware` 模式会额外乘以 `(1 - rgb_pruning)`，避免保护 RGB 侧已经明显不一致的点。
 
+再追加 `target_gaussian_prune_order`。默认值为 `lowest_score`，保持已有 target-prune 实验行为不变；可选 `highest_score` 和 `lowest_opacity` 用于诊断最终预算裁剪的排序语义。该参数只在显式设置 `target_gaussian_count` 时生效。
+
 数据集：`datasets/mipnerf360/bicycle`，test split，`-r 8`。先用 620-step 验证链路健康，再跑 30,000 iterations 完整对照。
 
 | 产物 | Backend | Metric map | Iterations | PSNR | SSIM | LPIPS | 训练时间 | Gaussian 数量 | 输出大小 | 备注 |
@@ -498,6 +500,7 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 | `output/0001/vfm_dinov2_token_edge_topk025_bicycle_30k_r8` | `dinov2_token_edge_l1` | top-k 25% | 30,000 | 27.0636 | 0.8354 | 0.1748 | 146.76s | 497,328 | 144M | 当前 bicycle 30k 质量最佳 |
 | `output/0001/vfm_dinov2_token_edge_topk025_budget490832_staged105_bicycle_30k_r8` | `dinov2_token_edge_l1` | top-k 25%, staged 490,832 | 30,000 | 27.0001 | 0.8286 | 0.1887 | 146.81s | 453,505 | 133M | 预算更低，但质量明显回落 |
 | `output/0001/vfm_dinov2_token_edge_topk025_budget490832_final_bicycle_30k_r8` | `dinov2_token_edge_l1` | top-k 25%, final 490,832 | 30,000 | 26.8466 | 0.8244 | 0.1858 | 141.91s | 490,832 | 142M | 仅最终裁剪 6,723 个点，质量明显回落 |
+| `output/0001/vfm_dinov2_token_edge_topk025_budget490832_highscore_final_bicycle_30k_r8` | `dinov2_token_edge_l1` | top-k 25%, final 490,832, high-score prune | 30,000 | 24.0554 | 0.7914 | 0.2040 | 147.65s | 490,832 | 142M | 最终裁剪高 pruning score，质量显著崩落 |
 | `output/0001/vfm_dinov2_token_edge_topk025_rgb_only_bicycle_30k_r8` | `dinov2_token_edge_l1` | top-k 25%, `rgb_only` | 30,000 | 26.9340 | 0.8236 | 0.1981 | 139.06s | 411,539 | 123M | 预算贴近 cadence control，但质量不构成清晰正向 |
 | `output/0001/vfm_dinov2_token_edge_topk025_i025_bicycle_30k_r8` | `dinov2_token_edge_l1` | top-k 25%, `importance_weight=0.25` | 30,000 | 26.9515 | 0.8262 | 0.1920 | 143.26s | 420,361 | 125M | 接近 cadence 预算，三项指标均小幅优于 cadence control |
 | `output/0001/vfm_dinov2_token_edge_topk025_i050_bicycle_30k_r8` | `dinov2_token_edge_l1` | top-k 25%, `importance_weight=0.50` | 30,000 | 26.9966 | 0.8303 | 0.1842 | 141.34s | 440,071 | 130M | partial importance 曲线继续正向，当前预算效率最佳 |
@@ -517,6 +520,7 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 - top-k 25% staged 490,832 从 iteration 7500 到 14500 触发 15 次 staged pruning，最终自然落到 453,505 个 Gaussians，低于 target 因而跳过最终裁剪。它相比 top-k 25% 完整对照少 43,823 个点，但质量下降 -0.0634 PSNR、-0.0068 SSIM、LPIPS 差 +0.0139。
 - top-k 25% final 490,832 不做中期裁剪，训练结束时从 497,555 个 Gaussians 只裁到 490,832，实际删除 6,723 个点。但它相比 top-k 25% 完整对照下降 -0.2170 PSNR、-0.0110 SSIM、LPIPS 差 +0.0110；相比默认 DINO token-edge 也低 -0.2111 PSNR、-0.0101 SSIM、LPIPS 差 +0.0091。
 - final 490,832 仍优于原始 baseline（+0.1434 PSNR、+0.0177 SSIM、LPIPS 改善 -0.0420），但相对 `fastgs_densify100` cadence control 变成 PSNR 更低、SSIM 基本持平、LPIPS 更好。这个负例说明当前 final target-prune 的排序即使只裁约 1.35% Gaussians，也会误删对结构质量敏感的点。
+- high-score final 490,832 显式改为裁剪最高 `pruning_score`。训练从 496,264 个 Gaussians 裁到 490,832，只删除 5,432 个点，但 PSNR/SSIM/LPIPS 变为 24.0554、0.7914、0.2040，比 low-score final 更差。这说明 target-prune 不能简单复用训练期/最终一致性裁剪的高分删除语义；`pruning_score` 在终局小比例批量裁剪里不能稳定表达“可安全删除”。
 - top-k 25% `rgb_only` 关闭直接 VFM densification，只保留 VFM support/pruning 侧影响。它最终 411,539 个 Gaussians，几乎贴住 `fastgs_densify100` 的 412,078；相比 cadence control，PSNR 只高 +0.0053，SSIM 低 -0.0005，LPIPS 差 +0.0017。因此“只做 prune-protect / support 重排”可以控制预算，但没有保住 top-k 25% 完整对照的质量收益。
 - top-k 25% `importance_weight=0.25` 保留少量 VFM densification，而不是像 `rgb_only` 一样完全关闭。它最终 420,361 个 Gaussians，比 cadence control 多 8,283 个；相比 cadence control，PSNR 高 +0.0228、SSIM 高 +0.0021、LPIPS 改善 -0.0044。相比 `rgb_only`，它多 8,822 个点，但 PSNR 高 +0.0175、SSIM 高 +0.0027、LPIPS 改善 -0.0061，说明 partial VFM importance 是比完全关闭 VFM densification 更合理的预算方向。
 - top-k 25% `importance_weight=0.50` 进一步把预算推到 440,071 个 Gaussians，相比 `importance_weight=0.25` 多 19,710 个点，但换来 +0.0451 PSNR、+0.0041 SSIM、LPIPS 改善 -0.0078。相比 cadence control，它多 27,993 个点，PSNR 高 +0.0679、SSIM 高 +0.0062、LPIPS 改善 -0.0122，并且训练时间更短。这个点是当前 partial importance 曲线上最好的预算效率折中。
@@ -525,7 +529,7 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 - `support_ratio + importance_weight=0.50` 30k 最终 432,948 个 Gaussians，比普通 i0.50 少 7,123 个点，但质量回落 -0.0272 PSNR、-0.0018 SSIM、LPIPS 差 +0.0036，训练时间也多 8.05s。它仍优于 cadence control（+0.0407 PSNR、+0.0045 SSIM、LPIPS 改善 -0.0086），但不如直接 partial importance i0.50，因此支持度归一化不是当前最佳预算效率方向。
 - 高置信 VFM 区域保护的 620-step 快速验证使用 `vfm_prune_protect_weight=0.25`、`vfm_prune_protect_mode=rgb_aware`、`vfm_prune_protect_min_count=5`、`vfm_prune_protect_power=2.0`。它完成 train、render 和 metrics，最终 61,604 个 Gaussians，PSNR 20.8808、SSIM 0.4757、LPIPS 0.5457，说明 protection score 可以同时接入 densification 评分和后期 pruning-only 评分路径。
 - 高置信 VFM 区域保护的 30k 正式对照最终 441,352 个 Gaussians，比普通 `importance_weight=0.50` 多 1,281 个点；PSNR 低 -0.0056、SSIM 低 -0.0001，LPIPS 仅改善 -0.0003，训练时间多 3.36s。它没有形成比 i0.50 更好的预算效率点，说明简单保护高 VFM 命中区域不能解决当前的预算-质量矛盾。
-- staged 490,832、final 490,832 和 `rgb_only` 分别暴露了三类问题：中期反复压 cap 会损伤结构生长，终局一次性低分裁剪排序不够可靠，完全关闭 VFM densification 又会交回主要质量收益。`importance_weight=0.25/0.50/0.75` 给出连续正向曲线，因此 partial VFM importance 是当前最有效的预算控制旋钮。
+- staged 490,832、final 490,832、high-score final 490,832 和 `rgb_only` 分别暴露了四类问题：中期反复压 cap 会损伤结构生长，终局一次性低分裁剪排序不够可靠，终局高分裁剪更不可靠，完全关闭 VFM densification 又会交回主要质量收益。`importance_weight=0.25/0.50/0.75` 给出连续正向曲线，因此 partial VFM importance 是当前最有效的预算控制旋钮。
 - 这一路径不引入在线 DINO inference，成本明显低于 descriptor 系列。当前 0001 在 bicycle 上的最佳质量结论仍定为 top-k 25% 完整对照；预算方向把 `importance_weight=0.50` 作为约 440k 点数下的效率点，把 `importance_weight=0.75` 作为略优于 top-k 15% 的高质量预算点。继续把权重推到 1.0 基本回到完整 top-k25 已知上界；support-normalized score 和高置信 prune-protect 都未优于普通 partial importance。下一步应转向自动容量保护、staged 后恢复或 target-prune 排序诊断，而不是追加同类 scorer 单点。
 
 ## 2026-05-07 DINOv2 Descriptor 打分器快速验证
