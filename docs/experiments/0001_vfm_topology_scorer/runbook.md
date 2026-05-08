@@ -1004,6 +1004,38 @@ uv run --active python -m vfm_gs.cli.metrics \
   -m output/0001/vfm_dinov2_token_edge_topk025_weighted_i050_room_30k_r8
 ```
 
+RGB/VFM 加权融合高质量档位在室内房间场景的复验：
+
+```bash
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_dinov2_token_edge_topk.yaml \
+  -s datasets/mipnerf360/room \
+  -i images \
+  -m output/0001/vfm_dinov2_token_edge_topk025_weighted_i075_room_30k_r8 \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0001/vfm_cache/room_dinov2_vits14 \
+  --vfm_metric_topk 0.25 \
+  --vfm_importance_weight 0.75 \
+  --vfm_importance_mode weighted \
+  -r 8
+
+uv run --active python -m vfm_gs.cli.render \
+  -m output/0001/vfm_dinov2_token_edge_topk025_weighted_i075_room_30k_r8 \
+  --iteration -1 \
+  --skip_train \
+  --quiet
+
+uv run --active python -m vfm_gs.cli.metrics \
+  -m output/0001/vfm_dinov2_token_edge_topk025_weighted_i075_room_30k_r8
+```
+
+结果：PSNR 33.1334、SSIM 0.9626、LPIPS 0.0575，最终 101,965 个 Gaussians，训练 120.08s，输出目录约 38M。相比 `room weighted i0.50`，点数只多 581 个、训练少 11.90s，PSNR 高 +0.0253，SSIM 基本持平，LPIPS 极小幅回落 +0.0001；相比普通 `room i0.50`，少 1,855 个点、训练少 13.66s，PSNR 高 +0.0613、SSIM 高 +0.0004，LPIPS 基本持平。因此 `weighted i0.75` 在室内小场景也可作为高质量档位，但 LPIPS 不是稳定占优指标。
+
 partial importance 室外树桩场景复验：
 
 ```bash
