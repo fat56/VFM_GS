@@ -289,7 +289,7 @@ uv run --active python -m vfm_gs.cli.metrics -m output/0001/vfm_dinov2_token_edg
 当前已把 DINO token-edge 的 weighted 路径固化成两个可复用配置，避免后续换场景时继续依赖临时命令参数。
 
 - `configs/experiments/0001_vfm_topology_dinov2_token_edge_weighted_i050.yaml`：预算效率档。全 9 场景均值接近普通 i0.50，同时平均少 8,836 个 Gaussians、训练少 2.87s。
-- `configs/experiments/0001_vfm_topology_dinov2_token_edge_weighted_i075.yaml`：高质量档。已在 bicycle、stump、room 复验，三者 PSNR 均高于 weighted i0.50，但点数或 LPIPS 不一定同步最优。
+- `configs/experiments/0001_vfm_topology_dinov2_token_edge_weighted_i075.yaml`：场景选择质量档。固定全 9 场景均值不超过 i0.50，但在 bicycle、counter、garden、room、stump 上通过质量门槛，适合作为 `quality_pick` 的候选档。
 
 换场景时保留配置文件，只覆盖数据路径、输出目录和对应 cache 路径：
 
@@ -323,12 +323,13 @@ uv run --active python scripts/summarize_0001_weighted_candidates.py
 - `output/0001/weighted_candidate_summary/comparisons.csv`
 - `output/0001/weighted_candidate_summary/recommendations.csv`
 - `output/0001/weighted_candidate_summary/averages.csv`
+- `output/0001/weighted_candidate_summary/recommendation_averages.csv`
 
-当前规则是：预算优先默认选 `weighted_i050`；只有当 `weighted_i075` 相比 `weighted_i050` 的 PSNR 提升、SSIM 没有明显回落、LPIPS 没有明显变差时，才把质量档推荐为 `weighted_i075`。截至 bonsai 边界复验，脚本会把 bicycle、stump、room 判为 `weighted_i075` 正向，把 bonsai 判为 boundary 并推荐保留 `weighted_i050`。
+当前规则是：预算优先默认选 `weighted_i050`；只有当 `weighted_i075` 相比 `weighted_i050` 的 PSNR 提升、SSIM 没有明显回落、LPIPS 没有明显变差时，才把质量档推荐为 `weighted_i075`。截至 MipNeRF360 全 9 场景 i0.75 补齐，`quality_pick` 会选择 bicycle、counter、garden、room、stump 的 i0.75，其余场景保留 i0.50。固定 `weighted_i075` 均值为 28.8396 / 0.8663 / 0.1395、257,715 个 Gaussians，不作为默认档；`quality_pick` 均值为 28.8636 / 0.8665 / 0.1393、257,223 个 Gaussians，相比固定 i0.50 提升 +0.0130 PSNR、+0.0005 SSIM、LPIPS 改善 -0.0004，只多 2,487 个点。
 
-### Weighted i0.50 跨数据集评估
+### Weighted 候选跨数据集/跨档位评估
 
-`scripts/run_0001_dino_weighted_eval.py` 用于把当前 DINO weighted i0.50 候选迁移到 Tandt/DB 等新数据集。脚本会按场景执行 DINO cache 构建、cache 校验、30k 训练、render、metrics 和汇总；已完成步骤会跳过。若传入 `--reference-summary`，还会输出相对 baseline 与 cached edge v1 的差值表。
+`scripts/run_0001_dino_weighted_eval.py` 用于把当前 DINO weighted 候选迁移到 Tandt/DB 等新数据集，或补齐同一数据集的其他档位。脚本会按场景执行 DINO cache 构建、cache 校验、30k 训练、render、metrics 和汇总；已完成步骤会跳过。若传入 `--reference-summary`，还会输出相对 baseline 与 cached edge v1 的差值表。常用可选参数包括 `--config`、`--method-name`、`--run-name`、`--cache-root` 和 `--comparison-methods`，用于复用同一个 runner 跑 i0.50、i0.75 或后续 weighted 候选。
 
 ```bash
 uv run --active python scripts/run_0001_dino_weighted_eval.py \
@@ -348,6 +349,21 @@ uv run --active python scripts/run_0001_dino_weighted_eval.py \
   --train-images images \
   --cache-images images \
   --reference-summary output/0001/full_tandt_db_v1/db/summary.csv
+```
+
+补齐 MipNeRF360 `weighted_i075` 时使用同一脚本，并把 cache 复用到统一目录：
+
+```bash
+uv run --active python scripts/run_0001_dino_weighted_eval.py \
+  --dataset-name mipnerf360 \
+  --dataset-root datasets/mipnerf360 \
+  --output-root output/0001/weighted_i075_mipnerf360 \
+  --scenes counter flowers garden kitchen treehill \
+  --config configs/experiments/0001_vfm_topology_dinov2_token_edge_weighted_i075.yaml \
+  --method-name dinov2_token_edge_weighted_i075 \
+  --run-name vfm_dinov2_token_edge_topk025_weighted_i075_30k_r8 \
+  --cache-root output/0001/vfm_cache \
+  --reference-summary output/0001/full_mipnerf360_v1/summary.csv
 ```
 
 主要产物：

@@ -241,6 +241,37 @@ def build_averages(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return averages
 
 
+def lookup_rows(rows: list[dict[str, Any]]) -> dict[tuple[str, str], dict[str, Any]]:
+    return {row_key(row): row for row in rows}
+
+
+def build_recommendation_averages(
+    rows: list[dict[str, Any]],
+    recommendations: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    by_key = lookup_rows(rows)
+    pick_columns = (
+        ("budget_pick", "budget_pick"),
+        ("quality_pick", "quality_pick"),
+    )
+    averages = []
+    for column, selector in pick_columns:
+        picked_rows = []
+        for recommendation in recommendations:
+            method = str(recommendation.get(column) or "")
+            if not method:
+                continue
+            row = by_key.get((str(recommendation["scene"]), method))
+            if row is not None:
+                picked_rows.append(row)
+        avg: dict[str, Any] = {"selector": selector, "scene_count": len(picked_rows)}
+        for key in ("psnr", "ssim", "lpips", "gs_num", "train_time_s"):
+            values = [float(row[key]) for row in picked_rows if row[key] not in (None, "")]
+            avg["avg_{}".format(key)] = sum(values) / len(values) if values else None
+        averages.append(avg)
+    return averages
+
+
 def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
     if not rows:
         path.write_text("", encoding="utf-8")
@@ -275,18 +306,22 @@ def main() -> int:
     comparisons = build_comparisons(summary)
     recommendations = build_recommendations(summary)
     averages = build_averages(summary)
+    recommendation_averages = build_recommendation_averages(summary, recommendations)
 
     write_csv(output_dir / "summary.csv", summary)
     write_csv(output_dir / "comparisons.csv", comparisons)
     write_csv(output_dir / "recommendations.csv", recommendations)
     write_csv(output_dir / "averages.csv", averages)
+    write_csv(output_dir / "recommendation_averages.csv", recommendation_averages)
     write_json(output_dir / "summary.json", summary)
     write_json(output_dir / "comparisons.json", comparisons)
     write_json(output_dir / "recommendations.json", recommendations)
     write_json(output_dir / "averages.json", averages)
+    write_json(output_dir / "recommendation_averages.json", recommendation_averages)
 
     print("Wrote {}".format(output_dir / "summary.csv"))
     print("Wrote {}".format(output_dir / "recommendations.csv"))
+    print("Wrote {}".format(output_dir / "recommendation_averages.csv"))
     return 0
 
 

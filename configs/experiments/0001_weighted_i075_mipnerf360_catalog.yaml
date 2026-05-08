@@ -1,0 +1,57 @@
+name: 0001_weighted_i075_mipnerf360_catalog
+description: 0001 DINO token-edge weighted i0.75 的 MipNeRF360 全场景评估目录。
+runs:
+  - scene: bicycle
+    method: weighted_i075
+    role: quality_candidate
+    compare_to: weighted_i050
+    run_dir: output/0001/vfm_dinov2_token_edge_topk025_weighted_i075_bicycle_30k_r8
+    train_time_s: 141.48
+  - scene: bonsai
+    method: weighted_i075
+    role: quality_candidate
+    compare_to: weighted_i050
+    run_dir: output/0001/vfm_dinov2_token_edge_topk025_weighted_i075_bonsai_30k_r8
+    train_time_s: 138.14
+  - scene: counter
+    method: weighted_i075
+    role: quality_candidate
+    compare_to: weighted_i050
+    run_dir: output/0001/weighted_i075_mipnerf360/counter/vfm_dinov2_token_edge_topk025_weighted_i075_30k_r8
+    train_log: output/0001/weighted_i075_mipnerf360/counter/logs/vfm_dinov2_token_edge_topk025_weighted_i075_30k_r8/train.log
+  - scene: flowers
+    method: weighted_i075
+    role: quality_candidate
+    compare_to: weighted_i050
+    run_dir: output/0001/weighted_i075_mipnerf360/flowers/vfm_dinov2_token_edge_topk025_weighted_i075_30k_r8
+    train_log: output/0001/weighted_i075_mipnerf360/flowers/logs/vfm_dinov2_token_edge_topk025_weighted_i075_30k_r8/train.log
+  - scene: garden
+    method: weighted_i075
+    role: quality_candidate
+    compare_to: weighted_i050
+    run_dir: output/0001/weighted_i075_mipnerf360/garden/vfm_dinov2_token_edge_topk025_weighted_i075_30k_r8
+    train_log: output/0001/weighted_i075_mipnerf360/garden/logs/vfm_dinov2_token_edge_topk025_weighted_i075_30k_r8/train.log
+  - scene: kitchen
+    method: weighted_i075
+    role: quality_candidate
+    compare_to: weighted_i050
+    run_dir: output/0001/weighted_i075_mipnerf360/kitchen/vfm_dinov2_token_edge_topk025_weighted_i075_30k_r8
+    train_log: output/0001/weighted_i075_mipnerf360/kitchen/logs/vfm_dinov2_token_edge_topk025_weighted_i075_30k_r8/train.log
+  - scene: room
+    method: weighted_i075
+    role: quality_candidate
+    compare_to: weighted_i050
+    run_dir: output/0001/vfm_dinov2_token_edge_topk025_weighted_i075_room_30k_r8
+    train_time_s: 120.08
+  - scene: stump
+    method: weighted_i075
+    role: quality_candidate
+    compare_to: weighted_i050
+    run_dir: output/0001/vfm_dinov2_token_edge_topk025_weighted_i075_stump_30k_r8
+    train_time_s: 138.82
+  - scene: treehill
+    method: weighted_i075
+    role: quality_candidate
+    compare_to: weighted_i050
+    run_dir: output/0001/weighted_i075_mipnerf360/treehill/vfm_dinov2_token_edge_topk025_weighted_i075_30k_r8
+    train_log: output/0001/weighted_i075_mipnerf360/treehill/logs/vfm_dinov2_token_edge_topk025_weighted_i075_30k_r8/train.log

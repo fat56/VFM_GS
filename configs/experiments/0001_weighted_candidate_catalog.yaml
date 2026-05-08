@@ -124,3 +124,33 @@ runs:
     compare_to: weighted_i050
     run_dir: output/0001/vfm_dinov2_token_edge_topk025_weighted_i075_bonsai_30k_r8
     train_time_s: 138.14
+  - scene: counter
+    method: weighted_i075
+    role: quality_probe
+    compare_to: weighted_i050
+    run_dir: output/0001/weighted_i075_mipnerf360/counter/vfm_dinov2_token_edge_topk025_weighted_i075_30k_r8
+    train_log: output/0001/weighted_i075_mipnerf360/counter/logs/vfm_dinov2_token_edge_topk025_weighted_i075_30k_r8/train.log
+  - scene: flowers
+    method: weighted_i075
+    role: quality_probe
+    compare_to: weighted_i050
+    run_dir: output/0001/weighted_i075_mipnerf360/flowers/vfm_dinov2_token_edge_topk025_weighted_i075_30k_r8
+    train_log: output/0001/weighted_i075_mipnerf360/flowers/logs/vfm_dinov2_token_edge_topk025_weighted_i075_30k_r8/train.log
+  - scene: garden
+    method: weighted_i075
+    role: quality_probe
+    compare_to: weighted_i050
+    run_dir: output/0001/weighted_i075_mipnerf360/garden/vfm_dinov2_token_edge_topk025_weighted_i075_30k_r8
+    train_log: output/0001/weighted_i075_mipnerf360/garden/logs/vfm_dinov2_token_edge_topk025_weighted_i075_30k_r8/train.log
+  - scene: kitchen
+    method: weighted_i075
+    role: quality_probe
+    compare_to: weighted_i050
+    run_dir: output/0001/weighted_i075_mipnerf360/kitchen/vfm_dinov2_token_edge_topk025_weighted_i075_30k_r8
+    train_log: output/0001/weighted_i075_mipnerf360/kitchen/logs/vfm_dinov2_token_edge_topk025_weighted_i075_30k_r8/train.log
+  - scene: treehill
+    method: weighted_i075
+    role: quality_probe
+    compare_to: weighted_i050
+    run_dir: output/0001/weighted_i075_mipnerf360/treehill/vfm_dinov2_token_edge_topk025_weighted_i075_30k_r8
+    train_log: output/0001/weighted_i075_mipnerf360/treehill/logs/vfm_dinov2_token_edge_topk025_weighted_i075_30k_r8/train.log
