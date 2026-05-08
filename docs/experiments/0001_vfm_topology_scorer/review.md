@@ -2,7 +2,7 @@
 
 ## 当前决策
 
-继续保留 `vfm_topology_scorer` 作为 v1 集成路径。`mock_l1` 验证打分链路；`cached_edge_l1` 固化为早期 proxy 正向控制组，但 Tandt/DB 全场景评估显示它存在明显跨数据集差异：`db` 正向，`tandt` 负向。`dinov2_token_edge_l1` 已验证训练可以消费真实 DINOv2 patch-token cache，并且 `top-k 25% + importance_weight=0.50` 完成 MipNeRF360 全 9 场景评估，平均 PSNR 28.8577、SSIM 0.8666、LPIPS 0.1385，超过 baseline 与 cached-edge v1，可作为 0001 的 DINO 质量候选；但平均 Gaussian 数量比 baseline 多约 52.1%，还不是预算高效结论。`weighted + importance_weight=0.50` 在 bicycle 上达到 PSNR 26.9756、SSIM 0.8288、LPIPS 0.1867、415,158 个 Gaussians，几乎贴近 cadence control 点数并保持三项正向，是当前更接近预算高效的候选，需要第二场景复验。`dinov2_descriptor_cosine` 则打通了在线渲染图 descriptor 与 GT cache descriptor 的语义比较路径，但预算对齐后未转正。后续决策门槛以 30k 完整 run 为准，不再用短程验证指标判断质量。
+继续保留 `vfm_topology_scorer` 作为 v1 集成路径。`mock_l1` 验证打分链路；`cached_edge_l1` 固化为早期 proxy 正向控制组，但 Tandt/DB 全场景评估显示它存在明显跨数据集差异：`db` 正向，`tandt` 负向。`dinov2_token_edge_l1` 已验证训练可以消费真实 DINOv2 patch-token cache，并且 `top-k 25% + importance_weight=0.50` 完成 MipNeRF360 全 9 场景评估，平均 PSNR 28.8577、SSIM 0.8666、LPIPS 0.1385，超过 baseline 与 cached-edge v1，可作为 0001 的 DINO 质量候选；但平均 Gaussian 数量比 baseline 多约 52.1%，还不是预算高效结论。`weighted + importance_weight=0.50` 已在 bicycle、treehill、stump、counter、garden 和 flowers 完成复验：它在 bicycle/stump/garden 上保留主要收益并省点，在 flowers 上仍优于 baseline 但相对普通 i0.50 回落更明显，在 counter 这类低增点场景省点空间很小。因此它是场景自适应预算候选，而不是无条件替代普通 i0.50 的默认项。`dinov2_descriptor_cosine` 则打通了在线渲染图 descriptor 与 GT cache descriptor 的语义比较路径，但预算对齐后未转正。后续决策门槛以 30k 完整 run 为准，不再用短程验证指标判断质量。
 
 ## 发现
 
@@ -133,6 +133,7 @@
 - `weighted + importance_weight=0.50` stump 大收益场景复验最终 354,046 个 Gaussians，PSNR 27.6147、SSIM 0.8170、LPIPS 0.1934，训练 136.36s。相比普通 stump i0.50 少 11,538 个点、训练少 1.54s，且 PSNR/SSIM/LPIPS 基本持平甚至微幅更好；相比 baseline 提升 +0.4391 PSNR、+0.0236 SSIM、LPIPS 改善 -0.0393。它把 weighted 从“bicycle 近预算点”推进为可跨场景保留收益的候选。
 - `weighted + importance_weight=0.50` counter 低增点场景复验最终 119,273 个 Gaussians，PSNR 29.6650、SSIM 0.9333、LPIPS 0.0752，训练 133.34s。相比普通 counter i0.50 只少 422 个点、训练少 6.95s，但 PSNR 回落 -0.0524；相比 baseline 和 cached-edge v1 仍三项正向。它说明普通 i0.50 已贴近 baseline 点数时，weighted 不应默认替换普通 i0.50。
 - `weighted + importance_weight=0.50` garden 中等点数增长复验最终 253,355 个 Gaussians，PSNR 28.9546、SSIM 0.8977、LPIPS 0.0974，训练 134.56s。相比普通 garden i0.50 少 9,030 个点、训练少 4.75s，PSNR/SSIM/LPIPS 小幅回落；相比 baseline 和 cached-edge v1 仍三项正向。它说明 weighted 在中等点数增长场景可作为省点折中，但 LPIPS 回落比 stump/counter 更明显。
+- `weighted + importance_weight=0.50` flowers 高增点植被场景复验最终 339,267 个 Gaussians，PSNR 22.9636、SSIM 0.6933、LPIPS 0.2791，训练 141.18s。相比普通 flowers i0.50 少 11,154 个点、训练少 4.12s，但 PSNR 回落 -0.0498、SSIM 回落 -0.0027、LPIPS 差 +0.0044；相比 baseline 仍明显正向，相比 cached-edge v1 也保住 SSIM/LPIPS 正向。它说明高增点植被场景中 weighted 仍有折中价值，但质量损失比 garden/stump 更大。
 
 ## 下一版计划
 
@@ -141,6 +142,6 @@
 3. 为下一版增加场景自适应保护：当自然结束 Gaussian 数量显著低于 baseline 或 staged target 时，降低 pruning fusion 强度、回退到 baseline pruning，或触发容量保护，避免 Tandt 这类场景被压得过稀。
 4. DINO 主线不再追加同类 top-k、percentile、soft-top-k 或单纯 final hard-prune 单点。下一步只做会改变预算行为的实验，例如 RGB/VFM 加权融合的跨场景复验、预算感知 importance cap、按场景自动下调 VFM importance，或把 target budget 与恢复时序绑定。
 5. 预算感知 importance cap 已完成 bicycle 420k、430k 放松衰减和 430k quadratic 三个 30k 对照：420k 软预算点为 422,778 个 Gaussians，PSNR/SSIM/LPIPS 为 26.9732 / 0.8273 / 0.1916；430k、start 0.95、min 0.10 为 419,513 个 Gaussians，PSNR/SSIM/LPIPS 为 26.9750 / 0.8270 / 0.1919；430k quadratic 为 418,137 个 Gaussians，PSNR/SSIM/LPIPS 为 26.9402 / 0.8262 / 0.1918。它们都没有保住 i0.50 质量；下一步不迁移全场景，也不继续手工追加相近曲线单点，先改为场景自适应预算或直接估计场景容量。
-6. `weighted + importance_weight=0.50` 是当前近预算效率点。bicycle 表明它贴近 cadence 预算仍优于 cadence control，treehill 表明它能省点但不能解决 PSNR 负向，stump 表明它在大收益场景能省点并完整保住收益，counter 表明当普通 i0.50 已接近 baseline 点数时 weighted 省点空间很小且质量会回落，garden 表明中等点数增长场景可以省点并保留主要收益。下一步把规则收束为：普通 i0.50 已低增点时优先保留 `max`，中高增点场景优先测试 `weighted`；实验上优先用 `flowers` 这类大点数/复杂植被场景复验。
+6. `weighted + importance_weight=0.50` 是当前近预算效率点。bicycle 表明它贴近 cadence 预算仍优于 cadence control，treehill 表明它能省点但不能解决 PSNR 负向，stump 表明它在大收益场景能省点并完整保住收益，counter 表明当普通 i0.50 已接近 baseline 点数时 weighted 省点空间很小且质量会回落，garden 表明中等点数增长场景可以省点并保留主要收益，flowers 表明复杂植被场景仍正向但质量回落更明显。下一步把规则收束为：普通 i0.50 已低增点时优先保留 `max`，中高增点场景可测试 `weighted`，但必须报告相对普通 i0.50 的质量损失；若要形成完整结论，应补齐剩余 weighted 场景并计算均值。
 7. 已验证的 `support_ratio` 与高置信 prune-protect 都没有优于普通 i0.50，因此下一版不把它们作为主方向；可以保留为诊断分支。
 8. 重做恢复时序：不再只在训练结束后统一 dense recovery，而是在 staged pruning 发生后立即执行短局部恢复，观察是否能减少中期结构损伤。
