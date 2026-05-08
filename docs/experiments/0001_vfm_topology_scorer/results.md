@@ -363,6 +363,39 @@ DB i0.90 逐场景对比：
 - 固定 i0.75/i0.90 不是答案：i0.75 平均 PSNR 只比 i0.50 高 +0.0005，训练时间多 37.28s；i0.90 平均 PSNR 反而低 -0.0142，训练时间多 58.51s。多档策略的收益来自场景选择，而不是全局提高权重。
 - QCGI pick 的 PSNR 略低于 validated policy，但 SSIM/LPIPS 更好，说明 QCGI 更适合作为“质量-容量综合指标”，后续可用于自适应 density/prune 强度；若论文主指标优先 PSNR，则 validated policy 更适合作为保守展示线。
 
+## 2026-05-09 DB train-side selector 泄漏检查
+
+目标：验证上面的多档 selector 是否能只依赖训练侧信号，而不是使用 test split 结果做事后选择。新增 `scripts/evaluate_0001_train_selector.py`，它不保存渲染图，而是在内存中对 train split 均匀抽样视角渲染并计算 PSNR/SSIM/LPIPS；随后只用 train 指标选择候选，再回到已有 test summary 查看最终测试表现。快速检查先覆盖 DB 两场景，每个 run 抽样 20 个 train 视角，输出在 `output/0001/train_selector`。
+
+命令：
+
+```bash
+uv run --active python scripts/evaluate_0001_train_selector.py \
+  --datasets db \
+  --max-views 20 \
+  --resume
+```
+
+train-side 选择结果落到 test split 后的表现：
+
+| 选择器 | 场景数 | Test PSNR | Test SSIM | Test LPIPS | Test Gaussian 数 | Test 训练时间 |
+|---|---:|---:|---:|---:|---:|---:|
+| train best-PSNR | 2 | 30.5605 | 0.9370 | 0.0620 | 64,264 | 168.24s |
+| train QCGI | 2 | 30.5605 | 0.9370 | 0.0620 | 64,264 | 168.24s |
+
+逐场景选择：
+
+| 场景 | train best-PSNR / QCGI 选择 | 对应 test PSNR | test 最优 PSNR 方法 | test 最优 PSNR |
+|---|---|---:|---|---:|
+| drjohnson | DINO weighted i0.90 | 30.5982 | DINO weighted i0.75 | 30.7254 |
+| playroom | cached-edge v1 | 30.5228 | DINO weighted i0.90 | 30.6165 |
+
+解读：
+
+- 这个快速检查是负向结果：train 渲染指标没有复现 DB 上的 test 最优选择。它在 `drjohnson` 过度偏向 i0.90，在 `playroom` 又保守地选择 cached-edge。
+- train-side 选择的 DB 平均 test PSNR 为 30.5605，略低于 DB cached-edge v1 的 30.5631，也低于 fixed DINO weighted i0.90 的 30.6074，更低于 test oracle 的 30.6710。
+- 因此不能把当前 `validated_policy` 包装成无泄漏的自动选择器。下一步如果要形成严格方案，需要独立 validation split、预先固定的数据集级策略，或使用与 test 指标无关的训练过程信号；单纯 train render PSNR/QCGI 不够。
+
 ## 2026-04-28 Mock v1 快速验证
 
 数据集：`datasets/mipnerf360/bicycle`，test split，`-r 8`，220 iterations，`densify_from_iter=50`，`densification_interval=50`。
