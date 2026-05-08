@@ -129,6 +129,7 @@
 - DINO i0.50 相对 cached-edge v1 在 9/9 场景三项指标均正向；相对 baseline 在 8/9 场景 PSNR 正向、9/9 场景 SSIM/LPIPS 正向。`treehill` 是唯一 PSNR 低于 baseline 的场景，但 SSIM/LPIPS 明显改善；`stump` 是 PSNR 增益最大的正例。
 - DINO i0.50 的代价是平均 Gaussian 数量从 baseline 的 173,341 增到 263,572，约 +52.1%。它证明真实 DINO token topology 信号有效，但预算机制仍需单独解决。
 - `weighted + importance_weight=0.50` bicycle 30k 对照最终 415,158 个 Gaussians，PSNR 26.9756、SSIM 0.8288、LPIPS 0.1867，训练 141.21s。相比 `fastgs_densify100` cadence control 只多 3,080 个点，却提升 +0.0469 PSNR、+0.0047 SSIM、LPIPS 改善 -0.0097；相比普通 `max + importance_weight=0.50` 少 24,913 个点，质量只小幅回落。这个结果说明 RGB/VFM 加权平均比软预算衰减更像可用的近预算融合方式。
+- `weighted + importance_weight=0.50` treehill 压力复验最终 417,534 个 Gaussians，PSNR 24.5101、SSIM 0.7281、LPIPS 0.2837，训练 139.79s。相比普通 treehill i0.50 少 14,986 个点、训练少 2.35s，但 PSNR 低 -0.0072、SSIM 低 -0.0003、LPIPS 差 +0.0015；相比 baseline 仍保持 SSIM/LPIPS 明显正向但 PSNR 略低。它说明 weighted 能在压力场景省点并基本保住质量，但不是完整预算解法。
 
 ## 下一版计划
 
@@ -137,6 +138,6 @@
 3. 为下一版增加场景自适应保护：当自然结束 Gaussian 数量显著低于 baseline 或 staged target 时，降低 pruning fusion 强度、回退到 baseline pruning，或触发容量保护，避免 Tandt 这类场景被压得过稀。
 4. DINO 主线不再追加同类 top-k、percentile、soft-top-k 或单纯 final hard-prune 单点。下一步只做会改变预算行为的实验，例如 RGB/VFM 加权融合的跨场景复验、预算感知 importance cap、按场景自动下调 VFM importance，或把 target budget 与恢复时序绑定。
 5. 预算感知 importance cap 已完成 bicycle 420k、430k 放松衰减和 430k quadratic 三个 30k 对照：420k 软预算点为 422,778 个 Gaussians，PSNR/SSIM/LPIPS 为 26.9732 / 0.8273 / 0.1916；430k、start 0.95、min 0.10 为 419,513 个 Gaussians，PSNR/SSIM/LPIPS 为 26.9750 / 0.8270 / 0.1919；430k quadratic 为 418,137 个 Gaussians，PSNR/SSIM/LPIPS 为 26.9402 / 0.8262 / 0.1918。它们都没有保住 i0.50 质量；下一步不迁移全场景，也不继续手工追加相近曲线单点，先改为场景自适应预算或直接估计场景容量。
-6. `weighted + importance_weight=0.50` 是当前近预算效率点。下一步优先用 `treehill` 压力测试确认它是否能在 cached-edge 负例上继续保持 SSIM/LPIPS 优势；若 treehill 失败，则退回 `stump` 或 `counter` 做正例复验，判断它是通用预算方案还是只在 bicycle 上成立。
+6. `weighted + importance_weight=0.50` 是当前近预算效率点。treehill 压力复验说明它能省点但不能解决 PSNR 负向；下一步优先用 `stump` 这种大收益/大点数场景确认它是否能保留主要增益，同时明显降低点数。
 7. 已验证的 `support_ratio` 与高置信 prune-protect 都没有优于普通 i0.50，因此下一版不把它们作为主方向；可以保留为诊断分支。
 8. 重做恢复时序：不再只在训练结束后统一 dense recovery，而是在 staged pruning 发生后立即执行短局部恢复，观察是否能减少中期结构损伤。
