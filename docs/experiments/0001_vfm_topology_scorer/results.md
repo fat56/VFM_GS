@@ -139,6 +139,32 @@
 - `vfm_weight=0.0` 仍保持低点数，说明单独关闭 VFM pruning fusion 不足以修复 Tandt；`densification_interval=100` 本身也会让 `train` 的点数和质量低于 baseline。下一版应把容量保护作为防线，但主改动应转向场景自适应 scorer/cadence，而不是简单固定最小点数。
 - 该参数默认关闭，适合做诊断和回退保护；若用于正式方案，需要自动估计 `min_gaussian_count`，例如由 baseline 预跑、场景尺度或在线增长曲线预测。
 
+## 2026-05-08 Tandt 自动容量下限复验
+
+目标：把手动填写的 `prune_min_gaussian_count` 推进一步，改为通过 `prune_min_gaussian_target_ratio` 从 `target_gaussian_count` 自动派生。`configs/experiments/0001_vfm_topology_cached_edge_auto_prunemin.yaml` 使用 ratio `0.7042253521126761`；当 target 仍取 `baseline * 1.42` 时，该 ratio 等价于 baseline 最终点数。显式 `prune_min_gaussian_count` 仍优先。
+
+代码行为：训练开始时会计算有效 `prune_min_gaussian_count`，写回 `opt`，因此训练期抽样裁剪、最终一致性裁剪和输出目录中的 `cfg_args` 都记录同一个有效下限。`train` 自动派生为 58,788，`truck` 自动派生为 41,952。
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 | 输出路径 |
+|---|---|---:|---:|---:|---:|---:|---|
+| train | cached edge + 自动容量下限 | 23.5604 | 0.9088 | 0.0826 | 58,788 | 151.27s | `output/0001/full_tandt_db_v1/tandt/train/vfm_cached_edge_autoprunemin_staged142_30k_r8` |
+| truck | cached edge + 自动容量下限 | 27.9342 | 0.9573 | 0.0363 | 41,952 | 143.17s | `output/0001/full_tandt_db_v1/tandt/truck/vfm_cached_edge_autoprunemin_staged142_30k_r8` |
+| **平均** | **cached edge + 自动容量下限** | **25.7473** | **0.9330** | **0.0594** | **50,370** | **147.22s** | - |
+
+对比：
+
+| 参照 | ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 |
+|---|---:|---:|---:|---:|---:|
+| 相对 cached edge v1 | +0.1674 | +0.0014 | -0.0014 | +18,808 | +2.37s |
+| 相对手动容量保护 | -0.0333 | -0.0007 | +0.0009 | +0 | +3.18s |
+| 相对 baseline | -0.2078 | -0.0047 | +0.0053 | +0 | +6.97s |
+
+解读：
+
+- 自动下限复验达成机制目标：不再手填 `prune_min_gaussian_count`，仍能从 staged target 派生出与 baseline 容量一致的保护下限，并在 `cfg_args` 中记录有效值。
+- 质量相对原始 cached edge v1 仍有恢复，但略低于 2026-05-07 的手动容量保护 run。两组最终 Gaussian 数量相同，因此差异主要来自运行方差或训练轨迹微小差别；不能把自动下限解读成新的质量提升。
+- 结论保持不变：容量下限是 Tandt 负例的必要防线，但不是完整解法。下一步应让 ratio 或下限来源于 baseline 预跑、在线增长曲线或场景尺度估计，而不是固定绑定 `baseline * 1.42` 这个诊断比例。
+
 ## 2026-04-28 Mock v1 快速验证
 
 数据集：`datasets/mipnerf360/bicycle`，test split，`-r 8`，220 iterations，`densify_from_iter=50`，`densification_interval=50`。

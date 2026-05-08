@@ -124,6 +124,7 @@
 - `prune_min_gaussian_count` 已作为默认关闭的容量保护参数落地。它会限制训练期抽样裁剪和最终一致性裁剪的最大删除量，避免点数低于指定下限。
 - Tandt 容量保护诊断显示，`train` 从 cached edge v1 的 PSNR 23.4054 / SSIM 0.9081 / LPIPS 0.0837 / 35,322 点恢复到 23.5970 / 0.9104 / 0.0804 / 58,788 点；`truck` 从 27.7543 / 0.9550 / 0.0379 / 27,802 点恢复到 27.9641 / 0.9570 / 0.0366 / 41,952 点。
 - 容量保护后的 Tandt 平均为 PSNR 25.7806、SSIM 0.9337、LPIPS 0.0585，优于原始 cached edge v1 的 25.5799 / 0.9316 / 0.0608，但仍低于 baseline 的 25.9551 / 0.9377 / 0.0541。结论是：容量下限是必要防线，但不能独立解决 Tandt 负例。
+- `prune_min_gaussian_target_ratio` 已完成 Tandt 自动下限复验。ratio `0.7042253521126761` 在 `target_gaussian_count=baseline*1.42` 时自动派生出 train 的 58,788 和 truck 的 41,952，并写入 `cfg_args`。两场景平均为 PSNR 25.7473、SSIM 0.9330、LPIPS 0.0594、50,370 点；相对原始 cached edge v1 有恢复，但略低于手动容量保护，不应解读为新的质量提升。
 - `vfm_weight=0.0` 的 Tandt `train` 诊断仍只有 35,698 个点且 PSNR 23.2628；纯 FastGS `densification_interval=100` 也只有 43,488 个点且 PSNR 23.6091。负例同时包含 cadence、edge signal 和 pruning trajectory 的耦合，不应简单归因为某一个 fusion 权重。
 - DINO token-edge `top-k 25% + importance_weight=0.50` 已完成 MipNeRF360 全 9 场景复验。候选均值为 PSNR 28.8577、SSIM 0.8666、LPIPS 0.1385、263,572 个 Gaussians；相对 baseline 平均提升 +0.2051 PSNR、+0.0115 SSIM、LPIPS 改善 -0.0234；相对 cached-edge v1 平均提升 +0.1365 PSNR、+0.0087 SSIM、LPIPS 改善 -0.0166。
 - DINO i0.50 相对 cached-edge v1 在 9/9 场景三项指标均正向；相对 baseline 在 8/9 场景 PSNR 正向、9/9 场景 SSIM/LPIPS 正向。`treehill` 是唯一 PSNR 低于 baseline 的场景，但 SSIM/LPIPS 明显改善；`stump` 是 PSNR 增益最大的正例。
@@ -148,7 +149,7 @@
 ## 下一版计划
 
 1. 固化两个角色：`cached_edge_l1` 是 proxy 正向控制组，结论边界为 MipNeRF360 与 DB 正向、Tandt 负向；DINO token-edge i0.50 是 MipNeRF360 全场景质量候选，但不是预算高效候选。
-2. 把 `prune_min_gaussian_count` 保留为诊断/回退保护，同时使用默认关闭的 `prune_min_gaussian_target_ratio` 从 staged target 自动派生容量下限。当前 ratio `0.7042253521126761` 在 target 为 `baseline * 1.42` 时等价于 baseline 最终点数；下一版不要长期依赖人工填 baseline count，应继续转向 baseline 预跑、在线增长曲线或 scene scale 自动估计容量下限。
+2. 把 `prune_min_gaussian_count` 保留为诊断/回退保护，同时使用默认关闭的 `prune_min_gaussian_target_ratio` 从 staged target 自动派生容量下限。当前 ratio `0.7042253521126761` 在 target 为 `baseline * 1.42` 时等价于 baseline 最终点数，Tandt 复验已确认机制可复现容量保护；下一版不要长期依赖人工填 baseline count，应继续转向 baseline 预跑、在线增长曲线或 scene scale 自动估计容量下限。
 3. 为下一版增加场景自适应保护：当自然结束 Gaussian 数量显著低于 baseline 或 staged target 时，降低 pruning fusion 强度、回退到 baseline pruning，或触发容量保护，避免 Tandt 这类场景被压得过稀。
 4. DINO 主线不再追加同类 top-k、percentile、soft-top-k 或单纯 final hard-prune 单点。下一步只做会改变预算行为的实验，例如 RGB/VFM 加权融合的高质量档位复验、按场景自动下调 VFM importance，或把 target budget 与恢复时序绑定。
 5. 预算感知 importance cap 已完成 bicycle 420k、430k 放松衰减和 430k quadratic 三个 30k 对照：420k 软预算点为 422,778 个 Gaussians，PSNR/SSIM/LPIPS 为 26.9732 / 0.8273 / 0.1916；430k、start 0.95、min 0.10 为 419,513 个 Gaussians，PSNR/SSIM/LPIPS 为 26.9750 / 0.8270 / 0.1919；430k quadratic 为 418,137 个 Gaussians，PSNR/SSIM/LPIPS 为 26.9402 / 0.8262 / 0.1918。它们都没有保住 i0.50 质量；下一步不迁移全场景，也不继续手工追加相近曲线单点，先改为场景自适应预算或直接估计场景容量。
