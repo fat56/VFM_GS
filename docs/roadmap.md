@@ -6,7 +6,7 @@
 
 ## 排队
 
-- 下一版优先设计预算感知 scorer 和自动容量保护，而不是继续堆叠 descriptor mask ratio：候选方向包括当自然点数显著低于 baseline 预测值时回退 pruning 强度、在 staged pruning 后立即短恢复而非训练结束统一恢复。按 Gaussian 支持度归一化 VFM score 和高置信 VFM 区域保护都已完成 bicycle 30k 验证，均不优于普通 i0.50；`weighted` importance 已在 bicycle、treehill、stump、counter、garden、flowers 和 bonsai 完成复验。counter 显示低点数增长场景中 weighted 省点空间很小，garden/stump 显示中高点数增长场景能保留主要收益，flowers 显示复杂植被场景仍正向但相对普通 i0.50 的质量损失更明显，bonsai 则说明中低增点场景也可能少点且微升。下一步优先补齐剩余 weighted 场景并计算均值，或把 weighted 选择规则固化为下一版计划。
+- 下一版优先设计预算感知 scorer 和自动容量保护，而不是继续堆叠 descriptor mask ratio：候选方向包括当自然点数显著低于 baseline 预测值时回退 pruning 强度、在 staged pruning 后立即短恢复而非训练结束统一恢复。按 Gaussian 支持度归一化 VFM score 和高置信 VFM 区域保护都已完成 bicycle 30k 验证，均不优于普通 i0.50；`weighted` importance 已在 bicycle、treehill、stump、counter、garden、flowers、bonsai 和 kitchen 完成复验。counter 显示低点数增长场景中 weighted 省点空间很小，garden/stump 显示中高点数增长场景能保留主要收益，flowers 显示复杂植被场景仍正向但相对普通 i0.50 的质量损失更明显，bonsai 说明中低增点场景也可能少点且微升，kitchen 则说明室内高基线场景可少点省时并接近普通 i0.50。下一步优先补齐 room weighted 并计算均值，或把 weighted 选择规则固化为下一版计划。
 - 已增加默认关闭的 `vfm_importance_budget_count` 软预算机制，并完成 bicycle 620-step、420k 30k、430k 放松衰减和 430k quadratic 对照。420k 软预算点最终 422,778 个 Gaussians，PSNR/SSIM/LPIPS 为 26.9732 / 0.8273 / 0.1916；430k、start 0.95、min 0.10 对照最终 419,513 个 Gaussians，PSNR/SSIM/LPIPS 为 26.9750 / 0.8270 / 0.1919；430k quadratic 对照最终 418,137 个 Gaussians，PSNR/SSIM/LPIPS 为 26.9402 / 0.8262 / 0.1918。三者都未保住普通 i0.50 质量。下一步不继续手工追加相近预算曲线单点，应转向场景自适应预算或直接估计场景容量。
 
 ## 阻塞
@@ -84,6 +84,7 @@
 - 完成 DINO token-edge top-k 25% `weighted + importance_weight=0.50` garden 30k 中等点数增长复验；最终 253,355 个 Gaussians，PSNR 28.9546、SSIM 0.8977、LPIPS 0.0974，训练 134.56s。相比普通 garden i0.50 少 9,030 个点、训练少 4.75s，质量小幅回落；相比 baseline 和 cached-edge v1 仍三项正向。
 - 完成 DINO token-edge top-k 25% `weighted + importance_weight=0.50` flowers 30k 高增点植被场景复验；最终 339,267 个 Gaussians，PSNR 22.9636、SSIM 0.6933、LPIPS 0.2791，训练 141.18s。相比普通 flowers i0.50 少 11,154 个点、训练少 4.12s，但质量回落更明显；相比 baseline 仍明显正向，相比 cached-edge v1 保住 SSIM/LPIPS 改善。
 - 完成 DINO token-edge top-k 25% `weighted + importance_weight=0.50` bonsai 30k 中低增点场景复验；最终 134,806 个 Gaussians，PSNR 32.5395、SSIM 0.9642、LPIPS 0.0493，训练 138.31s。相比普通 bonsai i0.50 少 1,499 个点、训练少 1.01s，同时三项质量微升；相比 baseline 和 cached-edge v1 也三项正向。
+- 完成 DINO token-edge top-k 25% `weighted + importance_weight=0.50` kitchen 30k 室内高基线场景复验；最终 157,804 个 Gaussians，PSNR 33.3234、SSIM 0.9693、LPIPS 0.0347，训练 141.71s。相比普通 kitchen i0.50 少 3,543 个点、训练少 3.21s，质量只小幅回落；相比 baseline 和 cached-edge v1 三项指标仍正向，且 Gaussian 数量更少。
 - 增加 `vfm_importance_normalizer=none|support_ratio`，默认关闭。support-ratio 模式在 densification 打分时额外统计每个 Gaussian 的可见像素支持度，再用 VFM 命中比例调节 VFM importance；620-step bicycle 快速验证完成 train/render/metrics，PSNR 20.8465、SSIM 0.4756、LPIPS 0.5468，61,517 个 Gaussians，说明链路健康。
 - 完成 `support_ratio + importance_weight=0.50` bicycle 30k 对照；最终 432,948 个 Gaussians，PSNR 26.9694、SSIM 0.8286、LPIPS 0.1878，训练 149.40s。它仍优于 cadence control，但比普通 i0.50 少点的同时质量回落，因此不作为下一版主方向。
 - 增加 `vfm_prune_protect_weight` 等默认关闭参数，把高置信 VFM 命中区域转换为 pruning-side 保护分数。620-step bicycle 快速验证完成 train/render/metrics，PSNR 20.8808、SSIM 0.4757、LPIPS 0.5457，61,604 个 Gaussians，说明保护分数链路健康。

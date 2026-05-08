@@ -51,8 +51,9 @@
 | counter | weighted i0.50 | 29.6650 | +0.1239 | +0.0222 | -0.0524 | 0.9333 | +0.0022 | +0.0012 | -0.0005 | 0.0752 | -0.0054 | -0.0035 | +0.0001 | 119,273 | -422 | 133.34s | -6.95s | 仍正向，但低增点场景省点空间小 |
 | stump | weighted i0.50 | 27.6147 | +0.4391 | +0.3672 | +0.0041 | 0.8170 | +0.0236 | +0.0238 | +0.0002 | 0.1934 | -0.0393 | -0.0368 | -0.0001 | 354,046 | -11,538 | 136.36s | -1.54s | 少点且质量基本持平或微升 |
 | bonsai | weighted i0.50 | 32.5395 | +0.1821 | +0.3129 | +0.0475 | 0.9642 | +0.0046 | +0.0042 | +0.0002 | 0.0493 | -0.0130 | -0.0095 | -0.0007 | 134,806 | -1,499 | 138.31s | -1.01s | 中低增点场景正例：少点、提速且质量微升 |
+| kitchen | weighted i0.50 | 33.3234 | +0.2314 | +0.0132 | -0.0124 | 0.9693 | +0.0021 | +0.0002 | -0.0000 | 0.0347 | -0.0032 | -0.0003 | +0.0003 | 157,804 | -3,543 | 141.71s | -3.21s | 室内高基线正例：少点省时，质量接近普通 i0.50 |
 
-`garden weighted i0.50` 是中等增点场景的关键折中结果：相对普通 garden i0.50 少 9,030 点、训练少 4.75s，同时仍超过 baseline 与 cached-edge。`flowers weighted i0.50` 说明复杂植被边界：它仍相对 baseline 明显正向，并且相对 cached-edge 保住 SSIM/LPIPS 改善，但相对普通 flowers i0.50 的 PSNR/SSIM/LPIPS 回落更明显。`bonsai weighted i0.50` 则是中低增点正例，少 1,499 点并微升质量。因此 weighted 不应无条件替代普通 i0.50，但值得作为场景自适应预算选项。
+`garden weighted i0.50` 是中等增点场景的关键折中结果：相对普通 garden i0.50 少 9,030 点、训练少 4.75s，同时仍超过 baseline 与 cached-edge。`flowers weighted i0.50` 说明复杂植被边界：它仍相对 baseline 明显正向，并且相对 cached-edge 保住 SSIM/LPIPS 改善，但相对普通 flowers i0.50 的 PSNR/SSIM/LPIPS 回落更明显。`bonsai weighted i0.50` 是中低增点正例，少 1,499 点并微升质量；`kitchen weighted i0.50` 则在室内高基线场景中少 3,543 点、训练少 3.21s，质量只相对普通 i0.50 小幅回落。因此 weighted 不应无条件替代普通 i0.50，但值得作为场景自适应预算选项。
 
 ## Bicycle 30k 消融中的正向点
 
@@ -78,6 +79,6 @@
 
 ## 简短结论
 
-当前应保留三条主线：`cached_edge_l1` 是 proxy 正向控制组，在 MipNeRF360 和 DB 上平均正向；`DINO top-k25 + importance_weight=0.50` 是 MipNeRF360 全场景质量候选，相对 baseline 平均 +0.2051 PSNR、+0.0115 SSIM、LPIPS -0.0234；`weighted + i0.50` 是近预算效率候选，garden/stump 证明它能少点省时并保持主要收益，flowers/counter 则说明它需要场景自适应选择。
+当前应保留三条主线：`cached_edge_l1` 是 proxy 正向控制组，在 MipNeRF360 和 DB 上平均正向；`DINO top-k25 + importance_weight=0.50` 是 MipNeRF360 全场景质量候选，相对 baseline 平均 +0.2051 PSNR、+0.0115 SSIM、LPIPS -0.0234；`weighted + i0.50` 是近预算效率候选，garden/stump/bonsai/kitchen 证明它能少点省时并保持主要收益，flowers/counter 则说明它需要场景自适应选择。
 
 边界也很清楚：DINO i0.50 仍不是预算中性方案，Tandt 上 cached-edge v1 不是质量正例，容量保护只适合作为默认关闭的诊断/回退防线。下一步更值得做的是场景自适应预算和 weighted 适用边界复验，而不是继续追加同类单点。
