@@ -326,6 +326,38 @@ uv run --active python scripts/summarize_0001_weighted_candidates.py
 
 当前规则是：预算优先默认选 `weighted_i050`；只有当 `weighted_i075` 相比 `weighted_i050` 的 PSNR 提升、SSIM 没有明显回落、LPIPS 没有明显变差时，才把质量档推荐为 `weighted_i075`。截至 bonsai 边界复验，脚本会把 bicycle、stump、room 判为 `weighted_i075` 正向，把 bonsai 判为 boundary 并推荐保留 `weighted_i050`。
 
+### Weighted i0.50 跨数据集评估
+
+`scripts/run_0001_dino_weighted_eval.py` 用于把当前 DINO weighted i0.50 候选迁移到 Tandt/DB 等新数据集。脚本会按场景执行 DINO cache 构建、cache 校验、30k 训练、render、metrics 和汇总；已完成步骤会跳过。若传入 `--reference-summary`，还会输出相对 baseline 与 cached edge v1 的差值表。
+
+```bash
+uv run --active python scripts/run_0001_dino_weighted_eval.py \
+  --dataset-name tandt \
+  --dataset-root datasets/tandt_db/tandt \
+  --output-root output/0001/dino_weighted_i050_tandt \
+  --scenes train truck \
+  --train-images images \
+  --cache-images images \
+  --reference-summary output/0001/full_tandt_db_v1/tandt/summary.csv
+
+uv run --active python scripts/run_0001_dino_weighted_eval.py \
+  --dataset-name db \
+  --dataset-root datasets/tandt_db/db \
+  --output-root output/0001/dino_weighted_i050_db \
+  --scenes drjohnson playroom \
+  --train-images images \
+  --cache-images images \
+  --reference-summary output/0001/full_tandt_db_v1/db/summary.csv
+```
+
+主要产物：
+
+- `output/0001/dino_weighted_i050_<dataset>/summary.csv`
+- `output/0001/dino_weighted_i050_<dataset>/summary.json`
+- `output/0001/dino_weighted_i050_<dataset>/averages.json`
+- `output/0001/dino_weighted_i050_<dataset>/comparisons.csv`
+- `output/0001/dino_weighted_i050_<dataset>/<scene>/logs/vfm_dinov2_token_edge_topk025_weighted_i050_30k_r8/*.log`
+
 ### Token-Edge Top-k 探测
 
 `0001_vfm_topology_dinov2_token_edge_topk.yaml` 保持 `dinov2_token_edge_l1` 后端不变，只把 metric map 改为 top-k 15% 高误差区域。先用 620-step 验证链路，再进入 30k 完整对照。
