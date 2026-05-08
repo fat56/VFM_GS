@@ -165,6 +165,38 @@
 - 质量相对原始 cached edge v1 仍有恢复，但略低于 2026-05-07 的手动容量保护 run。两组最终 Gaussian 数量相同，因此差异主要来自运行方差或训练轨迹微小差别；不能把自动下限解读成新的质量提升。
 - 结论保持不变：容量下限是 Tandt 负例的必要防线，但不是完整解法。下一步应让 ratio 或下限来源于 baseline 预跑、在线增长曲线或场景尺度估计，而不是固定绑定 `baseline * 1.42` 这个诊断比例。
 
+## 2026-05-08 Tandt DINO weighted i0.50 跨数据集复验
+
+目标：检查 MipNeRF360 上的预算效率候选 `dinov2_token_edge_l1 + top-k25 + weighted + importance_weight=0.50` 能否迁移到 Tandt。实验使用 `scripts/run_0001_dino_weighted_eval.py`，数据集为 `datasets/tandt_db/tandt`，图像目录为 `images`，训练仍为 `-r 8`、30,000 iterations、`--eval`。DINO cache 使用 `dinov2_vits14`、`max_width=224`、`npy_float16`，输出在 `output/0001/dino_weighted_i050_tandt`。
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 | 输出路径 |
+|---|---|---:|---:|---:|---:|---:|---|
+| train | DINO weighted i0.50 | 23.5947 | 0.9122 | 0.0788 | 42,160 | 155.17s | `output/0001/dino_weighted_i050_tandt/train/vfm_dinov2_token_edge_topk025_weighted_i050_30k_r8` |
+| truck | DINO weighted i0.50 | 27.9092 | 0.9571 | 0.0363 | 34,628 | 146.92s | `output/0001/dino_weighted_i050_tandt/truck/vfm_dinov2_token_edge_topk025_weighted_i050_30k_r8` |
+| **平均** | **DINO weighted i0.50** | **25.7519** | **0.9346** | **0.0575** | **38,394** | **151.05s** | - |
+
+对比：
+
+| 参照 | ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | 结论 |
+|---|---:|---:|---:|---:|---:|---|
+| 相对 cached edge v1 | +0.1721 | +0.0031 | -0.0033 | +6,832 | +6.20s | 两个场景均三项指标正向，说明 DINO topology 比 edge proxy 更能修复 Tandt 负例 |
+| 相对 baseline | -0.2032 | -0.0031 | +0.0035 | -11,976 | +10.79s | 平均质量仍低于 baseline，不能作为 Tandt 默认方案 |
+
+逐场景差值：
+
+| 场景 | 参照 | ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| train | baseline | -0.0825 | -0.0032 | +0.0036 | -16,628 | +9.26s |
+| train | cached edge v1 | +0.1893 | +0.0040 | -0.0049 | +6,838 | +6.75s |
+| truck | baseline | -0.3238 | -0.0030 | +0.0033 | -7,324 | +12.33s |
+| truck | cached edge v1 | +0.1549 | +0.0021 | -0.0016 | +6,826 | +5.65s |
+
+解读：
+
+- DINO weighted i0.50 在 Tandt 上相对 `cached_edge_l1` 是清晰正向：`train` 和 `truck` 都提升 PSNR/SSIM，并降低 LPIPS。这说明 DINO token topology 的跨数据集鲁棒性优于纯边缘 proxy。
+- 它仍低于 Tandt baseline，且训练时间更长。与容量保护不同，它没有把点数拉回 baseline，而是在少于 baseline 平均 11,976 个 Gaussians 的条件下修复一部分 cached-edge 损伤。
+- 因此该结果应作为“VFM 分支之间的正向替代”记录，而不是 Tandt 的最终默认方案。下一步更值得继续跑 DB 两场景：如果 DB 上也相对 cached-edge 或 baseline 保持正向，就能更清楚地区分室内/受控场景与 Tandt 户外轨迹场景的选择规则。
+
 ## 2026-04-28 Mock v1 快速验证
 
 数据集：`datasets/mipnerf360/bicycle`，test split，`-r 8`，220 iterations，`densify_from_iter=50`，`densification_interval=50`。

@@ -4,6 +4,8 @@
 
 继续保留 `vfm_topology_scorer` 作为 v1 集成路径。`mock_l1` 验证打分链路；`cached_edge_l1` 固化为早期 proxy 正向控制组，但 Tandt/DB 全场景评估显示它存在明显跨数据集差异：`db` 正向，`tandt` 负向。`dinov2_token_edge_l1` 已验证训练可以消费真实 DINOv2 patch-token cache，并且 `top-k 25% + importance_weight=0.50` 完成 MipNeRF360 全 9 场景评估，平均 PSNR 28.8577、SSIM 0.8666、LPIPS 0.1385，超过 baseline 与 cached-edge v1，可作为 0001 的 DINO 质量候选；但平均 Gaussian 数量比 baseline 多约 52.1%，还不是预算高效结论。`weighted + importance_weight=0.50` 已完成 MipNeRF360 全 9 场景复验，平均 PSNR 28.8505、SSIM 0.8660、LPIPS 0.1397，平均 254,736 个 Gaussians、训练 137.60s；它相对普通 i0.50 平均少 8,836 个点、训练少 2.87s，质量只小幅回落，因此是当前全场景预算效率候选。`weighted + importance_weight=0.75` 已在 bicycle、stump、room 和 bonsai 上完成复验：前三个场景 PSNR 高于 `weighted i0.50`，但 bonsai 低于 `weighted i0.50`，且 stump 会增加 16,510 个点，room/bonsai 的 LPIPS 也不是稳定占优。因此它是需要场景选择的高质量档位候选，不是默认预算效率档位，也不是无条件质量默认值。`adaptive_weighted + quadratic 430k` 在 bicycle 上正向，但 treehill 第二场景复验未通过，后续不升级为主线。`dinov2_descriptor_cosine` 则打通了在线渲染图 descriptor 与 GT cache descriptor 的语义比较路径，但预算对齐后未转正。后续决策门槛以 30k 完整 run 为准，不再用短程验证指标判断质量。
 
+Tandt 的 DINO weighted i0.50 跨数据集复验显示：相对 `cached_edge_l1 + staged target`，`train/truck` 两场景均提升 PSNR/SSIM 并降低 LPIPS，平均为 PSNR 25.7519、SSIM 0.9346、LPIPS 0.0575，较 cached-edge v1 分别改善 +0.1721、+0.0031、-0.0033。但它仍低于 Tandt baseline，平均差距为 -0.2032 PSNR、-0.0031 SSIM、LPIPS 差 +0.0035。因此该结果只升级为“修复 cached-edge Tandt 负例的 VFM 分支正向替代”，不能作为 Tandt 默认 baseline 替代方案。
+
 ## 发现
 
 - `vfm_topology_scorer` 已返回与 `fastgs_photometric` 一致的 `(importance_score, pruning_score)` 契约。
