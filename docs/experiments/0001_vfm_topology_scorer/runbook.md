@@ -510,6 +510,27 @@ gs_penalty = 0.01 * min(max(ΔGS, 0), 100000) / 10000
 QCGI = quality_gain - gs_penalty
 ```
 
+### 数据集级预设策略汇总
+
+`scripts/summarize_0001_dataset_policies.py` 用于把当前已经收束的策略固化成非 oracle 展示线。它不启动训练，只读取 `cross_dataset_selector`、`weighted_candidate_summary` 和 Tandt 诊断结论：
+
+```bash
+uv run --active python scripts/summarize_0001_dataset_policies.py
+```
+
+当前输出两条策略：
+
+- `dataset_fixed_policy`：MipNeRF360 固定用 `weighted_i050`，DB 固定用 `dino_weighted_i090`，Tandt 回退 baseline。
+- `dataset_quality_policy`：MipNeRF360 使用 weighted QCGI 场景选择，DB 固定用 `dino_weighted_i090`，Tandt 回退 baseline。
+
+主要产物：
+
+- `output/0001/dataset_policies/policy_rows.csv`
+- `output/0001/dataset_policies/averages.csv`
+- `output/0001/dataset_policies/comparisons.csv`
+
+截至 2026-05-09，`dataset_fixed_policy` 的 13 场景均值为 28.6754 / 0.8881 / 0.1146、193,798 个 Gaussians，相对 baseline 为 +0.2123 PSNR、+0.0083 SSIM、LPIPS 改善 -0.0160。`dataset_quality_policy` 的 13 场景均值为 28.6848 / 0.8886 / 0.1140、194,550 个 Gaussians，相对 baseline 为 +0.2217 PSNR、+0.0088 SSIM、LPIPS 改善 -0.0166。
+
 其中 `ΔGS < 0.01M` 视为轻量增长，`0.01M <= ΔGS < 0.10M` 是可接受增长区间，`ΔGS >= 0.10M` 会进入重惩罚区间。这个指标有意支持“少量 GS 增长且质量提升”的正例，也会压制“GS 大幅增长但质量收益不足”的低效变体。
 
 ### Token-Edge Top-k 探测

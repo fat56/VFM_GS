@@ -476,6 +476,38 @@ train-side 选择结果落到 test split 后的表现：
 
 `policy.json` 当前结论为 `dataset_policy_pick=baseline`，原因是所有 VFM 候选/诊断的平均指标都没有三项同时超过 baseline。`scene_policy.csv` 中 `train` 和 `truck` 也都回退 baseline。
 
+## 2026-05-09 数据集级预设策略汇总
+
+目标：把目前已经收束的规则整理成非 oracle 展示线，避免把 test split 的逐场景最优选择误解为真实自动 selector。新增 `scripts/summarize_0001_dataset_policies.py`，只读取已有 summary 与 recommendation 产物，输出到 `output/0001/dataset_policies`。
+
+策略定义：
+
+| 策略 | MipNeRF360 | DB | Tandt |
+|---|---|---|---|
+| `dataset_fixed_policy` | 固定 `weighted_i050` | 固定 `dino_weighted_i090` | baseline 回退 |
+| `dataset_quality_policy` | weighted QCGI 场景选择 | 固定 `dino_weighted_i090` | baseline 回退 |
+
+13 场景平均：
+
+| 策略 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---:|---:|---:|---:|---:|
+| baseline | 28.4631 | 0.8797 | 0.1306 | 136,168 | 127.03s |
+| `dataset_fixed_policy` | 28.6754 | 0.8881 | 0.1146 | 193,798 | 147.22s |
+| `dataset_quality_policy` | 28.6848 | 0.8886 | 0.1140 | 194,550 | 161.88s |
+
+相对 baseline：
+
+| 策略 | ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 |
+|---|---:|---:|---:|---:|---:|
+| `dataset_fixed_policy` | +0.2123 | +0.0083 | -0.0160 | +57,631 | +20.19s |
+| `dataset_quality_policy` | +0.2217 | +0.0088 | -0.0166 | +58,382 | +34.86s |
+
+解读：
+
+- 两条策略都不使用 Tandt 的负向 VFM 候选，而是根据诊断表回退 baseline，因此 13 场景平均三项指标稳定超过 baseline。
+- `dataset_fixed_policy` 更适合作为当前第一版的保守展示线：规则更简单，训练时间开销更低，仍有 +0.2123 PSNR 和明显 LPIPS 改善。
+- `dataset_quality_policy` 通过 MipNeRF360 weighted QCGI 场景选择进一步提高质量，但训练时间增加更明显。它适合作为质量优先线，而不是默认效率线。
+
 ## 2026-04-28 Mock v1 快速验证
 
 数据集：`datasets/mipnerf360/bicycle`，test split，`-r 8`，220 iterations，`densify_from_iter=50`，`densification_interval=50`。
