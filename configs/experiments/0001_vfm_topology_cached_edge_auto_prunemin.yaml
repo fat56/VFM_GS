@@ -1,0 +1,21 @@
+name: 0001_vfm_topology_cached_edge_auto_prunemin
+extends: fastgs_baseline
+scorer: vfm_topology_scorer
+training_args:
+  densification_interval: 100
+  vfm_enable: true
+  vfm_backend: cached_edge_l1
+  vfm_cache_dir: output/0001/vfm_cache/bicycle_edge_u8
+  vfm_loss_thresh: 0.5
+  vfm_weight: 0.25
+  vfm_importance_weight: 1.0
+  vfm_importance_mode: max
+  vfm_use_albedo_sh0: true
+  target_gaussian_staged: true
+  target_gaussian_stage_margin: 1.10
+  target_gaussian_stage_interval: 500
+  prune_min_gaussian_target_ratio: 0.7042253521126761
+experiment:
+  status: auto_capacity_floor_probe
+  proposal: docs/experiments/0001_vfm_topology_scorer/proposal.md
+  note: 从 target_gaussian_count 自动派生容量下限；当 target 取 baseline*1.42 时，该 ratio 等价于 baseline 容量。

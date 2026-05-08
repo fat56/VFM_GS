@@ -61,6 +61,8 @@ uv run --active python scripts/run_mipnerf360_v1_eval.py \
 
 `prune_min_gaussian_count` 默认关闭。它用于诊断 `cached_edge_l1` 在 Tandt 上是否因为训练期或最终裁剪过强而低于 baseline 容量。下面两条命令分别把 `train` 和 `truck` 的最小 Gaussian 数量设为对应 baseline 的最终数量，其他条件仍保持 `-r 8`、30,000 iterations、`--eval` 和 v1 staged target。
 
+也可以使用 `configs/experiments/0001_vfm_topology_cached_edge_auto_prunemin.yaml`，用 `prune_min_gaussian_target_ratio` 从 `target_gaussian_count` 自动派生容量下限。当 `target_gaussian_count` 继续沿用 `baseline * 1.42` 时，`0.7042253521126761` 等价于把容量下限设回 baseline 最终点数。显式传入 `--prune_min_gaussian_count` 时，手动值优先。
+
 ```bash
 uv run --active python -m vfm_gs.cli.train \
   --variant fastgs_baseline \
@@ -89,6 +91,25 @@ uv run --active python -m vfm_gs.cli.render \
 
 uv run --active python -m vfm_gs.cli.metrics \
   -m output/0001/full_tandt_db_v1/tandt/train/vfm_cached_edge_prunemin58788_staged142_30k_r8
+```
+
+自动派生容量下限的等价写法：
+
+```bash
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_cached_edge_auto_prunemin.yaml \
+  -s datasets/tandt_db/tandt/train \
+  -i images \
+  -m output/0001/full_tandt_db_v1/tandt/train/vfm_cached_edge_autoprunemin_staged142_30k_r8 \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0001/full_tandt_db_v1/tandt/train/cache/edge_u8 \
+  --target_gaussian_count 83479 \
+  -r 8
 ```
 
 ```bash

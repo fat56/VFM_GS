@@ -55,6 +55,17 @@ def _target_gaussian_count(opt):
     return int(getattr(opt, "target_gaussian_count", 0) or 0)
 
 
+def _prune_min_gaussian_count(opt):
+    explicit_floor = int(getattr(opt, "prune_min_gaussian_count", 0) or 0)
+    if explicit_floor > 0:
+        return explicit_floor
+    target_count = _target_gaussian_count(opt)
+    target_ratio = float(getattr(opt, "prune_min_gaussian_target_ratio", 0.0) or 0.0)
+    if target_count <= 0 or target_ratio <= 0.0:
+        return 0
+    return max(0, int(round(target_count * target_ratio)))
+
+
 def _target_gaussian_prune_order(opt):
     order = str(getattr(opt, "target_gaussian_prune_order", "lowest_score") or "lowest_score").lower()
     if order not in ("lowest_score", "highest_score", "lowest_opacity"):
@@ -250,6 +261,18 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         scorer_preflight(dataset, opt)
     print("Using Gaussian scorer: {}".format(scorer_name))
 
+    target_gaussian_count = _target_gaussian_count(opt)
+    effective_prune_min_gaussian_count = _prune_min_gaussian_count(opt)
+    opt.prune_min_gaussian_count = effective_prune_min_gaussian_count
+    if effective_prune_min_gaussian_count > 0:
+        print(
+            "Effective prune_min_gaussian_count: {} (target {}, ratio {})".format(
+                effective_prune_min_gaussian_count,
+                target_gaussian_count,
+                getattr(opt, "prune_min_gaussian_target_ratio", 0.0),
+            )
+        )
+
     tb_writer = prepare_output_and_logger(dataset, opt, pipe)
     gaussians = GaussianModel(dataset.sh_degree, opt.optimizer_type)
     scene = Scene(dataset, gaussians)
@@ -276,7 +299,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
     first_iter += 1
     bg = torch.rand((3), device="cuda") if opt.random_background else background
-    target_gaussian_count = _target_gaussian_count(opt)
     target_gaussian_staged = bool(getattr(opt, "target_gaussian_staged", False))
     staged_target_gaussian_count = _staged_target_gaussian_count(opt)
     target_gaussian_stage_start = int(getattr(opt, "target_gaussian_stage_start", 0) or 0)

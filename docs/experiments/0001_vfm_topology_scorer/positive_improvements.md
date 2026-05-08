@@ -4,6 +4,14 @@
 
 ## 总览
 
+| 保留级别 | 方法/改进 | 后端与关键设置 | 范围 | PSNR | ΔPSNR vs baseline | SSIM | ΔSSIM | LPIPS | ΔLPIPS | Gaussian 数 | ΔGS | 训练时间 | 结论 |
+|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| proxy 控制组 | cached edge v1 | `cached_edge_l1 + staged target ~= 1.42x baseline` | MipNeRF360 9 场景 | 28.7213 | +0.0686 | 0.8579 | +0.0028 | 0.1551 | -0.0068 | 215,869 | +42,528 | 139.33s | 确定性边缘代理，适合作为 v1 正向控制组 |
+| 质量候选 | DINO token-edge i0.50 | `dinov2_token_edge_l1 + top-k25 + importance_weight=0.50` | MipNeRF360 9 场景 | 28.8577 | +0.2051 | 0.8666 | +0.0115 | 0.1385 | -0.0234 | 263,572 | +90,231 | 140.47s | 当前全场景质量最强，但预算偏高 |
+| 预算效率候选 | weighted i0.50 | `top-k25 + importance_mode=weighted + importance_weight=0.50` | MipNeRF360 9 场景 | 28.8505 | +0.1978 | 0.8660 | +0.0109 | 0.1397 | -0.0223 | 254,736 | +81,395 | 137.60s | 相比普通 i0.50 少 8,836 点、少 2.87s，质量只小幅回落 |
+| 有条件高质量档 | weighted i0.75 | `top-k25 + weighted + importance_weight=0.75` | bicycle/stump/room/bonsai 已复验 | 场景相关 | 场景相关 | 场景相关 | 场景相关 | 场景相关 | 场景相关 | 场景相关 | 场景相关 | 场景相关 | bicycle/stump/room 正向，bonsai 不替代 i0.50 |
+| 保护/诊断项 | 自动或手动容量下限 | `prune_min_gaussian_count` 或 `prune_min_gaussian_target_ratio` | Tandt 2 场景 | 25.7806 | 相对 cached edge +0.2007 | 0.9337 | +0.0021 | 0.0585 | -0.0023 | 50,370 | +18,808 | 144.04s | 能修复部分过裁剪，但仍低于 baseline，不作为主方案 |
+
 | 改进 | 范围 | 参照 | PSNR | ΔPSNR | SSIM | ΔSSIM | LPIPS | ΔLPIPS | Gaussian 数 | ΔGaussian | 训练时间 | Δ训练时间 | 结论 |
 |---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
 | `cached_edge_l1 + staged target ~= 1.42x` | MipNeRF360 9 场景平均 | baseline | 28.7213 | +0.0686 | 0.8579 | +0.0028 | 0.1551 | -0.0068 | 215,869 | +42,528 | 139.33s | +13.95s | 稳定 proxy 正向控制组 |
