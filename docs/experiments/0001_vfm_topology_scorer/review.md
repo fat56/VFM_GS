@@ -2,7 +2,7 @@
 
 ## 当前决策
 
-继续保留 `vfm_topology_scorer` 作为 v1 集成路径。`mock_l1` 验证打分链路；`cached_edge_l1` 固化为早期 proxy 正向控制组，但 Tandt/DB 全场景评估显示它存在明显跨数据集差异：`db` 正向，`tandt` 负向。`dinov2_token_edge_l1` 已验证训练可以消费真实 DINOv2 patch-token cache，并且 `top-k 25% + importance_weight=0.50` 完成 MipNeRF360 全 9 场景评估，平均 PSNR 28.8577、SSIM 0.8666、LPIPS 0.1385，超过 baseline 与 cached-edge v1，可作为 0001 的 DINO 质量候选；但平均 Gaussian 数量比 baseline 多约 52.1%，还不是预算高效结论。`weighted + importance_weight=0.50` 已在 bicycle、treehill、stump、counter、garden、flowers、bonsai 和 kitchen 完成复验：它在 bicycle/stump/garden/bonsai/kitchen 上保留主要收益并省点，在 flowers 上仍优于 baseline 但相对普通 i0.50 回落更明显，在 counter 这类低增点场景省点空间很小。因此它是场景自适应预算候选，而不是无条件替代普通 i0.50 的默认项。`dinov2_descriptor_cosine` 则打通了在线渲染图 descriptor 与 GT cache descriptor 的语义比较路径，但预算对齐后未转正。后续决策门槛以 30k 完整 run 为准，不再用短程验证指标判断质量。
+继续保留 `vfm_topology_scorer` 作为 v1 集成路径。`mock_l1` 验证打分链路；`cached_edge_l1` 固化为早期 proxy 正向控制组，但 Tandt/DB 全场景评估显示它存在明显跨数据集差异：`db` 正向，`tandt` 负向。`dinov2_token_edge_l1` 已验证训练可以消费真实 DINOv2 patch-token cache，并且 `top-k 25% + importance_weight=0.50` 完成 MipNeRF360 全 9 场景评估，平均 PSNR 28.8577、SSIM 0.8666、LPIPS 0.1385，超过 baseline 与 cached-edge v1，可作为 0001 的 DINO 质量候选；但平均 Gaussian 数量比 baseline 多约 52.1%，还不是预算高效结论。`weighted + importance_weight=0.50` 已完成 MipNeRF360 全 9 场景复验，平均 PSNR 28.8505、SSIM 0.8660、LPIPS 0.1397，平均 254,736 个 Gaussians、训练 137.60s；它相对普通 i0.50 平均少 8,836 个点、训练少 2.87s，质量只小幅回落，因此是场景自适应预算候选，而不是无条件替代普通 i0.50 的默认项。`dinov2_descriptor_cosine` 则打通了在线渲染图 descriptor 与 GT cache descriptor 的语义比较路径，但预算对齐后未转正。后续决策门槛以 30k 完整 run 为准，不再用短程验证指标判断质量。
 
 ## 发现
 
@@ -136,6 +136,8 @@
 - `weighted + importance_weight=0.50` flowers 高增点植被场景复验最终 339,267 个 Gaussians，PSNR 22.9636、SSIM 0.6933、LPIPS 0.2791，训练 141.18s。相比普通 flowers i0.50 少 11,154 个点、训练少 4.12s，但 PSNR 回落 -0.0498、SSIM 回落 -0.0027、LPIPS 差 +0.0044；相比 baseline 仍明显正向，相比 cached-edge v1 也保住 SSIM/LPIPS 正向。它说明高增点植被场景中 weighted 仍有折中价值，但质量损失比 garden/stump 更大。
 - `weighted + importance_weight=0.50` bonsai 中低增点场景复验最终 134,806 个 Gaussians，PSNR 32.5395、SSIM 0.9642、LPIPS 0.0493，训练 138.31s。相比普通 bonsai i0.50 少 1,499 个点、训练少 1.01s，同时 PSNR/SSIM/LPIPS 均微幅更好；相比 baseline 和 cached-edge v1 三项指标也更强。它说明 weighted 并非只适合大增点场景，关键还取决于 DINO token topology 是否改善了该场景的结构选择。
 - `weighted + importance_weight=0.50` kitchen 室内高基线场景复验最终 157,804 个 Gaussians，PSNR 33.3234、SSIM 0.9693、LPIPS 0.0347，训练 141.71s。相比普通 kitchen i0.50 少 3,543 个点、训练少 3.21s，PSNR 低 -0.0124、SSIM 基本持平、LPIPS 差 +0.0003；相比 baseline 和 cached-edge v1 仍三项正向，并且点数少于二者。它说明 weighted 在室内高基线场景可以作为低风险省点折中，但质量上界仍是普通 i0.50。
+- `weighted + importance_weight=0.50` room 室内房间场景复验最终 101,384 个 Gaussians，PSNR 33.1081、SSIM 0.9626、LPIPS 0.0574，训练 131.98s。相比普通 room i0.50 少 2,436 个点、训练少 1.76s，同时 PSNR 高 +0.0360、SSIM 高 +0.0004、LPIPS 基本持平；相比 baseline 和 cached-edge v1 也三项正向。它说明 weighted 在小室内场景也可能少点省时且微升质量。
+- `weighted + importance_weight=0.50` 全 9 场景均值为 PSNR 28.8505、SSIM 0.8660、LPIPS 0.1397、254,736 个 Gaussians、训练 137.60s。相比 baseline 仍提升 +0.1978 PSNR、+0.0109 SSIM、LPIPS 改善 -0.0223；相比普通 i0.50 平均少 8,836 点、训练少 2.87s，质量只低 -0.0072 PSNR、-0.0006 SSIM、LPIPS 差 +0.0012。因此 weighted 完整结论是“预算效率候选”，普通 i0.50 完整结论仍是“质量候选”。
 
 ## 下一版计划
 
@@ -144,6 +146,6 @@
 3. 为下一版增加场景自适应保护：当自然结束 Gaussian 数量显著低于 baseline 或 staged target 时，降低 pruning fusion 强度、回退到 baseline pruning，或触发容量保护，避免 Tandt 这类场景被压得过稀。
 4. DINO 主线不再追加同类 top-k、percentile、soft-top-k 或单纯 final hard-prune 单点。下一步只做会改变预算行为的实验，例如 RGB/VFM 加权融合的跨场景复验、预算感知 importance cap、按场景自动下调 VFM importance，或把 target budget 与恢复时序绑定。
 5. 预算感知 importance cap 已完成 bicycle 420k、430k 放松衰减和 430k quadratic 三个 30k 对照：420k 软预算点为 422,778 个 Gaussians，PSNR/SSIM/LPIPS 为 26.9732 / 0.8273 / 0.1916；430k、start 0.95、min 0.10 为 419,513 个 Gaussians，PSNR/SSIM/LPIPS 为 26.9750 / 0.8270 / 0.1919；430k quadratic 为 418,137 个 Gaussians，PSNR/SSIM/LPIPS 为 26.9402 / 0.8262 / 0.1918。它们都没有保住 i0.50 质量；下一步不迁移全场景，也不继续手工追加相近曲线单点，先改为场景自适应预算或直接估计场景容量。
-6. `weighted + importance_weight=0.50` 是当前近预算效率点。bicycle 表明它贴近 cadence 预算仍优于 cadence control，treehill 表明它能省点但不能解决 PSNR 负向，stump 表明它在大收益场景能省点并完整保住收益，counter 表明当普通 i0.50 已接近 baseline 点数时 weighted 省点空间很小且质量会回落，garden 表明中等点数增长场景可以省点并保留主要收益，flowers 表明复杂植被场景仍正向但质量回落更明显，bonsai 表明中低增点场景也可能少点且微升，kitchen 表明室内高基线场景可少点省时并接近普通 i0.50。下一步把规则收束为：普通 i0.50 已低增点时优先保留 `max`，但若 DINO topology 明显改善结构选择，可测试 `weighted`；若要形成完整结论，应补齐 room weighted 并计算均值。
+6. `weighted + importance_weight=0.50` 已完成全 9 场景复验。它平均只比普通 i0.50 低 -0.0072 PSNR、-0.0006 SSIM、LPIPS 差 +0.0012，但少 8,836 个 Gaussians、训练少 2.87s。下一步把规则收束为：默认保留普通 i0.50 作为质量上界，若场景目标更偏预算效率或 DINO topology 已显示结构收益，则选择 `weighted`；如果普通 i0.50 已接近 baseline 点数且 quality margin 很小，优先不切换。
 7. 已验证的 `support_ratio` 与高置信 prune-protect 都没有优于普通 i0.50，因此下一版不把它们作为主方向；可以保留为诊断分支。
 8. 重做恢复时序：不再只在训练结束后统一 dense recovery，而是在 staged pruning 发生后立即执行短局部恢复，观察是否能减少中期结构损伤。
