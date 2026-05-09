@@ -108,8 +108,10 @@ def build_dino_cache(scene_path: Path, args: argparse.Namespace, repo: Path, cac
         "--max_width",
         str(args.cache_max_width),
         "--storage",
-        "npy_float16",
+        args.cache_storage,
     ]
+    if args.project_token_edge:
+        cmd.append("--project_token_edge")
     require_success(run_command(cmd, log_dir / "build_cache.log", repo), log_dir / "build_cache.log")
 
 
@@ -363,6 +365,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--iterations", type=int, default=30000)
     parser.add_argument("--resolution", type=int, default=8)
     parser.add_argument("--cache-max-width", type=int, default=224)
+    parser.add_argument("--cache-storage", default="npy_float16")
+    parser.add_argument("--project-token-edge", action="store_true")
     parser.add_argument("--dino-backend", default="dinov2_vits14")
     parser.add_argument("--dinov2-repo", default="output/0001/external/dinov2")
     parser.add_argument("--config", default="configs/experiments/0001_vfm_topology_dinov2_token_edge_weighted_i050.yaml")
@@ -377,9 +381,14 @@ def parse_args() -> argparse.Namespace:
 
 
 def cache_dir_for_scene(scene: str, args: argparse.Namespace) -> Path:
+    feature_suffix = "_token_edge_w{}".format(args.cache_max_width) if args.project_token_edge else ""
     if args.cache_root is not None:
-        return args.cache_root / "{}_{}".format(scene, args.dino_backend)
-    return args.output_root / scene / "cache" / "{}_w{}".format(args.dino_backend, args.cache_max_width)
+        return args.cache_root / "{}_{}{}".format(scene, args.dino_backend, feature_suffix)
+    return args.output_root / scene / "cache" / "{}{}_w{}".format(
+        args.dino_backend,
+        "_token_edge" if args.project_token_edge else "",
+        args.cache_max_width,
+    )
 
 
 def main() -> int:

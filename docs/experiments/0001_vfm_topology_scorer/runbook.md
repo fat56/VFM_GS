@@ -2824,3 +2824,95 @@ uv run --active python -m vfm_gs.cli.train \
 ```
 
 短训练结果：日志确认触发 FastGS 原始提示 `[ INFO ] Encountered quite large input images (>1.6K pixels width), rescaling to 1.6K.`；训练完成 620 steps，保存 61,265 个 Gaussians，训练时间 3.15s，未出现 OOM。该结果只证明 ViT-L token-edge cache 与 1.6K 训练路径可用，不作为质量指标。
+
+正式 30k bicycle 探针命令：
+
+```bash
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_dinov2_token_edge_weighted_i050.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0001/large_res_vitl_bicycle/vfm_dinov2_vitl14_token_edge_weighted_i050_30k_r_auto \
+  --eval \
+  -r -1 \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0001/vfm_cache_large/bicycle_dinov2_vitl14_token_edge_w1600
+
+uv run --active python -m vfm_gs.cli.render \
+  -m output/0001/large_res_vitl_bicycle/vfm_dinov2_vitl14_token_edge_weighted_i050_30k_r_auto \
+  --iteration -1 \
+  --skip_train \
+  --quiet
+
+uv run --active python -m vfm_gs.cli.metrics \
+  -m output/0001/large_res_vitl_bicycle/vfm_dinov2_vitl14_token_edge_weighted_i050_30k_r_auto
+```
+
+全场景大分辨率评测沿用同一个功能模块：`vfm_topology_scorer + dinov2_token_edge_l1 + weighted importance i0.50`，训练阶段使用 `-i images -r -1`，cache 阶段使用 ViT-L/14、`--max_width 1600` 和 `--project_token_edge`。批量脚本会跳过已存在的 cache、训练、渲染或指标产物。
+
+```bash
+uv run --active python scripts/run_0001_dino_weighted_eval.py \
+  --dataset-name mipnerf360 \
+  --dataset-root datasets/mipnerf360 \
+  --output-root output/0001/large_res_vitl_full/mipnerf360 \
+  --scenes bicycle bonsai counter flowers garden kitchen room stump treehill \
+  --train-images images \
+  --cache-images images \
+  --resolution -1 \
+  --cache-root output/0001/vfm_cache_large \
+  --cache-max-width 1600 \
+  --cache-storage npz_uint8 \
+  --project-token-edge \
+  --dino-backend dinov2_vitl14 \
+  --dinov2-repo output/0001/external/dinov2 \
+  --config configs/experiments/0001_vfm_topology_dinov2_token_edge_weighted_i050.yaml \
+  --method-name large_res_dinov2_vitl14_token_edge_weighted_i050 \
+  --run-name vfm_dinov2_vitl14_token_edge_weighted_i050_30k_r_auto
+
+uv run --active python scripts/run_0001_dino_weighted_eval.py \
+  --dataset-name db \
+  --dataset-root datasets/tandt_db/db \
+  --output-root output/0001/large_res_vitl_full/db \
+  --scenes drjohnson playroom \
+  --train-images images \
+  --cache-images images \
+  --resolution -1 \
+  --cache-root output/0001/vfm_cache_large \
+  --cache-max-width 1600 \
+  --cache-storage npz_uint8 \
+  --project-token-edge \
+  --dino-backend dinov2_vitl14 \
+  --dinov2-repo output/0001/external/dinov2 \
+  --config configs/experiments/0001_vfm_topology_dinov2_token_edge_weighted_i050.yaml \
+  --method-name large_res_dinov2_vitl14_token_edge_weighted_i050 \
+  --run-name vfm_dinov2_vitl14_token_edge_weighted_i050_30k_r_auto
+
+uv run --active python scripts/run_0001_dino_weighted_eval.py \
+  --dataset-name tandt \
+  --dataset-root datasets/tandt_db/tandt \
+  --output-root output/0001/large_res_vitl_full/tandt \
+  --scenes train truck \
+  --train-images images \
+  --cache-images images \
+  --resolution -1 \
+  --cache-root output/0001/vfm_cache_large \
+  --cache-max-width 1600 \
+  --cache-storage npz_uint8 \
+  --project-token-edge \
+  --dino-backend dinov2_vitl14 \
+  --dinov2-repo output/0001/external/dinov2 \
+  --config configs/experiments/0001_vfm_topology_dinov2_token_edge_weighted_i050.yaml \
+  --method-name large_res_dinov2_vitl14_token_edge_weighted_i050 \
+  --run-name vfm_dinov2_vitl14_token_edge_weighted_i050_30k_r_auto
+```
+
+主要产物：
+
+- `output/0001/large_res_vitl_full/mipnerf360/summary.csv`
+- `output/0001/large_res_vitl_full/db/summary.csv`
+- `output/0001/large_res_vitl_full/tandt/summary.csv`
+- `output/0001/large_res_vitl_full/<dataset>/<scene>/logs/vfm_dinov2_vitl14_token_edge_weighted_i050_30k_r_auto/*.log`

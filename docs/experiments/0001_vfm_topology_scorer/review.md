@@ -157,6 +157,9 @@ DB 的 DINO weighted 多档复验则给出相反信号。i0.50 平均为 30.3603
 - `adaptive_weighted + quadratic 430k` treehill 复验最终 420,283 个 Gaussians，PSNR 24.4393、SSIM 0.7285、LPIPS 0.2821，训练 140.96s。相比普通 treehill i0.50，PSNR 低 -0.0780，SSIM 基本持平，LPIPS 只微幅好 -0.0001；相比 treehill `weighted i0.50`，点数更多但 PSNR 低 -0.0708。它没有通过第二场景验证，不能替代全场景 weighted 结论。
 - 大分辨率链路探测已开始。`dinov2_vitl14` 已接入 cache builder 和 scorer preflight；`--project_token_edge` 可把 1.6K ViT-L patch tokens 投影成 `dinov2_token_edge` 2D cache。bicycle 全量 cache 共有 194 个 entries，`npz_uint8` 下约 1.9M，并通过校验。
 - bicycle `-i images -r -1` 的 620-step ViT-L token-edge 短训练已通过，日志确认沿用 FastGS 原始 1.6K 自动缩放提示，最终 61,265 个 Gaussians，训练 3.15s，无 OOM。下一步先跑 bicycle 30k 大分辨率正式实验，再决定是否扩展到三个公开数据集全场景。
+- bicycle 大分辨率 ViT-L token-edge 30k 正式探针已完成。测试指标为 PSNR 25.0785、SSIM 0.7394、LPIPS 0.2733，最终 1,033,601 个 Gaussians，训练 187.28s。训练沿用 `-r -1` 的 1.6K 自动缩放规则，显存观测约 7.2GB，低于 24GB 上限很多。
+- 该结果的关键价值是资源与流程确认：ViT-L/14 是当前可承受的大 DINO 档位，1.6K token-edge cache 足够小，且最终点数低于用户提供的 FastGS `densify100` 约 1.15M 参考。质量是否优于 baseline 需要等待用户手头同裁切口径 FastGS 原始指标对照，不能只看单场景绝对 PSNR。
+- 全场景大分辨率评测应按 MipNeRF360、DB、Tandt 三个数据集分别统计平均 PSNR/SSIM/LPIPS、Gaussian 数量和训练时间；不要再把 13 个场景合并成一个主平均值。脚本已支持 `--project-token-edge` 与 `--cache-storage npz_uint8`，可复用同一配置跑三套数据集。
 
 ## 下一版计划
 
@@ -169,3 +172,4 @@ DB 的 DINO weighted 多档复验则给出相反信号。i0.50 平均为 30.3603
 7. 已验证的 `support_ratio` 与高置信 prune-protect 都没有优于普通 i0.50，因此下一版不把它们作为主方向；可以保留为诊断分支。
 8. 下一版 selector 必须避免 test 泄漏。短期优先级是独立 validation split、预先冻结的数据集级策略和训练过程容量信号；`evaluate_0001_train_selector.py` 已证明当前 train-side 渲染指标不足以替代 test oracle。
 9. 重做恢复时序：不再只在训练结束后统一 dense recovery，而是在 staged pruning 发生后立即执行短局部恢复，观察是否能减少中期结构损伤。
+10. 大分辨率分支先完成 ViT-L token-edge i0.50 的三数据集全场景评测，并与用户提供的 FastGS 原始 1.6K 裁切数据对齐。若 MipNeRF360/DB 平均仍正向，再考虑把 r8 阶段的 QCGI 档位选择迁移到大分辨率；若某个数据集负向，则优先回退或降低 VFM importance，不急于增加 DINO 尺寸。

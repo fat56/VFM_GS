@@ -1139,4 +1139,15 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 
 短训练探测使用 `configs/experiments/0001_vfm_topology_dinov2_token_edge_weighted_i050.yaml`，覆盖 `-i images -r -1` 和上述 ViT-L token-edge cache。日志确认触发 FastGS 原始裁切提示：`Encountered quite large input images (>1.6K pixels width), rescaling to 1.6K.` 620 steps 训练完成，最终 61,265 个 Gaussians，训练时间 3.15s，未出现 OOM。
 
-这个结果说明：在当前 RTX 4090 D 24G 环境里，至少 bicycle 的 1.6K 数据加载、ViT-L token-edge cache preflight、VFM scorer 和首个 densify 节点是可用的。它还不能证明 30k 后期 1M 级 Gaussians 一定安全；下一步应先跑 bicycle 30k 正式大分辨率实验，若其最终点数接近参考的 `fastgs_densify100` 约 1.15M 且无 OOM，再扩展到 MipNeRF360、DB、Tandt 全场景。
+正式 30k bicycle 大分辨率探针已经完成。训练使用 `-i images -r -1`，日志确认沿用 FastGS 原始 1.6K 自动缩放规则；cache 使用 ViT-L/14 在 1.6K 下投影出的 token-edge 2D 图，训练阶段不再运行 DINO。
+
+| 场景 | 方法 | 分辨率规则 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---|---:|---:|---:|---:|---:|
+| bicycle | ViT-L token-edge weighted i0.50 | `-r -1`，自动缩到 1.6K | 25.0785 | 0.7394 | 0.2733 | 1,033,601 | 187.28s |
+
+结论：
+
+- 30k 全程未出现 OOM。训练期显存观测约 7.2GB，说明在当前 24GB 4090 D 上，ViT-L token-edge 离线 cache + 1.6K FastGS 训练有充足余量。
+- 最终 Gaussian 数量为 1.0336M，低于用户提供的 FastGS `densify100` 原图裁切参考约 1.15M。至少在 bicycle 上，这个 VFM_GS 大分辨率版本没有靠超过参考点数来换取结果。
+- 本结果只能说明 bicycle 链路和资源可行。正式有效性判断需要按 MipNeRF360、DB、Tandt 三个数据集分别统计平均值，并与用户手头的 FastGS 原始数据在相同 1.6K 裁切口径下比较。
+- 下一步已准备全场景批量入口：继续使用同一功能模块 `vfm_topology_scorer + dinov2_token_edge_l1 + weighted importance i0.50`，只改变数据集与场景。全场景汇总必须分开报告 MipNeRF360、DB、Tandt 平均值，不再合并成 13 场景总平均作为主结论。
