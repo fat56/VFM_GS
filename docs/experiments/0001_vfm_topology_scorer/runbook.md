@@ -2854,6 +2854,12 @@ uv run --active python -m vfm_gs.cli.metrics \
 
 全场景大分辨率评测沿用同一个功能模块：`vfm_topology_scorer + dinov2_token_edge_l1 + weighted importance i0.50`，训练阶段使用 `-i images -r -1`，cache 阶段使用 ViT-L/14、`--max_width 1600` 和 `--project_token_edge`。批量脚本会跳过已存在的 cache、训练、渲染或指标产物。
 
+推荐用脚本串行启动三套数据集，脚本内部就是下面三段命令：
+
+```bash
+bash scripts/run_0001_large_res_vitl_full_eval.sh
+```
+
 ```bash
 uv run --active python scripts/run_0001_dino_weighted_eval.py \
   --dataset-name mipnerf360 \
