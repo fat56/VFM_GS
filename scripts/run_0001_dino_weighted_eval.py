@@ -16,6 +16,39 @@ TIME_RE = re.compile(r"Training time:\s*([0-9.]+)")
 DEFAULT_METHOD = "dinov2_token_edge_weighted_i050"
 DEFAULT_RUN_NAME = "vfm_dinov2_token_edge_topk025_weighted_i050_30k_r8"
 
+SCENE_OVERRIDES = {
+    "mipnerf360": {
+        "bicycle": [],
+        "flowers": ["--dense", "0.005", "--grad_abs_thresh", "0.001"],
+        "garden": ["--highfeature_lr", "0.02", "--loss_thresh", "0.06", "--grad_abs_thresh", "0.0003"],
+        "stump": ["--dense", "0.004", "--grad_abs_thresh", "0.001"],
+        "treehill": ["--dense", "0.01", "--grad_abs_thresh", "0.0018"],
+        "room": ["--highfeature_lr", "0.02", "--grad_abs_thresh", "0.0004"],
+        "counter": ["--highfeature_lr", "0.02", "--grad_abs_thresh", "0.0004"],
+        "kitchen": ["--highfeature_lr", "0.02", "--grad_abs_thresh", "0.0002"],
+        "bonsai": ["--highfeature_lr", "0.02", "--grad_abs_thresh", "0.0002"],
+    },
+    "db": {
+        "playroom": ["--highfeature_lr", "0.0015", "--dense", "0.003", "--mult", "0.7", "--grad_abs_thresh", "0.0005"],
+        "drjohnson": [
+            "--highfeature_lr",
+            "0.0025",
+            "--lowfeature_lr",
+            "0.0005",
+            "--grad_abs_thresh",
+            "0.0005",
+            "--dense",
+            "0.005",
+            "--mult",
+            "0.7",
+        ],
+    },
+    "tandt": {
+        "truck": ["--highfeature_lr", "0.04", "--grad_abs_thresh", "0.0004", "--mult", "0.7"],
+        "train": ["--highfeature_lr", "0.042", "--grad_abs_thresh", "0.0004", "--dense", "0.015", "--mult", "0.7"],
+    },
+}
+
 
 def run_command(cmd: list[str], log_path: Path, cwd: Path) -> int:
     log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -150,6 +183,12 @@ def reference_gs_for_scene(reference_rows: list[dict[str, object]], scene: str, 
     return None
 
 
+def scene_overrides(dataset: str, scene: str, enabled: bool) -> list[str]:
+    if not enabled:
+        return []
+    return list(SCENE_OVERRIDES.get(dataset, {}).get(scene, []))
+
+
 def train_candidate(
     scene_path: Path,
     args: argparse.Namespace,
@@ -158,6 +197,7 @@ def train_candidate(
     log_dir: Path,
     cache_dir: Path,
     target: int | None,
+    overrides: list[str],
 ) -> None:
     if run_dir.exists() and latest_point_count(run_dir) is not None:
         return
@@ -194,6 +234,7 @@ def train_candidate(
     ]
     if target is not None:
         cmd.extend(["--target_gaussian_count", str(target)])
+    cmd.extend(overrides)
     require_success(run_command(cmd, log_dir / "train.log", repo), log_dir / "train.log")
 
 
@@ -377,6 +418,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--comparison-methods", nargs="+", default=["baseline", "cached_edge_staged142"])
     parser.add_argument("--target-ratio-from-reference", type=float, default=0.0)
     parser.add_argument("--target-reference-method", default="baseline")
+    parser.add_argument("--use-scene-overrides", action="store_true")
     return parser.parse_args()
 
 
@@ -405,6 +447,7 @@ def main() -> int:
         run_dir = args.output_root / scene / args.run_name
         log_dir = args.output_root / scene / "logs" / args.run_name
         cache_dir = cache_dir_for_scene(scene, args)
+        overrides = scene_overrides(args.dataset_name, scene, args.use_scene_overrides)
         target = None
         if args.target_ratio_from_reference > 0:
             reference_gs = reference_gs_for_scene(reference_rows, scene, args.target_reference_method)
@@ -419,7 +462,7 @@ def main() -> int:
         print("[{}] {} cache/train/render/metrics".format(scene, args.method_name), flush=True)
         build_dino_cache(scene_dir, args, repo, cache_dir, log_dir)
         validate_dino_cache(scene_dir, args, repo, cache_dir, log_dir)
-        train_candidate(scene_dir, args, repo, run_dir, log_dir, cache_dir, target)
+        train_candidate(scene_dir, args, repo, run_dir, log_dir, cache_dir, target, overrides)
         render_and_metrics(run_dir, log_dir, repo)
         rows.append(collect_row(args.dataset_name, scene, args.method_name, run_dir, log_dir, target))
         write_summary(rows, reference_rows, args.output_root, args.comparison_methods)

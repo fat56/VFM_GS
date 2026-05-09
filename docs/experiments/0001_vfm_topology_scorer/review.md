@@ -162,8 +162,9 @@ DB 的 DINO weighted 多档复验则给出相反信号。i0.50 平均为 30.3603
 - 全场景大分辨率评测应按 MipNeRF360、DB、Tandt 三个数据集分别统计平均 PSNR/SSIM/LPIPS、Gaussian 数量和训练时间；不要再把 13 个场景合并成一个主平均值。脚本已支持 `--project-token-edge` 与 `--cache-storage npz_uint8`，可复用同一配置跑三套数据集。
 - 大分辨率 ViT-L token-edge i0.50 全 13 场景评测已完成，总耗时 5,830s，约 1h37m；评估输出约 2.9G，13 场景 token-edge cache 约 24M。全程无 OOM，cache 阶段显存观察约 16.9GB，训练阶段约 7GB。
 - 大分辨率分数据集均值为：MipNeRF360 PSNR 27.2965、SSIM 0.8017、LPIPS 0.2506、581,266 个 Gaussians；DB PSNR 30.0302、SSIM 0.9076、LPIPS 0.2521、340,966 个 Gaussians；Tandt PSNR 23.4810、SSIM 0.8365、LPIPS 0.2123、235,384 个 Gaussians。
-- 这些结果已经满足“同一功能模块、同一大分辨率裁切口径、三个公开数据集分开统计”的评测要求。但它们还不能独立证明质量正向，因为 baseline 由用户持有；下一步应把用户的 FastGS 原始 1.6K 裁切指标补入同一表格，计算逐数据集 ΔPSNR/ΔSSIM/ΔLPIPS/ΔGS。
-- 从容量角度看，bicycle full-run 为 1.039M GS，低于用户提供的 FastGS `densify100` 约 1.15M 参考；但 treehill、stump、flowers 也达到 0.79M 到 0.94M。后续大分辨率策略不应盲目加大 importance weight，而应优先复用 QCGI 或显式容量收益门槛。
+- 已补跑 MipNeRF360 大分辨率 `fastgs_big/densify100` 同口径基线。该基线使用 `-i images -r -1`、FastGS 原始 1.6K 自动缩放，并复用 `scripts/train_big.sh` 的场景级超参；平均为 PSNR 27.9293、SSIM 0.8198、LPIPS 0.2157、1,161,242 个 Gaussians，和用户给出的论文参考 27.90 基本一致。
+- 与该基线相比，当前大分辨率 VFM i0.50 平均低 -0.6328 PSNR、-0.0180 SSIM，LPIPS 差 +0.0349，同时少约 579,976 个 Gaussians。9 个 MipNeRF360 场景全部低于 FastGS big；这说明迁移/评测链路没有坏，主要问题是当前大分辨率 VFM 配置过度压低容量，且没有套 FastGS big 的场景级超参。
+- 从容量角度看，bicycle VFM 为 1.039M GS，而同口径 FastGS big 为 1.560M GS；garden 差距最大，VFM 为 0.642M，FastGS big 为 2.624M。后续大分辨率策略应先补“VFM + FastGS big 场景级超参”的公平对照，再考虑 QCGI 或容量收益门槛；当前 ViT-L i0.50 全场景结果只能作为资源可行性和过强筛选诊断。
 
 ## 下一版计划
 
@@ -176,4 +177,4 @@ DB 的 DINO weighted 多档复验则给出相反信号。i0.50 平均为 30.3603
 7. 已验证的 `support_ratio` 与高置信 prune-protect 都没有优于普通 i0.50，因此下一版不把它们作为主方向；可以保留为诊断分支。
 8. 下一版 selector 必须避免 test 泄漏。短期优先级是独立 validation split、预先冻结的数据集级策略和训练过程容量信号；`evaluate_0001_train_selector.py` 已证明当前 train-side 渲染指标不足以替代 test oracle。
 9. 重做恢复时序：不再只在训练结束后统一 dense recovery，而是在 staged pruning 发生后立即执行短局部恢复，观察是否能减少中期结构损伤。
-10. 大分辨率 ViT-L token-edge i0.50 的三数据集全场景评测已完成。下一步先补用户提供的 FastGS 原始 1.6K 裁切 baseline 表，计算分数据集差值；若 MipNeRF360/DB 平均正向，再考虑把 r8 阶段的 QCGI 档位选择迁移到大分辨率；若某个数据集负向，则优先回退或降低 VFM importance，不急于增加 DINO 尺寸。
+10. 大分辨率 ViT-L token-edge i0.50 的三数据集全场景评测已完成，且 MipNeRF360 同口径 FastGS big/densify100 基线已补齐。下一步优先跑“VFM + FastGS big 场景级超参”的 MipNeRF360 对照；若仍明显低于基线，则把大分辨率主线改为降低 VFM pruning/density 介入强度或按容量信号回退 FastGS，而不是继续增加 DINO 尺寸。
