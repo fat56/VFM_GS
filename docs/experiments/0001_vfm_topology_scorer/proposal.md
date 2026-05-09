@@ -41,6 +41,26 @@ flowchart LR
 - **修正建议**：将 VFM 描述为额外评分源。v1 中它只改变 `importance_score` 与 `pruning_score` 的数值分布，不直接绕过 `grad_thresh`、`grad_abs_thresh`、opacity 和尺度过滤。
 - **落地边界**：v1 可在 `utils/fast_utils.py` 增加 VFM 评分分支；如果要让 VFM 独立触发 clone/split 或直接删除高分异常点，需要扩展 `GaussianModel.densify_and_prune_fastgs()` 的接口和决策逻辑。
 
+### 2026-05-09 贡献方向修订
+
+当前目标不再是把 VFM 当作效果不好时可回退的工程分支，而是证明视觉基础模型先验可以提升 GS 训练质量。新的主线假设是：DINO 提供语义/结构一致性先验，Depth Anything 提供几何/遮挡边界先验；这些先验应指导 GS 的复制和剪枝，使模型在结构关键区域获得更好的表达质量。
+
+因此后续实验优先拆开两个问题：
+
+1. **复制先验是否有效**：先只让 VFM 影响 densification 的 `importance_score`，不改 pruning score。若质量提升，说明 DINO/Depth 先验确实能指导新增 GS 的位置。
+2. **剪枝先验是否有效**：在复制先验成立后，再把 VFM 分成 prune-protect 和 redundancy 两个信号。高语义/几何边界区域应被保护，低贡献且低结构价值区域才适合剪掉。
+
+第一轮验证选择 `-r 8` 的 MipNeRF360 小范围实验，优先使用已有 `dinov2_descriptor_cosine` 后端。相比 token-edge，descriptor residual 直接比较渲染图和 GT 的 DINO patch descriptor，更接近“语义结构残差”；它比单纯边缘 proxy 更能支撑 VFM_GS 的方法贡献。Depth Anything 暂不直接加入第一轮，先作为下一阶段几何先验路线，避免同时引入新依赖、尺度对齐和渲染深度接口等多个变量。
+
+短期实验顺序：
+
+1. DINO descriptor densify-only：`vfm_weight=0.0`，`vfm_importance_mode=max`，只验证语义 residual 是否能提高复制质量。
+2. DINO descriptor weighted densify：在 densify-only 正向时，扫描 `vfm_importance_mode=weighted` 与 `vfm_importance_weight`，控制 GS 增长。
+3. DINO descriptor + prune-protect：只保护高结构残差区域，不直接把 VFM residual 当成剪枝依据。
+4. Depth Anything 几何先验：对 GT 和渲染图预测相对深度，做 scale/shift 或 rank 对齐，再用 depth residual 与 depth edge 指导 densification 和边界保护。
+
+评估也要跟随贡献方向调整。除全图 PSNR/SSIM/LPIPS 外，应增加结构区域指标，例如 DINO residual top-k 区域、DINO token-edge 区域、后续 depth edge 区域的局部质量变化。这样才能判断 VFM 是否改善了结构关键区域，而不只是在全图均值上产生很薄的随机波动。
+
 ---
 
 ## 二、管线详细执行步骤

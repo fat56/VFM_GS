@@ -172,6 +172,7 @@ DB 的 DINO weighted 多档复验则给出相反信号。i0.50 平均为 30.3603
 
 ## 下一版计划
 
+0. 研究目标从“失败时回退 FastGS 的工程策略”修订为“证明 VFM 先验能提升 GS 质量”。后续不把 FastGS 回退作为主要贡献，而把它仅作为诊断 baseline。主线改为：DINO 负责语义/结构 residual，Depth Anything 负责几何/遮挡边界 residual；先验证 VFM 能否指导复制，再验证能否指导剪枝保护。
 1. 固化两个角色：`cached_edge_l1` 是 proxy 正向控制组，结论边界为 MipNeRF360 与 DB 正向、Tandt 负向；DINO token-edge i0.50 是 MipNeRF360 全场景质量候选，但不是预算高效候选。
 2. 把 `prune_min_gaussian_count` 保留为诊断/回退保护，同时使用默认关闭的 `prune_min_gaussian_target_ratio` 从 staged target 自动派生容量下限。当前 ratio `0.7042253521126761` 在 target 为 `baseline * 1.42` 时等价于 baseline 最终点数，Tandt 复验已确认机制可复现容量保护；但 DINO weighted + 自动容量下限和 prunemin-only 诊断说明它不能单独修复 Tandt 轨迹损伤。下一版不要长期依赖人工填 baseline count，应继续转向 baseline 预跑、在线增长曲线或 scene scale 自动估计容量下限。
 3. 为下一版增加场景自适应保护：当自然结束 Gaussian 数量显著低于 baseline 或 staged target 时，降低 pruning fusion 强度、回退到 baseline pruning，或触发容量保护，避免 Tandt 这类场景被压得过稀。
@@ -182,3 +183,4 @@ DB 的 DINO weighted 多档复验则给出相反信号。i0.50 平均为 30.3603
 8. 下一版 selector 必须避免 test 泄漏。短期优先级是独立 validation split、预先冻结的数据集级策略和训练过程容量信号；`evaluate_0001_train_selector.py` 已证明当前 train-side 渲染指标不足以替代 test oracle。
 9. 重做恢复时序：不再只在训练结束后统一 dense recovery，而是在 staged pruning 发生后立即执行短局部恢复，观察是否能减少中期结构损伤。
 10. 大分辨率 ViT-L token-edge i0.50 的三数据集同 recipe 复验已完成。VFM+big 在 MipNeRF360、DB、Tandt 三个数据集上平均 PSNR 和 LPIPS 都小幅优于 FastGS big，SSIM 在 DB/Tandt 略低。下一步设计不依赖 test oracle 的场景级容量/质量选择规则，并优先处理 bicycle/garden、DB drjohnson、Tandt truck 这类负例或高增点场景。
+11. 新增 DINO descriptor densify-only 小范围实验线：配置 `configs/experiments/0001_vfm_topology_dinov2_descriptor_densify_only.yaml` 使用 `dinov2_descriptor_cosine`、top-k 15%、token smoothing 3、`vfm_weight=0.0` 和 `vfm_importance_mode=max`。它只让 DINO descriptor residual 影响复制，不改变 pruning score，用于隔离验证“语义结构先验指导新增 GS”的质量贡献。第一批场景建议为 bicycle、garden、stump、bonsai：分别覆盖大分辨率负例、结构复杂场景、VFM 正向场景和室内/小物体场景。
