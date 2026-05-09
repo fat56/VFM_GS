@@ -2975,3 +2975,43 @@ uv run --active python scripts/run_0001_fastgs_big_eval.py \
 - `output/0001/large_res_fastgs_big_baseline/mipnerf360/summary.csv`
 - `output/0001/large_res_fastgs_big_baseline/db/summary.csv`
 - `output/0001/large_res_fastgs_big_baseline/tandt/summary.csv`
+
+## 2026-05-09 DINO descriptor densify-only 质量探测
+
+目标：把 VFM_GS 的下一步实验从“工程回退”转向“证明 VFM 先验能提升质量”。本轮优先验证 DINO descriptor residual 是否能单独指导 GS 复制，因此配置 `configs/experiments/0001_vfm_topology_dinov2_descriptor_densify_only.yaml` 设置为：
+
+- `vfm_backend=dinov2_descriptor_cosine`
+- `vfm_metric_map_mode=topk`
+- `vfm_metric_topk=0.15`
+- `vfm_descriptor_token_smooth_kernel=3`
+- `vfm_weight=0.0`，不改变 pruning score
+- `vfm_importance_mode=max`，只让 descriptor residual 参与 densification
+
+第一批只跑 `-r 8` 的 MipNeRF360 小范围场景：`bicycle`、`garden`、`stump`、`bonsai`。脚本会为同一组场景补跑 matched `fastgs_photometric + densification_interval=100` 控制组，并输出 descriptor densify-only 的逐场景差值。
+
+```bash
+uv run --active python scripts/run_0001_descriptor_quality_probe.py \
+  --dataset-name mipnerf360 \
+  --dataset-root datasets/mipnerf360 \
+  --output-root output/0001/descriptor_densify_only_probe \
+  --scenes bicycle garden stump bonsai \
+  --train-images images \
+  --cache-images images \
+  --resolution 8 \
+  --densification-interval 100 \
+  --cache-root output/0001/vfm_cache \
+  --cache-max-width 224 \
+  --cache-storage npy_float16 \
+  --dino-backend dinov2_vits14 \
+  --dinov2-repo output/0001/external/dinov2 \
+  --config configs/experiments/0001_vfm_topology_dinov2_descriptor_densify_only.yaml \
+  --descriptor-method dinov2_descriptor_densify_only \
+  --baseline-run-name fastgs_densify100_30k_r8 \
+  --descriptor-run-name vfm_dinov2_descriptor_densify_only_30k_r8
+```
+
+预期产物：
+
+- `output/0001/descriptor_densify_only_probe/summary.csv`
+- `output/0001/descriptor_densify_only_probe/comparisons.csv`
+- `output/0001/descriptor_densify_only_probe/averages.json`
