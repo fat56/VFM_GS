@@ -2922,3 +2922,56 @@ uv run --active python scripts/run_0001_dino_weighted_eval.py \
 - `output/0001/large_res_vitl_full/db/summary.csv`
 - `output/0001/large_res_vitl_full/tandt/summary.csv`
 - `output/0001/large_res_vitl_full/<dataset>/<scene>/logs/vfm_dinov2_vitl14_token_edge_weighted_i050_30k_r_auto/*.log`
+
+## 2026-05-09 大分辨率 FastGS big 基线复核
+
+目标：补跑与大分辨率 VFM 结果同裁切口径的 FastGS 基线，排查当前 PSNR 与论文表格参考值之间的差异来自 VFM 模块，还是来自基线迁移、裁切或评测口径。当前大分辨率 VFM 结果的实际配置已经由 `cfg_args` 核对为 `densification_interval=100`、`scorer='vfm_topology_scorer'`、`vfm_enable=True`，因此第一组基线使用 `fastgs_big` / `densify100`，不是 `fastgs_baseline` 的 `densification_interval=500`。
+
+本轮新增脚本 `scripts/run_0001_fastgs_big_eval.py`。该脚本复用 `scripts/train_big.sh` 中的场景级超参，并把训练、渲染、指标计算和 `summary.csv/json` 汇总统一到实验目录。训练使用 `-i images -r -1`，继续沿用 FastGS 原始大图自动缩放规则，即宽度超过 1.6K 时缩放到 1.6K。
+
+MipNeRF360 全场景命令：
+
+```bash
+uv run --active python scripts/run_0001_fastgs_big_eval.py \
+  --dataset-name mipnerf360 \
+  --dataset-root datasets/mipnerf360 \
+  --output-root output/0001/large_res_fastgs_big_baseline/mipnerf360 \
+  --scenes bicycle bonsai counter flowers garden kitchen room stump treehill \
+  --train-images images \
+  --resolution -1 \
+  --densification-interval 100 \
+  --method-name large_res_fastgs_big_densify100 \
+  --run-name fastgs_big_densify100_30k_r_auto
+```
+
+DB 与 Tandt 后续命令：
+
+```bash
+uv run --active python scripts/run_0001_fastgs_big_eval.py \
+  --dataset-name db \
+  --dataset-root datasets/tandt_db/db \
+  --output-root output/0001/large_res_fastgs_big_baseline/db \
+  --scenes drjohnson playroom \
+  --train-images images \
+  --resolution -1 \
+  --densification-interval 100 \
+  --method-name large_res_fastgs_big_densify100 \
+  --run-name fastgs_big_densify100_30k_r_auto
+
+uv run --active python scripts/run_0001_fastgs_big_eval.py \
+  --dataset-name tandt \
+  --dataset-root datasets/tandt_db/tandt \
+  --output-root output/0001/large_res_fastgs_big_baseline/tandt \
+  --scenes train truck \
+  --train-images images \
+  --resolution -1 \
+  --densification-interval 100 \
+  --method-name large_res_fastgs_big_densify100 \
+  --run-name fastgs_big_densify100_30k_r_auto
+```
+
+预期产物：
+
+- `output/0001/large_res_fastgs_big_baseline/mipnerf360/summary.csv`
+- `output/0001/large_res_fastgs_big_baseline/db/summary.csv`
+- `output/0001/large_res_fastgs_big_baseline/tandt/summary.csv`
