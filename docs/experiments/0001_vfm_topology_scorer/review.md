@@ -160,6 +160,10 @@ DB 的 DINO weighted 多档复验则给出相反信号。i0.50 平均为 30.3603
 - bicycle 大分辨率 ViT-L token-edge 30k 正式探针已完成。测试指标为 PSNR 25.0785、SSIM 0.7394、LPIPS 0.2733，最终 1,033,601 个 Gaussians，训练 187.28s。训练沿用 `-r -1` 的 1.6K 自动缩放规则，显存观测约 7.2GB，低于 24GB 上限很多。
 - 该结果的关键价值是资源与流程确认：ViT-L/14 是当前可承受的大 DINO 档位，1.6K token-edge cache 足够小，且最终点数低于用户提供的 FastGS `densify100` 约 1.15M 参考。质量是否优于 baseline 需要等待用户手头同裁切口径 FastGS 原始指标对照，不能只看单场景绝对 PSNR。
 - 全场景大分辨率评测应按 MipNeRF360、DB、Tandt 三个数据集分别统计平均 PSNR/SSIM/LPIPS、Gaussian 数量和训练时间；不要再把 13 个场景合并成一个主平均值。脚本已支持 `--project-token-edge` 与 `--cache-storage npz_uint8`，可复用同一配置跑三套数据集。
+- 大分辨率 ViT-L token-edge i0.50 全 13 场景评测已完成，总耗时 5,830s，约 1h37m；评估输出约 2.9G，13 场景 token-edge cache 约 24M。全程无 OOM，cache 阶段显存观察约 16.9GB，训练阶段约 7GB。
+- 大分辨率分数据集均值为：MipNeRF360 PSNR 27.2965、SSIM 0.8017、LPIPS 0.2506、581,266 个 Gaussians；DB PSNR 30.0302、SSIM 0.9076、LPIPS 0.2521、340,966 个 Gaussians；Tandt PSNR 23.4810、SSIM 0.8365、LPIPS 0.2123、235,384 个 Gaussians。
+- 这些结果已经满足“同一功能模块、同一大分辨率裁切口径、三个公开数据集分开统计”的评测要求。但它们还不能独立证明质量正向，因为 baseline 由用户持有；下一步应把用户的 FastGS 原始 1.6K 裁切指标补入同一表格，计算逐数据集 ΔPSNR/ΔSSIM/ΔLPIPS/ΔGS。
+- 从容量角度看，bicycle full-run 为 1.039M GS，低于用户提供的 FastGS `densify100` 约 1.15M 参考；但 treehill、stump、flowers 也达到 0.79M 到 0.94M。后续大分辨率策略不应盲目加大 importance weight，而应优先复用 QCGI 或显式容量收益门槛。
 
 ## 下一版计划
 
@@ -172,4 +176,4 @@ DB 的 DINO weighted 多档复验则给出相反信号。i0.50 平均为 30.3603
 7. 已验证的 `support_ratio` 与高置信 prune-protect 都没有优于普通 i0.50，因此下一版不把它们作为主方向；可以保留为诊断分支。
 8. 下一版 selector 必须避免 test 泄漏。短期优先级是独立 validation split、预先冻结的数据集级策略和训练过程容量信号；`evaluate_0001_train_selector.py` 已证明当前 train-side 渲染指标不足以替代 test oracle。
 9. 重做恢复时序：不再只在训练结束后统一 dense recovery，而是在 staged pruning 发生后立即执行短局部恢复，观察是否能减少中期结构损伤。
-10. 大分辨率分支先完成 ViT-L token-edge i0.50 的三数据集全场景评测，并与用户提供的 FastGS 原始 1.6K 裁切数据对齐。若 MipNeRF360/DB 平均仍正向，再考虑把 r8 阶段的 QCGI 档位选择迁移到大分辨率；若某个数据集负向，则优先回退或降低 VFM importance，不急于增加 DINO 尺寸。
+10. 大分辨率 ViT-L token-edge i0.50 的三数据集全场景评测已完成。下一步先补用户提供的 FastGS 原始 1.6K 裁切 baseline 表，计算分数据集差值；若 MipNeRF360/DB 平均正向，再考虑把 r8 阶段的 QCGI 档位选择迁移到大分辨率；若某个数据集负向，则优先回退或降低 VFM importance，不急于增加 DINO 尺寸。

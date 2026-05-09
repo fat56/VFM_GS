@@ -1151,3 +1151,53 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 - 最终 Gaussian 数量为 1.0336M，低于用户提供的 FastGS `densify100` 原图裁切参考约 1.15M。至少在 bicycle 上，这个 VFM_GS 大分辨率版本没有靠超过参考点数来换取结果。
 - 本结果只能说明 bicycle 链路和资源可行。正式有效性判断需要按 MipNeRF360、DB、Tandt 三个数据集分别统计平均值，并与用户手头的 FastGS 原始数据在相同 1.6K 裁切口径下比较。
 - 下一步已准备全场景批量入口：继续使用同一功能模块 `vfm_topology_scorer + dinov2_token_edge_l1 + weighted importance i0.50`，只改变数据集与场景。全场景汇总必须分开报告 MipNeRF360、DB、Tandt 平均值，不再合并成 13 场景总平均作为主结论。
+
+## 2026-05-09 大分辨率 ViT-L/14 全场景评估
+
+评估范围：`datasets/mipnerf360` 全 9 场景、`datasets/tandt_db/db` 全 2 场景、`datasets/tandt_db/tandt` 全 2 场景。统一设置为 `-i images -r -1`，即训练和测试都沿用 FastGS 原始大图处理逻辑，宽度超过 1.6K 时自动缩到 1.6K。方法保持同一个功能模块：`vfm_topology_scorer + dinov2_token_edge_l1 + weighted importance i0.50`，cache 使用 `dinov2_vitl14`、`--max_width 1600`、`--project_token_edge` 和 `npz_uint8`。
+
+完整批次耗时 5,830s，约 1h37m；输出目录 `output/0001/large_res_vitl_full` 约 2.9G，ViT-L token-edge cache 目录 `output/0001/vfm_cache_large` 约 24M。原始汇总文件分别为：
+
+- `output/0001/large_res_vitl_full/mipnerf360/summary.csv`
+- `output/0001/large_res_vitl_full/db/summary.csv`
+- `output/0001/large_res_vitl_full/tandt/summary.csv`
+
+MipNeRF360：
+
+| 场景 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---:|---:|---:|---:|---:|
+| bicycle | 25.1098 | 0.7403 | 0.2727 | 1,039,441 | 189.06s |
+| bonsai | 31.3437 | 0.9403 | 0.1945 | 279,294 | 161.96s |
+| counter | 28.6755 | 0.9036 | 0.2078 | 218,291 | 164.20s |
+| flowers | 21.3540 | 0.5789 | 0.3710 | 794,588 | 179.81s |
+| garden | 26.7939 | 0.8219 | 0.2006 | 641,564 | 175.73s |
+| kitchen | 31.2784 | 0.9244 | 0.1357 | 297,933 | 169.60s |
+| room | 31.6938 | 0.9208 | 0.2162 | 229,772 | 149.84s |
+| stump | 26.7909 | 0.7658 | 0.2741 | 795,355 | 179.50s |
+| treehill | 22.6285 | 0.6196 | 0.3827 | 935,157 | 182.99s |
+| **平均** | **27.2965** | **0.8017** | **0.2506** | **581,266** | **172.52s** |
+
+DB：
+
+| 场景 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---:|---:|---:|---:|---:|
+| drjohnson | 29.4648 | 0.9025 | 0.2537 | 425,990 | 142.73s |
+| playroom | 30.5957 | 0.9126 | 0.2504 | 255,942 | 142.36s |
+| **平均** | **30.0302** | **0.9076** | **0.2521** | **340,966** | **142.55s** |
+
+Tandt：
+
+| 场景 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---:|---:|---:|---:|---:|
+| train | 21.5675 | 0.7981 | 0.2470 | 207,211 | 141.09s |
+| truck | 25.3946 | 0.8749 | 0.1775 | 263,557 | 139.18s |
+| **平均** | **23.4810** | **0.8365** | **0.2123** | **235,384** | **140.13s** |
+
+解读：
+
+- 资源层面：ViT-L/14 在 24GB 4090 D 上可用。cache 构建阶段显存峰值观察约 16.9GB，训练阶段约 7GB；全场景没有 OOM。
+- 存储层面：`--project_token_edge` 使 1.6K ViT-L cache 保持很小，全 13 场景 token-edge cache 约 24M，避免了保存完整 patch-token 特征。
+- 评价口径：上述结果是严格 test split 指标，测试集不参与训练；训练和测试都使用 `-r -1` 的同一 1.6K 自动缩放口径。
+- 相比用户给出的 bicycle FastGS `densify100` 约 1.15M GS 参考，本方法 bicycle full-run 为 1.039M GS，点数没有超过该参考。但是否质量正向必须等待同裁切口径的 baseline 指标对齐，不能仅凭绝对 PSNR 判断。
+- 大分辨率下 MipNeRF360 的点数分布差异很大：bicycle、stump、treehill 接近或超过 0.8M，室内场景多在 0.2M 到 0.3M。下一步若迁移 r8 阶段的 QCGI 或数据集策略，应优先关注高点数场景的质量-容量收益。
+- DB 和 Tandt 的 LPIPS 数值整体偏高，和 r8 结果不可直接横向比较；需要用用户手头的 FastGS 原始 1.6K 裁切数据作为唯一公平 baseline。
