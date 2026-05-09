@@ -2,6 +2,42 @@
 
 本文只汇总截至目前在 30k 正式实验中明确正向，或虽有轻微质量回落但具备正向折中价值的改进。除特别说明外，实验均为 `-r 8`、30,000 iterations、`--eval`；`ΔLPIPS < 0` 表示改善。
 
+## 当前最佳统一方法
+
+当前最佳方法不是把不同后端拼成一个结果，而是统一使用同一套 `VFM_GS-DINO-Weighted` 功能模块：`vfm_topology_scorer + dinov2_token_edge_l1 + top-k 25% topology map + importance_mode=weighted`。不同公开数据集只调整 `importance_weight` 或触发安全回退；`cached_edge_l1` 只作为 proxy 控制组，不再作为最佳方法的一部分。
+
+| 部分 | 固定设置 |
+|---|---|
+| scorer | `vfm_topology_scorer` |
+| VFM 后端 | `dinov2_token_edge_l1` |
+| topology map | DINO token edge 的 top-k 25% |
+| 训练耦合 | `importance_mode=weighted`，用 RGB importance 与 VFM importance 加权 |
+| 数据集调节项 | `importance_weight`、QCGI 质量-容量选择、安全回退 |
+
+| 数据集 | 最佳统一方法设置 | 与 baseline 的关系 | 场景数 |
+|---|---|---|---:|
+| MipNeRF360 | `importance_weight` 在 0.50/0.75/0.90 内由 QCGI 选择 | VFM_GS 质量优先线正向 | 9 |
+| DB | 固定 `importance_weight=0.90` | VFM_GS 正向 | 2 |
+| Tandt | 同一 VFM 候选池经安全门控回退 baseline | 强制启用 VFM 暂无正向档 | 2 |
+
+渲染质量对照如下。MipNeRF360 和 DB 的平均 PSNR、SSIM、LPIPS 均优于 baseline；Tandt 当前没有找到三项指标同时超过 baseline 的 VFM 档位，因此最佳展示线按安全门控回退。
+
+| 数据集 | Baseline PSNR | 最佳 PSNR | ΔPSNR | Baseline SSIM | 最佳 SSIM | ΔSSIM | Baseline LPIPS | 最佳 LPIPS | ΔLPIPS |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| MipNeRF360 | 28.6527 | 28.8641 | +0.2114 | 0.8551 | 0.8667 | +0.0116 | 0.1620 | 0.1388 | -0.0231 |
+| DB | 30.1179 | 30.6074 | +0.4894 | 0.9324 | 0.9376 | +0.0051 | 0.0658 | 0.0620 | -0.0038 |
+| Tandt | 25.9551 | 25.9551 | 0.0000 | 0.9377 | 0.9377 | 0.0000 | 0.0541 | 0.0541 | 0.0000 |
+
+容量与训练开销对照如下。MipNeRF360 的新增点数约 0.082M，DB 的新增点数约 0.008M，都属于当前 QCGI 规则允许的正向增长；Tandt 回退后不引入额外点数和训练开销。
+
+| 数据集 | Baseline Gaussian 数 | 最佳 Gaussian 数 | ΔGS | Baseline 训练时间 | 最佳训练时间 | Δ训练时间 |
+|---|---:|---:|---:|---:|---:|---:|
+| MipNeRF360 | 173,341 | 255,822 | +82,481 | 125.38s | 158.78s | +33.40s |
+| DB | 54,685 | 63,006 | +8,320 | 121.22s | 197.47s | +76.24s |
+| Tandt | 50,370 | 50,370 | 0 | 140.26s | 140.26s | 0.00s |
+
+如果要求 Tandt 也强制启用同一套 VFM 模块，则当前最小损失档是 `importance_weight=0.50`，但仍低于 baseline：PSNR 25.7519、SSIM 0.9346、LPIPS 0.0575，分别为 -0.2032、-0.0031、+0.0035。因此第一版最佳方法应明确包含安全门控：当数据集级验证显示 VFM 候选三项指标不能超过 baseline 时，不启用 VFM 增强。
+
 ## 总览
 
 | 保留级别 | 方法/改进 | 后端与关键设置 | 范围 | PSNR | ΔPSNR vs baseline | SSIM | ΔSSIM | LPIPS | ΔLPIPS | Gaussian 数 | ΔGS | 训练时间 | 结论 |
