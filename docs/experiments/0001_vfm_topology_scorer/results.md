@@ -1332,3 +1332,26 @@ Tandt 逐场景：
 - 平均 Gaussian 数量没有出现 0.1M 级别以上的失控增长：MipNeRF360 +32,455，DB +90,192，Tandt -23,262。但单场景仍需要约束，例如 MipNeRF360 bonsai +342,984、kitchen +153,925、stump +131,184，DB drjohnson +134,438。
 - Tandt 仍是混合数据集：`train` 的 PSNR 正向但 LPIPS 略差，`truck` 的 PSNR/SSIM 负向但 LPIPS 正向。该数据集不能用单一场景判断，应继续按数据集平均和质量-容量收益共同决策。
 - 当前最合理的阶段性结论是：大分辨率 VFM_GS 在同 recipe 下已经具备跨 MipNeRF360、DB、Tandt 的平均弱正向证据，但提升幅度很小；下一版重点不是继续扩大 DINO，而是把容量收益门槛、场景回退和不泄漏 test 的选择规则工程化。
+
+## 2026-05-09 DINO descriptor densify-only 复制先验探测
+
+目标：把 VFM_GS 的下一步实验从“工程回退”转向“证明 VFM 先验能提升质量”。本轮只让 DINO descriptor residual 介入 densification，不改变 pruning score，从而隔离验证“语义结构先验能否指导新增 GS 的位置”。配置为 `configs/experiments/0001_vfm_topology_dinov2_descriptor_densify_only.yaml`：`dinov2_descriptor_cosine`、top-k 15%、token smoothing 3、`vfm_weight=0.0`、`vfm_importance_mode=max`。训练与对照均为 `-r 8`、30,000 iterations、`--eval`，并使用 matched `fastgs_photometric + densification_interval=100` 作为控制组。
+
+当前批次先跑 MipNeRF360 的 `bicycle`、`garden`、`stump`、`bonsai`。截至本次记录，`bicycle` 已完成 train/render/metrics；其余场景仍在批量脚本中继续运行。
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| bicycle | FastGS densify100 | 26.9221 | 0.8237 | 0.1970 | 413,084 | 129.72s |
+| bicycle | DINO descriptor densify-only | 27.0211 | 0.8329 | 0.1794 | 486,197 | 163.30s |
+
+差值：
+
+| 场景 | ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 |
+|---|---:|---:|---:|---:|---:|
+| bicycle | +0.0991 | +0.0092 | -0.0176 | +73,113 | +33.58s |
+
+解读：
+
+- 这是“descriptor residual 只指导复制”路线的首个正向完整场景。由于 `vfm_weight=0.0`，该提升不能归因于 VFM pruning fusion，而更直接指向 DINO descriptor residual 对 densification 候选排序的帮助。
+- Gaussian 数量增加 73,113，低于 0.1M 关注阈值，并换来 PSNR、SSIM、LPIPS 三项同步改善，符合“少量正向 GS 增长可以接受”的实验原则。
+- 该结果还不是四场景结论。下一步继续等待 `garden`、`stump`、`bonsai` 的同口径结果；若平均正向，再进入 descriptor weighted densify 或更高分辨率三数据集验证。
