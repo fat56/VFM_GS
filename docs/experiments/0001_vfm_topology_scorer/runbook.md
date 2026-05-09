@@ -499,7 +499,7 @@ uv run --active python scripts/summarize_0001_cross_dataset_selector.py
 
 `recommendations.csv` 中的 `best_psnr_method` 和 `best_lpips_method` 表示单指标最优；`best_dino_method` 表示 DINO weighted i0.50/i0.75/i0.90 内部的 PSNR 最优档；`qcgi_pick_method` 表示按质量-容量收益指数选择；`validated_policy_method` 是当前保守策略：DINO weighted 候选只有同时三项优于 baseline 和 cached-edge 时才选，cached-edge 三项优于 baseline 时次优先，否则回退 baseline；`budget_no_worse_method` 表示在不低于 baseline 三项指标的候选中选择 Gaussian 数最少者，baseline 本身也会参与这个保守预算选择；`vfm_psnr_pick` 只在 VFM 后端内部按 PSNR 选择。
 
-截至 2026-05-09，selector 已读取 baseline、cached-edge v1、DINO weighted i0.50/i0.75/i0.90。13 场景固定三档中，i0.50/i0.75/i0.90 均值分别为 28.6061 / 0.8873 / 0.1154、28.6066 / 0.8872 / 0.1153、28.5919 / 0.8872 / 0.1154；固定档位不是主结论。场景级 `validated_policy` 与 PSNR oracle 一致，均值为 28.6981 / 0.8872 / 0.1179、178,903 个 Gaussians，相对 baseline 为 +0.2350 PSNR、+0.0075 SSIM、LPIPS 改善 -0.0127。`qcgi_pick_method` 均值为 28.6930 / 0.8881 / 0.1147、188,542 个 Gaussians，更偏综合质量收益。逐场景推荐也不是单一后端：9 个场景 PSNR 选择 DINO weighted，1 个场景选择 cached-edge v1，3 个场景选择 baseline。
+截至 2026-05-09，selector 已读取 baseline、cached-edge v1、DINO weighted i0.50/i0.75/i0.90。评估结论必须按公开数据集分别报告，不能把 MipNeRF360、DB、Tandt 合并成一个总平均。分数据集看：MipNeRF360 固定 i0.50 为 28.8505 / 0.8660 / 0.1397，相对 baseline 为 +0.1979 PSNR、+0.0109 SSIM、LPIPS -0.0223；DB 固定 i0.90 为 30.6074 / 0.9376 / 0.0620，相对 baseline 为 +0.4894、+0.0051、-0.0038；Tandt 三个 DINO 档位都低于 baseline，应回退。逐场景推荐只作为诊断：9 个场景 PSNR 选择 DINO weighted，1 个场景选择 cached-edge v1，3 个场景选择 baseline。
 
 QCGI 的当前定义用于实验统筹，而不是训练时约束：
 
@@ -528,8 +528,10 @@ uv run --active python scripts/summarize_0001_dataset_policies.py
 - `output/0001/dataset_policies/policy_rows.csv`
 - `output/0001/dataset_policies/averages.csv`
 - `output/0001/dataset_policies/comparisons.csv`
+- `output/0001/dataset_policies/dataset_averages.csv`
+- `output/0001/dataset_policies/dataset_comparisons.csv`
 
-截至 2026-05-09，`dataset_fixed_policy` 的 13 场景均值为 28.6754 / 0.8881 / 0.1146、193,798 个 Gaussians，相对 baseline 为 +0.2123 PSNR、+0.0083 SSIM、LPIPS 改善 -0.0160。`dataset_quality_policy` 的 13 场景均值为 28.6848 / 0.8886 / 0.1140、194,550 个 Gaussians，相对 baseline 为 +0.2217 PSNR、+0.0088 SSIM、LPIPS 改善 -0.0166。
+截至 2026-05-09，展示时使用 `dataset_averages.csv` 和 `dataset_comparisons.csv`。`dataset_fixed_policy` 在 MipNeRF360 上为 28.8505 / 0.8660 / 0.1397，相对 baseline 为 +0.1979 / +0.0109 / -0.0223；在 DB 上为 30.6074 / 0.9376 / 0.0620，相对 baseline 为 +0.4894 / +0.0051 / -0.0038；在 Tandt 上回退 baseline，差值为 0。`dataset_quality_policy` 在 MipNeRF360 上为 28.8641 / 0.8667 / 0.1388，相对 baseline 为 +0.2114 / +0.0116 / -0.0231；DB 与 fixed policy 相同，Tandt 同样回退 baseline。
 
 其中 `ΔGS < 0.01M` 视为轻量增长，`0.01M <= ΔGS < 0.10M` 是可接受增长区间，`ΔGS >= 0.10M` 会进入重惩罚区间。这个指标有意支持“少量 GS 增长且质量提升”的正例，也会压制“GS 大幅增长但质量收益不足”的低效变体。
 

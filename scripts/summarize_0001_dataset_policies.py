@@ -198,6 +198,10 @@ def build_comparisons(averages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return comparisons
 
 
+def dataset_only(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [row for row in rows if row.get("dataset") != "all"]
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Summarize preset dataset policies for experiment 0001.")
     parser.add_argument("--summary", type=Path, default=Path("output/0001/cross_dataset_selector/summary.csv"))
@@ -220,6 +224,8 @@ def main() -> int:
     policy_rows = build_policy_rows(summary, weighted_recommendations, policies)
     averages = build_averages(policy_rows)
     comparisons = build_comparisons(averages)
+    dataset_averages = dataset_only(averages)
+    dataset_comparisons = dataset_only(comparisons)
 
     write_csv(args.output_dir / "policy_rows.csv", policy_rows)
     write_json(args.output_dir / "policy_rows.json", policy_rows)
@@ -227,9 +233,15 @@ def main() -> int:
     write_json(args.output_dir / "averages.json", averages)
     write_csv(args.output_dir / "comparisons.csv", comparisons)
     write_json(args.output_dir / "comparisons.json", comparisons)
+    write_csv(args.output_dir / "dataset_averages.csv", dataset_averages)
+    write_json(args.output_dir / "dataset_averages.json", dataset_averages)
+    write_csv(args.output_dir / "dataset_comparisons.csv", dataset_comparisons)
+    write_json(args.output_dir / "dataset_comparisons.json", dataset_comparisons)
 
     print("Wrote {}".format(args.output_dir / "averages.csv"))
     print("Wrote {}".format(args.output_dir / "comparisons.csv"))
+    print("Wrote {}".format(args.output_dir / "dataset_averages.csv"))
+    print("Wrote {}".format(args.output_dir / "dataset_comparisons.csv"))
     return 0
 
 
