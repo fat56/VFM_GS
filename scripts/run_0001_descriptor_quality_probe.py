@@ -343,6 +343,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--descriptor-method", default="dinov2_descriptor_densify_only")
     parser.add_argument("--baseline-run-name", default="fastgs_densify100_30k_r8")
     parser.add_argument("--descriptor-run-name", default="vfm_dinov2_descriptor_densify_only_30k_r8")
+    parser.add_argument(
+        "--baseline-source-root",
+        type=Path,
+        default=None,
+        help="Read matched baseline runs from this root instead of training them under output-root.",
+    )
     parser.add_argument("--skip-baseline", action="store_true")
     return parser.parse_args()
 
@@ -364,9 +370,14 @@ def main() -> int:
         validate_cache(scene_dir, scene, args, repo, cache_log_dir)
 
         if not args.skip_baseline:
-            baseline_run = args.output_root / scene / args.baseline_run_name
-            baseline_logs = args.output_root / scene / "logs" / args.baseline_run_name
-            train_baseline(scene_dir, baseline_run, baseline_logs, args, repo)
+            baseline_root = args.baseline_source_root if args.baseline_source_root is not None else args.output_root
+            baseline_run = baseline_root / scene / args.baseline_run_name
+            baseline_logs = baseline_root / scene / "logs" / args.baseline_run_name
+            if args.baseline_source_root is not None:
+                if latest_point_count(baseline_run) is None:
+                    raise RuntimeError("Baseline source run is incomplete: {}".format(baseline_run))
+            else:
+                train_baseline(scene_dir, baseline_run, baseline_logs, args, repo)
             render_and_metrics(baseline_run, baseline_logs, repo)
             rows.append(collect_row(args.dataset_name, scene, args_baseline_method(), baseline_run, baseline_logs))
 

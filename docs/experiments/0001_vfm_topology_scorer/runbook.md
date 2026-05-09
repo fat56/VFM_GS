@@ -3015,3 +3015,55 @@ uv run --active python scripts/run_0001_descriptor_quality_probe.py \
 - `output/0001/descriptor_densify_only_probe/summary.csv`
 - `output/0001/descriptor_densify_only_probe/comparisons.csv`
 - `output/0001/descriptor_densify_only_probe/averages.json`
+
+## 2026-05-09 DINO descriptor 复制强度复验
+
+目标：在 `descriptor densify-only` 四场景平均正向后，继续验证复制先验强度和 Gaussian 增量之间的关系。本轮仍只让 DINO descriptor residual 影响 densification，保持 `vfm_weight=0.0`，不让 VFM pruning fusion 参与质量变化。为了避免重复训练控制组，`scripts/run_0001_descriptor_quality_probe.py` 新增 `--baseline-source-root`，可以直接读取上一轮 `output/0001/descriptor_densify_only_probe` 中的 matched FastGS densify100 结果。
+
+候选一：top-k 25%，检查更大语义残差覆盖率是否进一步提升质量。
+
+```bash
+uv run --active python scripts/run_0001_descriptor_quality_probe.py \
+  --dataset-name mipnerf360 \
+  --dataset-root datasets/mipnerf360 \
+  --output-root output/0001/descriptor_densify_only_topk025_probe \
+  --baseline-source-root output/0001/descriptor_densify_only_probe \
+  --scenes bicycle garden stump bonsai \
+  --train-images images \
+  --cache-images images \
+  --resolution 8 \
+  --densification-interval 100 \
+  --cache-root output/0001/vfm_cache \
+  --cache-max-width 224 \
+  --cache-storage npy_float16 \
+  --dino-backend dinov2_vits14 \
+  --dinov2-repo output/0001/external/dinov2 \
+  --config configs/experiments/0001_vfm_topology_dinov2_descriptor_densify_only_topk025.yaml \
+  --descriptor-method dinov2_descriptor_densify_only_topk025 \
+  --baseline-run-name fastgs_densify100_30k_r8 \
+  --descriptor-run-name vfm_dinov2_descriptor_densify_only_topk025_30k_r8
+```
+
+候选二：top-k 15% + `weighted i0.50`，检查 RGB/VFM importance 加权平均能否在保留质量收益的同时降低无效增点。
+
+```bash
+uv run --active python scripts/run_0001_descriptor_quality_probe.py \
+  --dataset-name mipnerf360 \
+  --dataset-root datasets/mipnerf360 \
+  --output-root output/0001/descriptor_densify_only_weighted_i050_probe \
+  --baseline-source-root output/0001/descriptor_densify_only_probe \
+  --scenes bicycle garden stump bonsai \
+  --train-images images \
+  --cache-images images \
+  --resolution 8 \
+  --densification-interval 100 \
+  --cache-root output/0001/vfm_cache \
+  --cache-max-width 224 \
+  --cache-storage npy_float16 \
+  --dino-backend dinov2_vits14 \
+  --dinov2-repo output/0001/external/dinov2 \
+  --config configs/experiments/0001_vfm_topology_dinov2_descriptor_densify_only_weighted_i050.yaml \
+  --descriptor-method dinov2_descriptor_densify_only_weighted_i050 \
+  --baseline-run-name fastgs_densify100_30k_r8 \
+  --descriptor-run-name vfm_dinov2_descriptor_densify_only_weighted_i050_30k_r8
+```
