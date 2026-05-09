@@ -2778,3 +2778,49 @@ uv run --active python -m vfm_gs.cli.metrics \
 ```
 
 treehill 结果为 PSNR 24.4393、SSIM 0.7285、LPIPS 0.2821，最终 420,283 个 Gaussians，训练 140.96s。相比普通 treehill i0.50，PSNR 下降 -0.0780，SSIM 基本持平，LPIPS 仅微幅改善 -0.0001；相比 treehill `weighted i0.50`，点数多 2,749 个但 PSNR 下降 -0.0708。因此 quadratic adaptive weighted 不能从 bicycle 单场景候选升级为全场景预算效率候选，后续不继续扩展这条曲线。
+
+## 2026-05-09 大分辨率 DINO-L 探测
+
+目标：按 FastGS 原代码的原图自动裁切规则做大分辨率评测。训练使用 `-i images -r -1`，当输入宽度超过 1.6K 时由 `camera_utils.py` 自动缩到 1.6K；不使用 `images_8`。当前 DINOv2 官方 hub 没有 `DINO-M` 这个名称，本轮以 `dinov2_vitb14` 作为中档、`dinov2_vitl14` 作为大档，优先验证 ViT-L/14。
+
+先验证 ViT-L/14 在 1.6K 下可以完成 cache 构建。完整 patch-token cache 会达到 GB 级，因此本轮新增 `--project_token_edge`，直接把 DINO patch tokens 投影为训练实际消费的 2D token-edge map，并用 `npz_uint8` 保存。
+
+```bash
+uv run --active python -m vfm_gs.cli.build_vfm_cache \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -o output/0001/vfm_cache_large/bicycle_dinov2_vitl14_token_edge_w1600 \
+  --backend dinov2_vitl14 \
+  --dinov2_repo output/0001/external/dinov2 \
+  --max_width 1600 \
+  --storage npz_uint8 \
+  --project_token_edge
+
+uv run --active python -m vfm_gs.cli.validate_vfm_cache \
+  -c output/0001/vfm_cache_large/bicycle_dinov2_vitl14_token_edge_w1600 \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  --backend dinov2_vitl14
+```
+
+完整 bicycle cache 结果：194 个 entries，manifest 为 `backend=dinov2_vitl14`、`feature=dinov2_token_edge`、`max_width=1600`、`storage=npz_uint8`，目录大小约 1.9M。首个 entry 的 token-edge shape 为 `75x114`，对应原图 `3286x4946` 被缩放并裁到 patch-grid。
+
+短训练显存探测命令：
+
+```bash
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_dinov2_token_edge_weighted_i050.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0001/large_res_vitl_probe/bicycle/vfm_dinov2_vitl14_token_edge_weighted_i050_620_r_auto \
+  --eval \
+  -r -1 \
+  --iterations 620 \
+  --test_iterations 620 \
+  --save_iterations 620 \
+  --checkpoint_iterations 620 \
+  --vfm_cache_dir output/0001/vfm_cache_large/bicycle_dinov2_vitl14_token_edge_w1600
+```
+
+短训练结果：日志确认触发 FastGS 原始提示 `[ INFO ] Encountered quite large input images (>1.6K pixels width), rescaling to 1.6K.`；训练完成 620 steps，保存 61,265 个 Gaussians，训练时间 3.15s，未出现 OOM。该结果只证明 ViT-L token-edge cache 与 1.6K 训练路径可用，不作为质量指标。

@@ -1119,3 +1119,24 @@ uv run --active python -m vfm_gs.cli.build_vfm_cache \
 - 相比 `fastgs_densify100` cadence control，top-k/smoothing `rgb_only` 多 239 个 Gaussians，训练少 11.73s，但质量更低：-0.0170 PSNR、-0.0004 SSIM、LPIPS 差 +0.0014。它是一个预算贴合的负例。
 - 相比普通 descriptor `rgb_only`，top-k/smoothing `rgb_only` 多 5,116 个 Gaussians、训练少 37.38s，但质量略低：-0.0253 PSNR、-0.0002 SSIM、LPIPS 差 +0.0006。说明 top-k mask 单独用于 support/pruning 时没有保住质量收益。
 - 结论是：top-k/smoothing 能改善 unpruned descriptor 质量；top-k 8% 与 percentile 90% 都比默认 descriptor 更均衡，但仍高于 cadence control 预算。soft top-k 30k 质量正向，但基本落在 top-k 8% 附近且成本更高。在接近 410k budget、降低 top-k ratio、关闭直接 descriptor densification、percentile mask、soft top-k 多层计数或训练结束后 dense recovery 后，收益都没有保住。0001 的 descriptor 分支应收束为“真实语义 descriptor 路径已打通，但当前预算机制未转正”；下一版需要改变预算行为本身，而不是继续增加同类 mask ratio 变体。
+
+## 2026-05-09 大分辨率 ViT-L/14 token-edge 链路探测
+
+目标：按 FastGS 原代码的原图裁切规则验证大分辨率训练链路，即训练使用 `-i images -r -1`，当宽度超过 1.6K 时自动缩到 1.6K。本轮优先尝试更大的 DINOv2 ViT-L/14；DINO 只在离线 cache 构建阶段运行，训练阶段读取 token-edge cache，不在每次 densification 中重新前向 ViT-L。
+
+代码变更：`build_vfm_cache` 和 `vfm_topology_scorer` 已支持 `dinov2_vitl14`；新增 `--project_token_edge`，用于把 DINO patch tokens 直接投影成 `dinov2_token_edge` 2D cache。这样保持训练端消费的 topology signal 不变，但避免全量保存 1.6K patch-token 特征。`dinov2_token_edge_l1` 现在同时接受 `feature=dinov2_patchtokens` 和 `feature=dinov2_token_edge` 两种 cache manifest。
+
+| 项目 | 结果 |
+|---|---|
+| cache 后端 | `dinov2_vitl14` |
+| cache 分辨率 | `--max_width 1600` |
+| cache 特征 | `dinov2_token_edge` |
+| cache 存储 | `npz_uint8` |
+| bicycle entries | 194 |
+| cache 大小 | 1.9M |
+| 首个 entry shape | `75x114` |
+| 校验 | 通过 |
+
+短训练探测使用 `configs/experiments/0001_vfm_topology_dinov2_token_edge_weighted_i050.yaml`，覆盖 `-i images -r -1` 和上述 ViT-L token-edge cache。日志确认触发 FastGS 原始裁切提示：`Encountered quite large input images (>1.6K pixels width), rescaling to 1.6K.` 620 steps 训练完成，最终 61,265 个 Gaussians，训练时间 3.15s，未出现 OOM。
+
+这个结果说明：在当前 RTX 4090 D 24G 环境里，至少 bicycle 的 1.6K 数据加载、ViT-L token-edge cache preflight、VFM scorer 和首个 densify 节点是可用的。它还不能证明 30k 后期 1M 级 Gaussians 一定安全；下一步应先跑 bicycle 30k 正式大分辨率实验，若其最终点数接近参考的 `fastgs_densify100` 约 1.15M 且无 OOM，再扩展到 MipNeRF360、DB、Tandt 全场景。

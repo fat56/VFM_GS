@@ -155,6 +155,8 @@ DB 的 DINO weighted 多档复验则给出相反信号。i0.50 平均为 30.3603
 - 严格 `quality_pick` 按场景在 i0.50/i0.75/i0.90 之间选择，当前选中 bicycle、garden、room、stump 的 i0.75，counter 的 i0.90，其余场景保留 i0.50。全 9 场景均值为 PSNR 28.8641、SSIM 0.8665、LPIPS 0.1392、257,326 个 Gaussians，相比 fixed weighted i0.50 提升 +0.0136 PSNR、+0.0004 SSIM、LPIPS 改善 -0.0005，只多 2,589 点。`QCGI pick` 进一步让 treehill 选择 i0.90，均值为 28.8641 / 0.8667 / 0.1388、255,822 个 Gaussians，只多 1,086 点。它是当前 weighted 分支最值得保留的质量策略。
 - `adaptive_weighted + quadratic 430k` bicycle 30k 对照最终 424,011 个 Gaussians，PSNR 26.9858、SSIM 0.8302、LPIPS 0.1853，训练 141.94s。相比 `weighted i0.50` 多 8,853 个点，但提升 +0.0102 PSNR、+0.0014 SSIM、LPIPS 改善 -0.0014；相比普通 i0.50 少 16,060 个点，质量仍小幅低一点。它是新的单场景效率候选，下一步必须跨场景复验后再决定是否替代 weighted。
 - `adaptive_weighted + quadratic 430k` treehill 复验最终 420,283 个 Gaussians，PSNR 24.4393、SSIM 0.7285、LPIPS 0.2821，训练 140.96s。相比普通 treehill i0.50，PSNR 低 -0.0780，SSIM 基本持平，LPIPS 只微幅好 -0.0001；相比 treehill `weighted i0.50`，点数更多但 PSNR 低 -0.0708。它没有通过第二场景验证，不能替代全场景 weighted 结论。
+- 大分辨率链路探测已开始。`dinov2_vitl14` 已接入 cache builder 和 scorer preflight；`--project_token_edge` 可把 1.6K ViT-L patch tokens 投影成 `dinov2_token_edge` 2D cache。bicycle 全量 cache 共有 194 个 entries，`npz_uint8` 下约 1.9M，并通过校验。
+- bicycle `-i images -r -1` 的 620-step ViT-L token-edge 短训练已通过，日志确认沿用 FastGS 原始 1.6K 自动缩放提示，最终 61,265 个 Gaussians，训练 3.15s，无 OOM。下一步先跑 bicycle 30k 大分辨率正式实验，再决定是否扩展到三个公开数据集全场景。
 
 ## 下一版计划
 

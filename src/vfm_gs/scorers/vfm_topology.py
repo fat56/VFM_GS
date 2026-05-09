@@ -12,7 +12,7 @@ from .registry import register_scorer
 
 _CACHE_READERS = {}
 _DINO_MODELS = {}
-_DINO_CACHE_BACKENDS = ("dinov2_vits14", "dinov2_vitb14")
+_DINO_CACHE_BACKENDS = ("dinov2_vits14", "dinov2_vitb14", "dinov2_vitl14")
 _CACHED_BACKEND_MANIFESTS = {
     "cached_edge_l1": ("cached_edge_l1",),
     "dinov2_token_edge_l1": _DINO_CACHE_BACKENDS,
@@ -58,7 +58,17 @@ class VFMFeatureCache:
         key = ("dinov2_token_edge", image_name)
         if key not in self.derived_features:
             token_map = self.get_feature_map(image_name, "cpu")
-            self.derived_features[key] = _dinov2_token_edge_map(token_map)
+            feature = self.manifest.get("feature")
+            if feature == "dinov2_token_edge":
+                if token_map.ndim != 2:
+                    raise ValueError(
+                        "Expected cached DINO token-edge map with shape [grid_h, grid_w], got {}".format(
+                            list(token_map.shape)
+                        )
+                    )
+                self.derived_features[key] = normalize01(token_map.to(torch.float32))
+            else:
+                self.derived_features[key] = _dinov2_token_edge_map(token_map)
         return self.derived_features[key].to(device=device)
 
 
@@ -600,7 +610,13 @@ def preflight_vfm_topology_scorer(dataset, args):
                 ", ".join(repr(item) for item in expected_manifest_backends),
             )
         )
-    if backend in ("dinov2_token_edge_l1", "dinov2_descriptor_cosine", "dinov2_descriptor_cosine_l1") and manifest.get("feature") != "dinov2_patchtokens":
+    if backend == "dinov2_token_edge_l1" and manifest.get("feature") not in ("dinov2_patchtokens", "dinov2_token_edge"):
+        errors.append(
+            "feature mismatch: manifest={!r}, expected 'dinov2_patchtokens' or 'dinov2_token_edge'".format(
+                manifest.get("feature")
+            )
+        )
+    if backend in ("dinov2_descriptor_cosine", "dinov2_descriptor_cosine_l1") and manifest.get("feature") != "dinov2_patchtokens":
         errors.append("feature mismatch: manifest={!r}, expected 'dinov2_patchtokens'".format(manifest.get("feature")))
     for warning in warnings:
         print("[VFM cache preflight warning] {}".format(warning))

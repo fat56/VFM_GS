@@ -18,10 +18,11 @@ from vfm_gs.scorers.vfm_cache import (
 
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".JPG", ".JPEG", ".PNG"}
-DINO_BACKENDS = ("dinov2_vits14", "dinov2_vitb14")
+DINO_BACKENDS = ("dinov2_vits14", "dinov2_vitb14", "dinov2_vitl14")
 DINO_DIMS = {
     "dinov2_vits14": 384,
     "dinov2_vitb14": 768,
+    "dinov2_vitl14": 1024,
 }
 PATCH_SIZE = 14
 
@@ -131,6 +132,29 @@ def _image_to_dino_tensor(image, device):
     return ((tensor - mean) / std).to(device=device)
 
 
+def _normalize_torch01(value, eps=1e-6):
+    import torch
+
+    value = torch.nan_to_num(value.to(torch.float32), nan=0.0, posinf=0.0, neginf=0.0)
+    value_min = torch.min(value)
+    value_max = torch.max(value)
+    return (value - value_min) / torch.clamp(value_max - value_min, min=eps)
+
+
+def _dinov2_token_edge_map_torch(token_map):
+    import torch
+    import torch.nn.functional as torch_f
+
+    tokens = torch_f.normalize(token_map.to(torch.float32), dim=-1)
+    dx = torch.zeros(tokens.shape[:2], dtype=tokens.dtype, device=tokens.device)
+    dy = torch.zeros_like(dx)
+    if tokens.shape[1] > 1:
+        dx[:, 1:] = 1.0 - torch_f.cosine_similarity(tokens[:, 1:, :], tokens[:, :-1, :], dim=-1)
+    if tokens.shape[0] > 1:
+        dy[1:, :] = 1.0 - torch_f.cosine_similarity(tokens[1:, :, :], tokens[:-1, :, :], dim=-1)
+    return _normalize_torch01(torch.sqrt(dx.square() + dy.square() + 1e-12))
+
+
 def _load_dinov2_model(backend, dinov2_repo, device, pretrained=True):
     import torch
 
@@ -159,6 +183,7 @@ def build_dinov2_cache(
     device="cuda",
     limit=None,
     pretrained=True,
+    project_token_edge=False,
 ):
     import torch
     import torch.nn.functional as torch_f
@@ -191,7 +216,19 @@ def build_dinov2_cache(
 
         grid_h = height // PATCH_SIZE
         grid_w = width // PATCH_SIZE
-        feature_map = features.reshape(grid_h, grid_w, DINO_DIMS[backend]).detach().cpu().numpy()
+        feature_map = features.reshape(grid_h, grid_w, DINO_DIMS[backend])
+        if project_token_edge:
+            feature_map = _dinov2_token_edge_map_torch(feature_map).detach().cpu().numpy()
+            feature = "dinov2_token_edge"
+            shape = [grid_h, grid_w]
+            dtype = "uint8" if storage == "npz_uint8" else ("float16" if storage == "npy_float16" else "float32")
+            normalization = "minmax_0_1"
+        else:
+            feature_map = feature_map.detach().cpu().numpy()
+            feature = "dinov2_patchtokens"
+            shape = [grid_h, grid_w, DINO_DIMS[backend]]
+            dtype = "float16" if storage == "npy_float16" else "float32"
+            normalization = "l2_channel"
 
         cache_file = "{}{}".format(safe_cache_stem(image_name), cache_extension(storage))
         cache_path = output_dir / cache_file
@@ -201,9 +238,9 @@ def build_dinov2_cache(
             "checksum_sha256": sha256_file(cache_path),
             "image_file": image_path.name,
             "source_shape": [source_height, source_width],
-            "shape": [grid_h, grid_w, DINO_DIMS[backend]],
-            "dtype": "float16" if storage == "npy_float16" else "float32",
-            "normalization": "l2_channel",
+            "shape": shape,
+            "dtype": dtype,
+            "normalization": normalization,
             "storage": storage,
         }
 
@@ -213,7 +250,8 @@ def build_dinov2_cache(
         "source_path": str(source_path.resolve()),
         "images": images,
         "entry_key": "image_name",
-        "feature": "dinov2_patchtokens",
+        "feature": feature,
+        "project_token_edge": bool(project_token_edge),
         "patch_size": PATCH_SIZE,
         "max_width": max_width,
         "storage": storage,
@@ -241,6 +279,11 @@ def main(argv=None):
     parser.add_argument("--device", default="cuda", type=str)
     parser.add_argument("--limit", default=None, type=int)
     parser.add_argument("--no_pretrained", action="store_true")
+    parser.add_argument(
+        "--project_token_edge",
+        action="store_true",
+        help="For DINOv2 backends, store the derived 2D token-edge map instead of full patch tokens.",
+    )
     args = parser.parse_args(argv)
 
     if args.backend == "cached_edge_l1":
@@ -248,8 +291,8 @@ def main(argv=None):
         manifest = build_edge_cache(args.source_path, args.images, args.output_dir, args.backend, args.max_width, storage)
     else:
         storage = args.storage or "npy_float16"
-        if storage == "npz_uint8":
-            raise ValueError("DINOv2 feature caches require floating-point storage.")
+        if storage == "npz_uint8" and not args.project_token_edge:
+            raise ValueError("DINOv2 patch-token caches require floating-point storage.")
         manifest = build_dinov2_cache(
             args.source_path,
             args.images,
@@ -261,6 +304,7 @@ def main(argv=None):
             device=args.device,
             limit=args.limit,
             pretrained=not args.no_pretrained,
+            project_token_edge=args.project_token_edge,
         )
     print(
         "Wrote {} {} cache entries to {}".format(
