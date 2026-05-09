@@ -1368,3 +1368,47 @@ Tandt 逐场景：
 - 四场景平均 PSNR +0.0823、SSIM +0.0058、LPIPS 改善 -0.0110；SSIM 和 LPIPS 为 4/4 场景正向，PSNR 为 3/4 场景正向。`bonsai` 的 PSNR 轻微下降，但 SSIM 和 LPIPS 仍改善。
 - 平均 Gaussian 数量增加 56,204，约 +20.7%。`bicycle`、`garden`、`bonsai` 的增量低于 0.1M 关注阈值；`stump` 多 106,195 个点，略高于阈值但三项指标改善明显，说明这里额外容量大概率落在有效结构区域。
 - 该结果比“容量保护”更接近 VFM_GS 的方法贡献：DINO descriptor 不负责最终删点，只负责把新增 GS 引导到语义/结构残差高的位置。下一轮应继续做 descriptor 复制先验强度扫描，例如提高 top-k 覆盖率或改为 weighted importance，以判断质量增益和点数增长是否能进一步优化。
+
+## 2026-05-09 DINO descriptor top-k25 质量优先档
+
+目标：在 top-k 15% 的 descriptor densify-only 已经四场景正向后，检查更大的 descriptor 残差覆盖率是否能继续提高质量。本轮配置为 `configs/experiments/0001_vfm_topology_dinov2_descriptor_densify_only_topk025.yaml`：仍使用 `dinov2_descriptor_cosine`、token smoothing 3、`vfm_weight=0.0`、`vfm_importance_mode=max`，只把 `vfm_metric_topk` 从 0.15 提高到 0.25。对照继续使用上一轮同口径 matched FastGS densify100，不重复训练控制组。原始产物在 `output/0001/descriptor_densify_only_topk025_probe/summary.csv`、`comparisons.csv` 和 `averages.json`。
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| bicycle | FastGS densify100 | 26.9221 | 0.8237 | 0.1970 | 413,084 | 129.72s |
+| bicycle | DINO descriptor top-k25 | 27.0613 | 0.8355 | 0.1741 | 518,848 | 154.23s |
+| garden | FastGS densify100 | 28.8736 | 0.8961 | 0.1003 | 248,094 | 136.19s |
+| garden | DINO descriptor top-k25 | 29.0934 | 0.9018 | 0.0912 | 295,276 | 151.27s |
+| stump | FastGS densify100 | 27.5457 | 0.8106 | 0.2042 | 295,290 | 134.25s |
+| stump | DINO descriptor top-k25 | 27.7338 | 0.8222 | 0.1852 | 440,028 | 152.83s |
+| bonsai | FastGS densify100 | 32.4327 | 0.9625 | 0.0545 | 127,978 | 125.08s |
+| bonsai | DINO descriptor top-k25 | 32.5997 | 0.9648 | 0.0489 | 142,867 | 154.30s |
+| **平均** | **FastGS densify100** | **28.9435** | **0.8732** | **0.1390** | **271,112** | **131.31s** |
+| **平均** | **DINO descriptor top-k25** | **29.1220** | **0.8811** | **0.1248** | **349,255** | **153.16s** |
+
+相对 FastGS densify100：
+
+| 场景 | ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 |
+|---|---:|---:|---:|---:|---:|
+| bicycle | +0.1392 | +0.0118 | -0.0229 | +105,764 | +24.51s |
+| garden | +0.2197 | +0.0057 | -0.0091 | +47,182 | +15.08s |
+| stump | +0.1881 | +0.0116 | -0.0190 | +144,738 | +18.58s |
+| bonsai | +0.1670 | +0.0022 | -0.0056 | +14,889 | +29.22s |
+| **平均** | **+0.1785** | **+0.0078** | **-0.0141** | **+78,143** | **+21.85s** |
+
+相对 top-k 15% descriptor densify-only：
+
+| 场景 | ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian |
+|---|---:|---:|---:|---:|
+| bicycle | +0.0401 | +0.0026 | -0.0053 | +32,651 |
+| garden | +0.0524 | +0.0013 | -0.0020 | +11,789 |
+| stump | +0.1138 | +0.0036 | -0.0048 | +38,543 |
+| bonsai | +0.1783 | +0.0005 | -0.0006 | +4,773 |
+| **平均** | **+0.0962** | **+0.0020** | **-0.0032** | **+21,939** |
+
+解读：
+
+- top-k25 是当前最清楚的 descriptor 质量优先档：四个场景 PSNR、SSIM、LPIPS 全部相对 FastGS densify100 正向，且相对 top-k15 也全部保持正向。
+- `bonsai` 在 top-k15 中 PSNR 轻微负向，top-k25 后转为 +0.1670 PSNR，说明扩大 descriptor 残差覆盖率不只是增强复杂户外场景，也能修复小室内场景的弱点。
+- 平均 Gaussian 数量比 baseline 多 78,143，仍低于 0.1M 平均关注阈值；但 `bicycle` 多 105,764、`stump` 多 144,738，已经进入需要容量收益约束的区间。这里的质量收益足以证明“多出的 GS 大多是正向的”，但下一轮必须验证 `weighted i0.50` 或类似机制能否压低高增点场景的无效容量。
+- 方法贡献层面，本轮依然没有让 VFM 改 pruning score，因此更强结论仍是：DINO descriptor residual 可以独立指导 densification，使新增 GS 更集中在有语义/结构残差的位置。
