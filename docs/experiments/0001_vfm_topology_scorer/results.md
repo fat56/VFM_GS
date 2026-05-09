@@ -1337,21 +1337,34 @@ Tandt 逐场景：
 
 目标：把 VFM_GS 的下一步实验从“工程回退”转向“证明 VFM 先验能提升质量”。本轮只让 DINO descriptor residual 介入 densification，不改变 pruning score，从而隔离验证“语义结构先验能否指导新增 GS 的位置”。配置为 `configs/experiments/0001_vfm_topology_dinov2_descriptor_densify_only.yaml`：`dinov2_descriptor_cosine`、top-k 15%、token smoothing 3、`vfm_weight=0.0`、`vfm_importance_mode=max`。训练与对照均为 `-r 8`、30,000 iterations、`--eval`，并使用 matched `fastgs_photometric + densification_interval=100` 作为控制组。
 
-当前批次先跑 MipNeRF360 的 `bicycle`、`garden`、`stump`、`bonsai`。截至本次记录，`bicycle` 已完成 train/render/metrics；其余场景仍在批量脚本中继续运行。
+当前批次先跑 MipNeRF360 的 `bicycle`、`garden`、`stump`、`bonsai`。四个场景覆盖户外大场景、植被/复杂结构、此前收益明显场景和室内小物体场景。原始产物在 `output/0001/descriptor_densify_only_probe/summary.csv`、`output/0001/descriptor_densify_only_probe/comparisons.csv` 和 `output/0001/descriptor_densify_only_probe/averages.json`。
 
 | 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
 |---|---|---:|---:|---:|---:|---:|
 | bicycle | FastGS densify100 | 26.9221 | 0.8237 | 0.1970 | 413,084 | 129.72s |
 | bicycle | DINO descriptor densify-only | 27.0211 | 0.8329 | 0.1794 | 486,197 | 163.30s |
+| garden | FastGS densify100 | 28.8736 | 0.8961 | 0.1003 | 248,094 | 136.19s |
+| garden | DINO descriptor densify-only | 29.0409 | 0.9005 | 0.0932 | 283,487 | 146.37s |
+| stump | FastGS densify100 | 27.5457 | 0.8106 | 0.2042 | 295,290 | 134.25s |
+| stump | DINO descriptor densify-only | 27.6200 | 0.8186 | 0.1900 | 401,485 | 153.74s |
+| bonsai | FastGS densify100 | 32.4327 | 0.9625 | 0.0545 | 127,978 | 125.08s |
+| bonsai | DINO descriptor densify-only | 32.4214 | 0.9643 | 0.0495 | 138,094 | 149.36s |
+| **平均** | **FastGS densify100** | **28.9435** | **0.8732** | **0.1390** | **271,112** | **131.31s** |
+| **平均** | **DINO descriptor densify-only** | **29.0259** | **0.8791** | **0.1280** | **327,316** | **153.19s** |
 
 差值：
 
 | 场景 | ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 |
 |---|---:|---:|---:|---:|---:|
 | bicycle | +0.0991 | +0.0092 | -0.0176 | +73,113 | +33.58s |
+| garden | +0.1673 | +0.0044 | -0.0071 | +35,393 | +10.18s |
+| stump | +0.0743 | +0.0080 | -0.0142 | +106,195 | +19.49s |
+| bonsai | -0.0113 | +0.0017 | -0.0050 | +10,116 | +24.29s |
+| **平均** | **+0.0823** | **+0.0058** | **-0.0110** | **+56,204** | **+21.88s** |
 
 解读：
 
-- 这是“descriptor residual 只指导复制”路线的首个正向完整场景。由于 `vfm_weight=0.0`，该提升不能归因于 VFM pruning fusion，而更直接指向 DINO descriptor residual 对 densification 候选排序的帮助。
-- Gaussian 数量增加 73,113，低于 0.1M 关注阈值，并换来 PSNR、SSIM、LPIPS 三项同步改善，符合“少量正向 GS 增长可以接受”的实验原则。
-- 该结果还不是四场景结论。下一步继续等待 `garden`、`stump`、`bonsai` 的同口径结果；若平均正向，再进入 descriptor weighted densify 或更高分辨率三数据集验证。
+- 这是“descriptor residual 只指导复制”路线的第一组四场景正向结果。由于 `vfm_weight=0.0`，提升不能归因于 VFM pruning fusion，而更直接指向 DINO descriptor residual 对 densification 候选排序的帮助。
+- 四场景平均 PSNR +0.0823、SSIM +0.0058、LPIPS 改善 -0.0110；SSIM 和 LPIPS 为 4/4 场景正向，PSNR 为 3/4 场景正向。`bonsai` 的 PSNR 轻微下降，但 SSIM 和 LPIPS 仍改善。
+- 平均 Gaussian 数量增加 56,204，约 +20.7%。`bicycle`、`garden`、`bonsai` 的增量低于 0.1M 关注阈值；`stump` 多 106,195 个点，略高于阈值但三项指标改善明显，说明这里额外容量大概率落在有效结构区域。
+- 该结果比“容量保护”更接近 VFM_GS 的方法贡献：DINO descriptor 不负责最终删点，只负责把新增 GS 引导到语义/结构残差高的位置。下一轮应继续做 descriptor 复制先验强度扫描，例如提高 top-k 覆盖率或改为 weighted importance，以判断质量增益和点数增长是否能进一步优化。
