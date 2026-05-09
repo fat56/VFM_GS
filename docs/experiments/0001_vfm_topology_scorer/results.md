@@ -1234,3 +1234,58 @@ Tandt：
 - 当前大分辨率 VFM i0.50 在 9 个场景上均低于 FastGS big/densify100，平均少约 580k 个 Gaussians。它不是“少量多点换质量”的情况，而是明显的容量压缩型结果。
 - VFM 大分辨率批量脚本使用了 densify100，但没有套 `train_big.sh` 中的场景级基线超参；FastGS big 基线使用了这些场景级超参。因此下一步公平修复不是继续和 `fastgs_baseline` 比，而是补一组“VFM + FastGS big 场景级超参”的大分辨率 MipNeRF360 对照。
 - 在这个对照完成前，当前大分辨率 ViT-L token-edge i0.50 只能作为资源可行性和过强筛选诊断结果，不能作为 VFM_GS 大分辨率有效性结论。
+
+## 2026-05-09 大分辨率 VFM + FastGS big 场景超参复验
+
+目标：复核上一节发现的公平性问题。上一轮大分辨率 VFM 虽然使用 `densification_interval=100`，但没有套 `scripts/train_big.sh` 的每场景 `dense`、`grad_abs_thresh`、`highfeature_lr`、`loss_thresh` 等设置；这会让 VFM 与论文口径的 FastGS big 基线不在同一 recipe 下比较。本轮在 `scripts/run_0001_dino_weighted_eval.py` 中增加 `--use-scene-overrides`，让 VFM 训练复用与 FastGS big 相同的场景级超参。DINO cache 仍使用已有 ViT-L/14 token-edge cache，训练/渲染/测试仍为 `-i images -r -1`。
+
+命令核心参数：
+
+```bash
+uv run --active python scripts/run_0001_dino_weighted_eval.py \
+  --dataset-name mipnerf360 \
+  --dataset-root datasets/mipnerf360 \
+  --output-root output/0001/large_res_vitl_big_overrides/mipnerf360 \
+  --scenes bicycle bonsai counter flowers garden kitchen room stump treehill \
+  --train-images images \
+  --cache-images images \
+  --resolution -1 \
+  --cache-root output/0001/vfm_cache_large \
+  --cache-max-width 1600 \
+  --cache-storage npz_uint8 \
+  --project-token-edge \
+  --dino-backend dinov2_vitl14 \
+  --config configs/experiments/0001_vfm_topology_dinov2_token_edge_weighted_i050.yaml \
+  --method-name large_res_vitl14_i050_big_overrides \
+  --run-name vfm_dinov2_vitl14_token_edge_weighted_i050_big_overrides_30k_r_auto \
+  --use-scene-overrides
+```
+
+产物：
+
+- `output/0001/large_res_vitl_big_overrides/mipnerf360/summary.csv`
+- `output/0001/large_res_vitl_big_overrides/mipnerf360/averages.json`
+
+与同口径 FastGS big 基线对比：
+
+| 场景 | FastGS PSNR | VFM+big PSNR | ΔPSNR | FastGS SSIM | VFM+big SSIM | ΔSSIM | FastGS LPIPS | VFM+big LPIPS | ΔLPIPS | FastGS GS | VFM+big GS | ΔGS |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| bicycle | 25.2532 | 25.0779 | -0.1753 | 0.7554 | 0.7398 | -0.0156 | 0.2446 | 0.2728 | +0.0282 | 1,560,079 | 1,037,111 | -522,968 |
+| bonsai | 32.9863 | 33.0865 | +0.1002 | 0.9512 | 0.9545 | +0.0033 | 0.1600 | 0.1554 | -0.0046 | 842,636 | 1,185,620 | +342,984 |
+| counter | 29.5268 | 29.6163 | +0.0895 | 0.9180 | 0.9201 | +0.0020 | 0.1763 | 0.1705 | -0.0058 | 473,200 | 589,307 | +116,107 |
+| flowers | 21.6166 | 21.6316 | +0.0150 | 0.6017 | 0.6025 | +0.0008 | 0.3403 | 0.3407 | +0.0004 | 1,140,260 | 1,183,435 | +43,175 |
+| garden | 27.6137 | 27.4459 | -0.1678 | 0.8645 | 0.8628 | -0.0018 | 0.1098 | 0.1113 | +0.0016 | 2,624,164 | 2,476,925 | -147,239 |
+| kitchen | 32.2700 | 32.4097 | +0.1397 | 0.9391 | 0.9397 | +0.0007 | 0.1044 | 0.1030 | -0.0014 | 1,178,795 | 1,332,720 | +153,925 |
+| room | 32.1323 | 32.1015 | -0.0308 | 0.9298 | 0.9327 | +0.0029 | 0.1881 | 0.1807 | -0.0074 | 570,779 | 680,350 | +109,571 |
+| stump | 27.1310 | 27.1803 | +0.0493 | 0.7862 | 0.7898 | +0.0036 | 0.2406 | 0.2321 | -0.0086 | 1,062,281 | 1,193,465 | +131,184 |
+| treehill | 22.8339 | 22.8913 | +0.0574 | 0.6318 | 0.6374 | +0.0056 | 0.3770 | 0.3665 | -0.0105 | 998,983 | 1,064,340 | +65,357 |
+| **平均** | **27.9293** | **27.9379** | **+0.0086** | **0.8198** | **0.8199** | **+0.0002** | **0.2157** | **0.2148** | **-0.0009** | **1,161,242** | **1,193,697** | **+32,455** |
+
+与上一版未套场景超参的 VFM 相比，本轮平均提升 +0.6414 PSNR、+0.0182 SSIM，LPIPS 改善 -0.0358，同时平均多 612,431 个 Gaussians。这说明上一轮大分辨率 VFM 的低分主要来自 FastGS big recipe 未对齐和容量被压得过低，而不是 VFM token-edge 信号失效。
+
+解读：
+
+- 这是当前大分辨率 MipNeRF360 上第一组相对同口径 FastGS big/densify100 三项平均指标都正向的 VFM 结果。平均 PSNR 增益只有 +0.0086，属于很小但方向一致的提升；SSIM 和 LPIPS 也小幅正向。
+- 平均 Gaussian 数量只比 FastGS big 多 32,455，约 +2.8%。这符合“允许少量正向 GS 增长”的实验原则；但 bonsai、counter、kitchen、room、stump 的单场景增量超过 0.1M，需要后续用 QCGI 或容量收益门槛做自适应约束。
+- bicycle 和 garden 仍是负例。bicycle 没有额外 scene override，因此仍近似复现上一版；garden 虽然从 26.7939 恢复到 27.4459，但仍低于 FastGS big 27.6137。下一步不应继续盲目提高 ViT-L 权重，而应针对这两个负例做回退或降低 VFM 介入强度。
+- 该结果把大分辨率方向重新转为“有希望但需要选择/回退”的状态：默认展示可以报告 MipNeRF360 平均小幅正向，但下一版计划必须补 DB/Tandt 同 recipe 复验，并设计不依赖 test oracle 的场景级容量/质量选择规则。

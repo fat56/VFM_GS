@@ -165,6 +165,8 @@ DB 的 DINO weighted 多档复验则给出相反信号。i0.50 平均为 30.3603
 - 已补跑 MipNeRF360 大分辨率 `fastgs_big/densify100` 同口径基线。该基线使用 `-i images -r -1`、FastGS 原始 1.6K 自动缩放，并复用 `scripts/train_big.sh` 的场景级超参；平均为 PSNR 27.9293、SSIM 0.8198、LPIPS 0.2157、1,161,242 个 Gaussians，和用户给出的论文参考 27.90 基本一致。
 - 与该基线相比，当前大分辨率 VFM i0.50 平均低 -0.6328 PSNR、-0.0180 SSIM，LPIPS 差 +0.0349，同时少约 579,976 个 Gaussians。9 个 MipNeRF360 场景全部低于 FastGS big；这说明迁移/评测链路没有坏，主要问题是当前大分辨率 VFM 配置过度压低容量，且没有套 FastGS big 的场景级超参。
 - 从容量角度看，bicycle VFM 为 1.039M GS，而同口径 FastGS big 为 1.560M GS；garden 差距最大，VFM 为 0.642M，FastGS big 为 2.624M。后续大分辨率策略应先补“VFM + FastGS big 场景级超参”的公平对照，再考虑 QCGI 或容量收益门槛；当前 ViT-L i0.50 全场景结果只能作为资源可行性和过强筛选诊断。
+- “VFM + FastGS big 场景级超参”对照已完成。MipNeRF360 平均为 PSNR 27.9379、SSIM 0.8199、LPIPS 0.2148、1,193,697 个 Gaussians；相对 FastGS big/densify100 为 +0.0086 PSNR、+0.0002 SSIM、LPIPS 改善 -0.0009，平均多 32,455 个 Gaussians。它说明大分辨率 VFM 在 recipe 对齐后可以达到小幅正向，但提升很薄。
+- 逐场景看，bonsai、counter、flowers、kitchen、stump、treehill PSNR 正向；room 的 PSNR 略低但 SSIM/LPIPS 正向；bicycle 和 garden 仍低于 FastGS big。单场景 GS 增长在 bonsai、counter、kitchen、room、stump 上超过 0.1M，因此下一步必须加入容量收益门槛或场景回退，而不能直接把该结果视为完全收束。
 
 ## 下一版计划
 
@@ -177,4 +179,4 @@ DB 的 DINO weighted 多档复验则给出相反信号。i0.50 平均为 30.3603
 7. 已验证的 `support_ratio` 与高置信 prune-protect 都没有优于普通 i0.50，因此下一版不把它们作为主方向；可以保留为诊断分支。
 8. 下一版 selector 必须避免 test 泄漏。短期优先级是独立 validation split、预先冻结的数据集级策略和训练过程容量信号；`evaluate_0001_train_selector.py` 已证明当前 train-side 渲染指标不足以替代 test oracle。
 9. 重做恢复时序：不再只在训练结束后统一 dense recovery，而是在 staged pruning 发生后立即执行短局部恢复，观察是否能减少中期结构损伤。
-10. 大分辨率 ViT-L token-edge i0.50 的三数据集全场景评测已完成，且 MipNeRF360 同口径 FastGS big/densify100 基线已补齐。下一步优先跑“VFM + FastGS big 场景级超参”的 MipNeRF360 对照；若仍明显低于基线，则把大分辨率主线改为降低 VFM pruning/density 介入强度或按容量信号回退 FastGS，而不是继续增加 DINO 尺寸。
+10. 大分辨率 ViT-L token-edge i0.50 的三数据集全场景评测、MipNeRF360 FastGS big/densify100 基线，以及“VFM + FastGS big 场景级超参”对照均已完成。recipe 对齐后的 VFM 在 MipNeRF360 平均小幅超过同口径 baseline，但负例和单场景 GS 增长仍明显。下一步补 DB/Tandt 同 recipe 复验，并设计不依赖 test oracle 的场景级容量/质量选择规则。
