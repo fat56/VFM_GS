@@ -1289,3 +1289,46 @@ uv run --active python scripts/run_0001_dino_weighted_eval.py \
 - 平均 Gaussian 数量只比 FastGS big 多 32,455，约 +2.8%。这符合“允许少量正向 GS 增长”的实验原则；但 bonsai、counter、kitchen、room、stump 的单场景增量超过 0.1M，需要后续用 QCGI 或容量收益门槛做自适应约束。
 - bicycle 和 garden 仍是负例。bicycle 没有额外 scene override，因此仍近似复现上一版；garden 虽然从 26.7939 恢复到 27.4459，但仍低于 FastGS big 27.6137。下一步不应继续盲目提高 ViT-L 权重，而应针对这两个负例做回退或降低 VFM 介入强度。
 - 该结果把大分辨率方向重新转为“有希望但需要选择/回退”的状态：默认展示可以报告 MipNeRF360 平均小幅正向，但下一版计划必须补 DB/Tandt 同 recipe 复验，并设计不依赖 test oracle 的场景级容量/质量选择规则。
+
+## 2026-05-09 大分辨率三数据集同 recipe 复验
+
+目标：把 `fastgs_big/densify100` 与 `VFM + FastGS big 场景超参` 的同 recipe 对照扩展到 DB 与 Tandt，并按三个公开数据集分别报告平均值。DB 数据路径为 `datasets/tandt_db/db`，Tandt 数据路径为 `datasets/tandt_db/tandt`。两组都使用 `-i images -r -1`，继续沿用 FastGS 1.6K 自动缩放；场景级超参复用 `scripts/train_big.sh` 并适配当前数据路径。
+
+产物：
+
+- `output/0001/large_res_fastgs_big_baseline/db/summary.csv`
+- `output/0001/large_res_fastgs_big_baseline/tandt/summary.csv`
+- `output/0001/large_res_vitl_big_overrides/db/summary.csv`
+- `output/0001/large_res_vitl_big_overrides/tandt/summary.csv`
+
+分数据集平均对照：
+
+| 数据集 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 | ΔPSNR | ΔSSIM | ΔLPIPS | ΔGS |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| MipNeRF360 | FastGS big | 27.9293 | 0.8198 | 0.2157 | 1,161,242 | 236.23s | - | - | - | - |
+| MipNeRF360 | VFM+big | 27.9379 | 0.8199 | 0.2148 | 1,193,697 | 255.38s | +0.0086 | +0.0002 | -0.0009 | +32,455 |
+| DB | FastGS big | 30.2073 | 0.9112 | 0.2402 | 650,194 | 167.36s | - | - | - | - |
+| DB | VFM+big | 30.2236 | 0.9108 | 0.2362 | 740,387 | 197.25s | +0.0163 | -0.0004 | -0.0040 | +90,192 |
+| Tandt | FastGS big | 24.3557 | 0.8573 | 0.1745 | 540,578 | 171.16s | - | - | - | - |
+| Tandt | VFM+big | 24.3691 | 0.8569 | 0.1739 | 517,316 | 179.29s | +0.0134 | -0.0004 | -0.0006 | -23,262 |
+
+DB 逐场景：
+
+| 场景 | ΔPSNR | ΔSSIM | ΔLPIPS | ΔGS |
+|---|---:|---:|---:|---:|
+| drjohnson | +0.0062 | -0.0002 | -0.0040 | +134,438 |
+| playroom | +0.0264 | -0.0007 | -0.0040 | +45,947 |
+
+Tandt 逐场景：
+
+| 场景 | ΔPSNR | ΔSSIM | ΔLPIPS | ΔGS |
+|---|---:|---:|---:|---:|
+| train | +0.1533 | +0.0004 | +0.0010 | -30,542 |
+| truck | -0.1264 | -0.0011 | -0.0022 | -15,981 |
+
+解读：
+
+- 三个公开数据集分开看，VFM+big 的平均 PSNR 均小幅高于同 recipe FastGS big，LPIPS 也均小幅改善；SSIM 在 DB 和 Tandt 上略低。它比上一轮未对齐 recipe 的大分辨率结论稳定得多。
+- 平均 Gaussian 数量没有出现 0.1M 级别以上的失控增长：MipNeRF360 +32,455，DB +90,192，Tandt -23,262。但单场景仍需要约束，例如 MipNeRF360 bonsai +342,984、kitchen +153,925、stump +131,184，DB drjohnson +134,438。
+- Tandt 仍是混合数据集：`train` 的 PSNR 正向但 LPIPS 略差，`truck` 的 PSNR/SSIM 负向但 LPIPS 正向。该数据集不能用单一场景判断，应继续按数据集平均和质量-容量收益共同决策。
+- 当前最合理的阶段性结论是：大分辨率 VFM_GS 在同 recipe 下已经具备跨 MipNeRF360、DB、Tandt 的平均弱正向证据，但提升幅度很小；下一版重点不是继续扩大 DINO，而是把容量收益门槛、场景回退和不泄漏 test 的选择规则工程化。
