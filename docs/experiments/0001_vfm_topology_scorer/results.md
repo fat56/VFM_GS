@@ -3088,3 +3088,60 @@ staged target 1.45M 相对 `weighted i0.50`：
 - 1.45M target 相比 1.18M post-densify 稍好，但仍明显低于 FastGS big 和自然 i0.50。
 - 即使 target 放宽到 1.45M，iteration 9000 首次仍需删除 2.22M Gaussians，说明 high-res stump 的 descriptor densification 在早期已经出现 3M 级容量激增。
 - 结论：`prune_to_target` 系列已经不适合作为 stump 的主容量解法。下一步应转向生成侧控制：按当前点数动态提高 densification 门槛、降低 `dense`、缩短 descriptor 参与窗口，或对 clone/split 分支分别加容量反馈。
+
+## 2026-05-10 DINO descriptor top-k25 weighted i0.50 + warm8000 高分辨率 stump 诊断
+
+目标：验证“早期使用 VFM descriptor，引发容量爆点前退出”是否能从生成侧缓解 high-res stump 的容量问题。本轮不启用 target prune，只覆盖 `--vfm_active_until_iter 8000`，让 8k 之后的 scorer 回到 FastGS/RGB 路径。
+
+命令：
+
+```bash
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0001_vfm_topology_dinov2_descriptor_densify_only_topk025_weighted_i050.yaml \
+  -s datasets/mipnerf360/stump \
+  -i images \
+  -m output/0001/descriptor_topk025_weighted_i050_warm8000_big_stump/vfm_dinov2_descriptor_topk25_weighted_i050_warm8000_big_30k_r_auto \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0001/vfm_cache/stump_dinov2_vits14 \
+  -r -1 \
+  --dense 0.01 \
+  --grad_abs_thresh 0.00015 \
+  --vfm_active_until_iter 8000
+```
+
+训练日志确认沿用 FastGS 原始大图规则：
+
+```text
+[ INFO ] Encountered quite large input images (>1.6K pixels width), rescaling to 1.6K.
+```
+
+stump 对照：
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| stump | FastGS big densify100 | 27.1310 | 0.7862 | 0.2406 | 1,062,281 | 189.72s |
+| stump | DINO descriptor top-k25 weighted i0.50 + FastGS big | 27.2233 | 0.7903 | 0.2317 | 1,196,350 | 283.46s |
+| stump | DINO descriptor top-k25 weighted i0.50 + warm8000 | 26.8154 | 0.7780 | 0.2307 | 2,737,333 | 362.21s |
+
+warm8000 相对 FastGS big：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| -0.3156 | -0.0082 | -0.0099 | +1,675,052 | +172.49s | -6.8294 |
+
+warm8000 相对 `weighted i0.50`：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| -0.4079 | -0.0123 | -0.0010 | +1,540,983 | +78.76s | -6.5132 |
+
+解读：
+
+- warm8000 没有压住容量，最终达到 2.74M Gaussians，远高于 baseline 与自然 i0.50。
+- 指标是混合结果：LPIPS 略优于 baseline 与 i0.50，但 PSNR/SSIM 均低，且容量代价极高。
+- 该结果说明简单关闭后半段 VFM descriptor 不足以解决 stump 容量问题；8k 前的早期轨迹已经改变了后续 FastGS/RGB densification 与 pruning。下一步应改动生成侧阈值或 densification 门槛，而不是只调 active window。
