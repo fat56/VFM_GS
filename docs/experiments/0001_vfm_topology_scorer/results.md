@@ -3264,3 +3264,64 @@ candidate cap 1.20M 相对自然 `weighted i0.50`：
 - 候选数量门控已经有效控制容量：最终 1.076M Gaussians，接近 FastGS big 的 1.062M，也明显低于自然 i0.50 的 1.196M。
 - 质量明显低于 FastGS big 和自然 i0.50，说明 1.20M 预算触发过早或过强，直接截断候选会压掉有效的 descriptor densification。
 - 该结果是重要负例：问题不再是“控不住点数”，而是“控点太强时质量坍缩”。下一步应扫描更宽松的 `densify_budget_count=1.35M/1.45M`，寻找接近自然 i0.50 质量且仍低于 0.1M 级额外增长的拐点。
+
+## 2026-05-10 DINO descriptor top-k25 weighted i0.50 + candidate cap 1.35M 高分辨率 stump 诊断
+
+目标：在 1.20M candidate cap 已确认“控点有效但质量坍缩”后，放宽 `densify_budget_count` 到 1.35M，检查质量损失是否主要来自预算过紧。本轮仍使用相同 high-res stump 口径、相同 FastGS big 超参和相同 DINO descriptor 配置。
+
+命令：
+
+```bash
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0001_vfm_topology_dinov2_descriptor_densify_only_topk025_weighted_i050.yaml \
+  -s datasets/mipnerf360/stump \
+  -i images \
+  -m output/0001/descriptor_topk025_weighted_i050_candidatecap1350k_big_stump/vfm_dinov2_descriptor_topk25_weighted_i050_candidatecap1350k_big_30k_r_auto \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0001/vfm_cache/stump_dinov2_vits14 \
+  -r -1 \
+  --dense 0.01 \
+  --grad_abs_thresh 0.00015 \
+  --densify_budget_count 1350000 \
+  --densify_budget_start_ratio 0.90 \
+  --densify_budget_max_metric_thresh 12.0 \
+  --densify_budget_candidate_cap
+```
+
+训练和渲染日志均确认沿用 FastGS 原始大图规则：
+
+```text
+[ INFO ] Encountered quite large input images (>1.6K pixels width), rescaling to 1.6K.
+```
+
+stump 对照：
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| stump | FastGS big densify100 | 27.1310 | 0.7862 | 0.2406 | 1,062,281 | 189.72s |
+| stump | DINO descriptor top-k25 weighted i0.50 + FastGS big | 27.2233 | 0.7903 | 0.2317 | 1,196,350 | 283.46s |
+| stump | DINO descriptor top-k25 weighted i0.50 + candidate cap 1.20M | 26.3268 | 0.7522 | 0.2712 | 1,076,427 | 212.35s |
+| stump | DINO descriptor top-k25 weighted i0.50 + candidate cap 1.35M | 26.3994 | 0.7570 | 0.2637 | 1,199,833 | 218.61s |
+
+candidate cap 1.35M 相对 FastGS big：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| -0.7316 | -0.0292 | +0.0231 | +137,552 | +28.89s | -1.6803 |
+
+candidate cap 1.35M 相对自然 `weighted i0.50`：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| -0.8239 | -0.0333 | +0.0320 | +3,483 | -64.85s | -1.6537 |
+
+解读：
+
+- 1.35M candidate cap 最终 1.200M Gaussians，几乎等于自然 i0.50 的 1.196M，并且训练时间比自然 i0.50 少 64.85s。
+- 质量只比 1.20M cap 略有恢复，仍显著低于 FastGS big 和自然 i0.50；因此主要问题不只是“最终点数太少”，而是 cap 改变了 densification 过程中保留候选的空间/结构分布。
+- 该结果说明当前按全局 `importance_score` top-k 截断候选不是可用容量解法。仍需跑 1.45M 作为边界检查：如果 1.45M 也不能恢复质量，就应放弃全局 candidate cap，转向分视角/分区域配额、分 clone/split 配额、或 Depth Anything 几何边界辅助。
