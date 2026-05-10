@@ -2236,3 +2236,52 @@ source .venv/bin/activate && uv run --active python -m vfm_gs.cli.train \
 - kitchen 是 high-res `weighted i0.50` 的第五个 MipNeRF360 质量正例，也是在室内高基线场景上的正向样本。
 - 新增 107,209 个 Gaussians，略高于 0.1M 单场景关注阈值；但 PSNR 提升 +0.1650 足以让 QCGI 保持正值。
 - 该结果支持“少量超过 0.1M 的 GS 增长不应机械否决”：当质量收益足够明确时，新增点可视为有效容量。下一步仍需要补 `room` 或扫描 `stump i0.35`，区分高增点正向和低效增点。
+
+## 2026-05-10 DINO descriptor top-k25 + weighted i0.50 高分辨率 room 复验
+
+目标：继续补 MipNeRF360 室内高基线场景，与 kitchen/counter 一起判断 high-res descriptor weighted 档在室内场景上的稳定性。训练使用 `fastgs_big` recipe，并对齐 FastGS big 的 room 场景超参：`--highfeature_lr 0.02 --grad_abs_thresh 0.0004`。输入为 `-i images -r -1`，cache 使用 `output/0001/vfm_cache/room_dinov2_vits14`。
+
+命令：
+
+```bash
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0001_vfm_topology_dinov2_descriptor_densify_only_topk025_weighted_i050.yaml \
+  -s datasets/mipnerf360/room \
+  -i images \
+  -m output/0001/descriptor_topk025_weighted_i050_big_room/vfm_dinov2_descriptor_topk25_weighted_i050_big_30k_r_auto \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0001/vfm_cache/room_dinov2_vits14 \
+  -r -1 \
+  --highfeature_lr 0.02 \
+  --grad_abs_thresh 0.0004
+```
+
+训练日志确认沿用 FastGS 原始大图规则：
+
+```text
+[ INFO ] Encountered quite large input images (>1.6K pixels width), rescaling to 1.6K.
+```
+
+对照使用已完成的 `output/0001/large_res_fastgs_big_baseline/mipnerf360/room/fastgs_big_densify100_30k_r_auto`。
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| room | FastGS big densify100 | 32.1323 | 0.9298 | 0.1881 | 570,779 | 164.20s |
+| room | DINO descriptor top-k25 weighted i0.50 + FastGS big | 32.1919 | 0.9324 | 0.1822 | 615,908 | 197.77s |
+
+相对 FastGS big：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| +0.0596 | +0.0025 | -0.0059 | +45,129 | +33.57s | +0.0958 |
+
+解读：
+
+- room 是 high-res `weighted i0.50` 的第六个 MipNeRF360 质量正例，且 QCGI 明确为正。
+- 新增 45,129 个 Gaussians，低于 0.1M 单场景关注阈值；SSIM 和 LPIPS 的收益比 PSNR 更突出。
+- 目前 high-res MipNeRF360 已覆盖 6 个场景，6/6 三项质量正向，其中 5/6 QCGI 为正；唯一 QCGI 负例是 stump。下一步可以补剩余 flowers/bonsai/treehill，或先对 stump 做 `i0.35` 容量约束复验。
