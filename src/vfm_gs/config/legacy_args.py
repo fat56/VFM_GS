@@ -101,6 +101,7 @@ class OptimizationParams(ParamGroup):
         self.densify_budget_count = 0
         self.densify_budget_start_ratio = 0.9
         self.densify_budget_max_metric_thresh = 12.0
+        self.densify_budget_candidate_cap = False
         self.mult = 0.5      # multiplier for the compact box to control the tile number of each splat
 
         self.random_background = False

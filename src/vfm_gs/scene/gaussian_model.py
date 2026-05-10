@@ -515,6 +515,30 @@ class GaussianModel:
         progress = min(max(progress, 0.0), 1.0)
         return base_threshold + progress * (max_threshold - base_threshold)
 
+    def _cap_densify_candidates(self, args, importance_score, metric_mask, all_clones, all_splits):
+        if not getattr(args, "densify_budget_candidate_cap", False):
+            return metric_mask
+
+        budget_count = int(getattr(args, "densify_budget_count", 0) or 0)
+        if budget_count <= 0:
+            return metric_mask
+
+        remaining = budget_count - int(self.get_xyz.shape[0])
+        if remaining <= 0:
+            return torch.zeros_like(metric_mask, dtype=torch.bool)
+
+        candidates = torch.logical_and(metric_mask, torch.logical_or(all_clones, all_splits))
+        candidate_count = int(candidates.sum().item())
+        if candidate_count <= remaining:
+            return metric_mask
+
+        candidate_indices = candidates.nonzero(as_tuple=False).squeeze(1)
+        candidate_scores = importance_score[candidate_indices]
+        topk_indices = torch.topk(candidate_scores, k=remaining, largest=True, sorted=False).indices
+        keep_mask = torch.zeros_like(metric_mask, dtype=torch.bool)
+        keep_mask[candidate_indices[topk_indices]] = True
+        return torch.logical_and(metric_mask, keep_mask)
+
     def densify_and_prune_fastgs(self, max_screen_size, min_opacity, extent, radii, args, importance_score = None, pruning_score = None):
         
         ''' 
@@ -543,6 +567,7 @@ class GaussianModel:
         # We use this metric to further filter the candidates for densification, which is similar to taming 3dgs.
         metric_threshold = self._densify_metric_threshold(args)
         metric_mask = importance_score > metric_threshold
+        metric_mask = self._cap_densify_candidates(args, importance_score, metric_mask, all_clones, all_splits)
 
         self.densify_and_clone_fastgs(metric_mask, all_clones)
         self.densify_and_split_fastgs(metric_mask, all_splits)
