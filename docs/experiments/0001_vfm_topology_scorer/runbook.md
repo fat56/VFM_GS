@@ -3067,3 +3067,27 @@ uv run --active python scripts/run_0001_descriptor_quality_probe.py \
   --baseline-run-name fastgs_densify100_30k_r8 \
   --descriptor-run-name vfm_dinov2_descriptor_densify_only_weighted_i050_30k_r8
 ```
+
+候选三：top-k 25% + `weighted i0.50`，在 top-k25 已证明质量覆盖更强、top-k15 weighted 已证明容量可控后，检查二者结合是否能形成更好的质量/容量折中。
+
+```bash
+uv run --active python scripts/run_0001_descriptor_quality_probe.py \
+  --dataset-name mipnerf360 \
+  --dataset-root datasets/mipnerf360 \
+  --output-root output/0001/descriptor_topk025_weighted_i050_probe \
+  --baseline-source-root output/0001/descriptor_densify_only_probe \
+  --scenes bicycle garden stump bonsai \
+  --train-images images \
+  --cache-images images \
+  --resolution 8 \
+  --densification-interval 100 \
+  --cache-root output/0001/vfm_cache \
+  --cache-max-width 224 \
+  --cache-storage npy_float16 \
+  --dino-backend dinov2_vits14 \
+  --dinov2-repo output/0001/external/dinov2 \
+  --config configs/experiments/0001_vfm_topology_dinov2_descriptor_densify_only_topk025_weighted_i050.yaml \
+  --descriptor-method dinov2_descriptor_topk025_weighted_i050 \
+  --baseline-run-name fastgs_densify100_30k_r8 \
+  --descriptor-run-name vfm_dinov2_descriptor_topk025_weighted_i050_30k_r8
+```

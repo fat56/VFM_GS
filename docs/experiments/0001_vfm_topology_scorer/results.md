@@ -1412,3 +1412,37 @@ Tandt 逐场景：
 - `bonsai` 在 top-k15 中 PSNR 轻微负向，top-k25 后转为 +0.1670 PSNR，说明扩大 descriptor 残差覆盖率不只是增强复杂户外场景，也能修复小室内场景的弱点。
 - 平均 Gaussian 数量比 baseline 多 78,143，仍低于 0.1M 平均关注阈值；但 `bicycle` 多 105,764、`stump` 多 144,738，已经进入需要容量收益约束的区间。这里的质量收益足以证明“多出的 GS 大多是正向的”，但下一轮必须验证 `weighted i0.50` 或类似机制能否压低高增点场景的无效容量。
 - 方法贡献层面，本轮依然没有让 VFM 改 pruning score，因此更强结论仍是：DINO descriptor residual 可以独立指导 densification，使新增 GS 更集中在有语义/结构残差的位置。
+
+## 2026-05-10 DINO descriptor weighted i0.50 预算效率探测
+
+目标：在 top-k25 已证明质量优先档有效后，检查更保守的 RGB/VFM importance 加权平均能否显著降低 Gaussian 增量，同时保留 descriptor 复制收益。本轮配置为 `configs/experiments/0001_vfm_topology_dinov2_descriptor_densify_only_weighted_i050.yaml`：仍使用 `dinov2_descriptor_cosine`、top-k 15%、token smoothing 3、`vfm_weight=0.0`，但将 `vfm_importance_mode` 改为 `weighted`，`vfm_importance_weight=0.50`。对照继续使用 matched FastGS densify100。原始产物在 `output/0001/descriptor_densify_only_weighted_i050_probe/summary.csv`、`comparisons.csv` 和 `averages.json`。
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| bicycle | FastGS densify100 | 26.9221 | 0.8237 | 0.1970 | 413,084 | 129.72s |
+| bicycle | DINO descriptor weighted i0.50 | 26.9017 | 0.8256 | 0.1931 | 399,796 | 146.74s |
+| garden | FastGS densify100 | 28.8736 | 0.8961 | 0.1003 | 248,094 | 136.19s |
+| garden | DINO descriptor weighted i0.50 | 28.9371 | 0.8964 | 0.1002 | 251,096 | 147.62s |
+| stump | FastGS densify100 | 27.5457 | 0.8106 | 0.2042 | 295,290 | 134.25s |
+| stump | DINO descriptor weighted i0.50 | 27.5343 | 0.8125 | 0.2017 | 320,554 | 147.68s |
+| bonsai | FastGS densify100 | 32.4327 | 0.9625 | 0.0545 | 127,978 | 125.08s |
+| bonsai | DINO descriptor weighted i0.50 | 32.4330 | 0.9635 | 0.0507 | 129,269 | 151.99s |
+| **平均** | **FastGS densify100** | **28.9435** | **0.8732** | **0.1390** | **271,112** | **131.31s** |
+| **平均** | **DINO descriptor weighted i0.50** | **28.9515** | **0.8745** | **0.1365** | **275,179** | **148.51s** |
+
+相对 FastGS densify100：
+
+| 场景 | ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 |
+|---|---:|---:|---:|---:|---:|
+| bicycle | -0.0203 | +0.0019 | -0.0038 | -13,288 | +17.03s |
+| garden | +0.0634 | +0.0003 | -0.0000 | +3,002 | +11.43s |
+| stump | -0.0114 | +0.0019 | -0.0024 | +25,264 | +13.43s |
+| bonsai | +0.0003 | +0.0010 | -0.0037 | +1,291 | +26.91s |
+| **平均** | **+0.0080** | **+0.0013** | **-0.0025** | **+4,067** | **+17.20s** |
+
+解读：
+
+- weighted i0.50 成功控制了容量：平均只比 baseline 多 4,067 个 Gaussians，`bicycle` 甚至少 13,288 个点。相比 top-k15 的 +56,204 和 top-k25 的 +78,143，它确实是预算效率方向。
+- 质量收益明显弱于 top-k15/top-k25。平均 PSNR 只提升 +0.0080，且 `bicycle`、`stump` 的 PSNR 轻微负向；SSIM 和 LPIPS 四场景全部正向，但幅度小。
+- 该结果说明 `weighted i0.50 + top-k15` 过于保守，适合作为“接近 baseline 容量的低风险档”，但不能作为证明 VFM_GS 质量贡献的主结果。
+- 下一步应测试 `top-k25 + weighted i0.50`：保留 top-k25 更强 descriptor 覆盖率，同时用 weighted 融合控制 `bicycle`、`stump` 的高增点。
