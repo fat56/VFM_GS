@@ -2682,3 +2682,59 @@ flowers 对照：
 - `max` 修复了 flowers 的感知指标：相对 FastGS big 三项质量都正向，也优于 `weighted i0.50/i0.70`。
 - 该收益依赖额外 133,310 个 Gaussians，QCGI 为负；因此它是质量上界证据，而不是容量高效方案。
 - flowers 的结论与 treehill 类似：DINO descriptor residual 有效，但固定 weighted 档不能在 high-res 下稳定取得质量-容量折中。后续应尝试自适应容量控制或 Depth Anything 几何/边界 residual，而不是继续扫描相邻权重。
+
+## 2026-05-10 DINO descriptor top-k25 weighted i0.35 高分辨率 stump 容量探针
+
+目标：stump 在 high-res `weighted i0.50` 下三项质量正向，但多 134,069 个 Gaussians，QCGI 为负。本轮尝试更保守的 `weighted i0.35`，检查是否能压低容量并保留主要质量收益。训练使用 `fastgs_big` recipe，并对齐 FastGS big 的 stump 场景超参：`--dense 0.01 --grad_abs_thresh 0.00015`。输入为 `-i images -r -1`，cache 使用 `output/0001/vfm_cache/stump_dinov2_vits14`。
+
+命令：
+
+```bash
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0001_vfm_topology_dinov2_descriptor_densify_only_topk025_weighted_i035.yaml \
+  -s datasets/mipnerf360/stump \
+  -i images \
+  -m output/0001/descriptor_topk025_weighted_i035_big_stump/vfm_dinov2_descriptor_topk25_weighted_i035_big_30k_r_auto \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0001/vfm_cache/stump_dinov2_vits14 \
+  -r -1 \
+  --dense 0.01 \
+  --grad_abs_thresh 0.00015
+```
+
+训练日志确认沿用 FastGS 原始大图规则：
+
+```text
+[ INFO ] Encountered quite large input images (>1.6K pixels width), rescaling to 1.6K.
+```
+
+stump 对照：
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| stump | FastGS big densify100 | 27.1310 | 0.7862 | 0.2406 | 1,062,281 | 189.72s |
+| stump | DINO descriptor top-k25 weighted i0.50 + FastGS big | 27.2233 | 0.7903 | 0.2317 | 1,196,350 | 283.46s |
+| stump | DINO descriptor top-k25 weighted i0.35 + FastGS big | 26.7484 | 0.7768 | 0.2305 | 3,035,777 | 385.31s |
+
+`weighted i0.35` 相对 FastGS big：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| -0.3826 | -0.0093 | -0.0101 | +1,973,496 | +195.59s | -8.1125 |
+
+`weighted i0.35` 相对 `weighted i0.50`：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| -0.4749 | -0.0135 | -0.0012 | +1,839,427 | +101.86s | -7.7963 |
+
+解读：
+
+- `weighted i0.35` 没有压低容量，反而触发容量失控，最终达到 3.04M Gaussians。
+- 质量也没有保住：PSNR/SSIM 明显低于 FastGS big 和 i0.50，仅 LPIPS 相对 baseline 有轻微改善。
+- 该结果说明 high-res stump 上 `vfm_importance_weight` 与最终 Gaussian 数量不是单调关系；简单降低权重不是可靠的容量控制方式。后续应使用显式自适应容量约束、target 保护或训练过程点数反馈，而不是继续扫更低固定权重。
