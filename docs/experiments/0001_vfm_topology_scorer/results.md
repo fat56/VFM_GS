@@ -2512,3 +2512,60 @@ treehill 单场景结果：
 - treehill 的负例可以被更强 descriptor 强度修复：`max` 相对 FastGS big 三项质量指标全部正向，也明显优于 `weighted i0.50`。
 - 该修复依赖额外 130,631 个 Gaussians，超过 0.1M 容量关注阈值；按当前 QCGI 计算仍为负。因此它是“质量修复但容量代价偏高”的证据，不放入正向效率主表。
 - 结论上，treehill 更像 descriptor 强度不足问题，而不是 descriptor residual 完全无效。下一步如果继续处理 treehill，应优先尝试介于 `weighted i0.50` 和 `max` 之间的 high-res `i0.70`，或者引入容量自适应权重，而不是直接固定使用 `max`。
+
+## 2026-05-10 DINO descriptor top-k25 weighted i0.70 高分辨率 treehill 复验
+
+目标：验证 `weighted i0.70` 是否能在 high-res treehill 上取得介于 `weighted i0.50` 和 `max` 之间的折中：尽量恢复 `max` 的质量，同时避免超过 0.1M 的 Gaussian 增长。训练继续使用 `fastgs_big` recipe，并对齐 FastGS big 的 treehill 场景超参：`--dense 0.01 --grad_abs_thresh 0.0018`。输入为 `-i images -r -1`，cache 使用 `output/0001/vfm_cache/treehill_dinov2_vits14`。
+
+命令：
+
+```bash
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0001_vfm_topology_dinov2_descriptor_densify_only_topk025_weighted_i070.yaml \
+  -s datasets/mipnerf360/treehill \
+  -i images \
+  -m output/0001/descriptor_topk025_weighted_i070_big_treehill/vfm_dinov2_descriptor_topk25_weighted_i070_big_30k_r_auto \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0001/vfm_cache/treehill_dinov2_vits14 \
+  -r -1 \
+  --dense 0.01 \
+  --grad_abs_thresh 0.0018
+```
+
+训练日志确认沿用 FastGS 原始大图规则：
+
+```text
+[ INFO ] Encountered quite large input images (>1.6K pixels width), rescaling to 1.6K.
+```
+
+treehill 对照：
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| treehill | FastGS big densify100 | 22.8339 | 0.6318 | 0.3770 | 998,983 | 189.59s |
+| treehill | DINO descriptor top-k25 weighted i0.50 + FastGS big | 22.8069 | 0.6317 | 0.3774 | 945,930 | 240.89s |
+| treehill | DINO descriptor top-k25 weighted i0.70 + FastGS big | 22.8614 | 0.6305 | 0.3813 | 877,180 | 221.12s |
+| treehill | DINO descriptor top-k25 max + FastGS big | 22.8700 | 0.6367 | 0.3665 | 1,129,614 | 219.73s |
+
+`weighted i0.70` 相对 FastGS big：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| +0.0276 | -0.0014 | +0.0043 | -121,803 | +31.53s | -0.0212 |
+
+`weighted i0.70` 相对 `weighted i0.50`：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| +0.0546 | -0.0012 | +0.0039 | -68,750 | -19.77s | +0.0107 |
+
+解读：
+
+- `weighted i0.70` 没有形成理想折中。它比 `weighted i0.50` 省点、省时且 PSNR 更高，但 SSIM 和 LPIPS 更差。
+- 相对 FastGS big，它只在 PSNR 上正向，SSIM/LPIPS 均负向；因此不能作为 treehill 的 high-res 推荐档，也不应进入正向改进表。
+- treehill 当前结论收敛为两端分化：`max` 能修复三项质量但容量代价偏高，`weighted i0.70` 能压低容量但无法保住感知质量。后续 treehill 更适合转向自适应容量/几何先验，而不是继续密集扫描相邻 importance。
