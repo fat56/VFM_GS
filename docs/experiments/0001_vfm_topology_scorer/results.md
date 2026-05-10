@@ -2569,3 +2569,59 @@ treehill 对照：
 - `weighted i0.70` 没有形成理想折中。它比 `weighted i0.50` 省点、省时且 PSNR 更高，但 SSIM 和 LPIPS 更差。
 - 相对 FastGS big，它只在 PSNR 上正向，SSIM/LPIPS 均负向；因此不能作为 treehill 的 high-res 推荐档，也不应进入正向改进表。
 - treehill 当前结论收敛为两端分化：`max` 能修复三项质量但容量代价偏高，`weighted i0.70` 能压低容量但无法保住感知质量。后续 treehill 更适合转向自适应容量/几何先验，而不是继续密集扫描相邻 importance。
+
+## 2026-05-10 DINO descriptor top-k25 weighted i0.70 高分辨率 flowers 复验
+
+目标：flowers 在 high-res `weighted i0.50` 下 PSNR/SSIM 微升但 LPIPS 变差。本轮尝试 `weighted i0.70`，检查更强 descriptor residual 是否能修复感知指标。训练使用 `fastgs_big` recipe，并对齐 FastGS big 的 flowers 场景超参：`--dense 0.005 --grad_abs_thresh 0.001`。输入为 `-i images -r -1`，cache 使用 `output/0001/vfm_cache/flowers_dinov2_vits14`。
+
+命令：
+
+```bash
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0001_vfm_topology_dinov2_descriptor_densify_only_topk025_weighted_i070.yaml \
+  -s datasets/mipnerf360/flowers \
+  -i images \
+  -m output/0001/descriptor_topk025_weighted_i070_big_flowers/vfm_dinov2_descriptor_topk25_weighted_i070_big_30k_r_auto \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0001/vfm_cache/flowers_dinov2_vits14 \
+  -r -1 \
+  --dense 0.005 \
+  --grad_abs_thresh 0.001
+```
+
+训练日志确认沿用 FastGS 原始大图规则：
+
+```text
+[ INFO ] Encountered quite large input images (>1.6K pixels width), rescaling to 1.6K.
+```
+
+flowers 对照：
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| flowers | FastGS big densify100 | 21.6166 | 0.6017 | 0.3403 | 1,140,260 | 207.76s |
+| flowers | DINO descriptor top-k25 weighted i0.50 + FastGS big | 21.6293 | 0.6022 | 0.3412 | 1,091,531 | 278.68s |
+| flowers | DINO descriptor top-k25 weighted i0.70 + FastGS big | 21.5801 | 0.6001 | 0.3442 | 1,045,864 | 234.69s |
+
+`weighted i0.70` 相对 FastGS big：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| -0.0365 | -0.0017 | +0.0039 | -94,396 | +26.93s | -0.0895 |
+
+`weighted i0.70` 相对 `weighted i0.50`：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| -0.0492 | -0.0021 | +0.0031 | -45,667 | -43.99s | -0.1067 |
+
+解读：
+
+- `weighted i0.70` 没有修复 flowers 的 LPIPS，反而使 PSNR、SSIM、LPIPS 三项都低于 FastGS big。
+- 它比 i0.50 少 45,667 个 Gaussians、训练少 43.99s，但质量同步下降，说明该场景不是简单提高 weighted importance 就能解决。
+- flowers 后续如果继续处理，应改试 `max` 质量上界或引入几何/深度 residual；`i0.70` 不再扩展。
