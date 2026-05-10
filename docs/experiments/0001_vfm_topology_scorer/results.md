@@ -3145,3 +3145,62 @@ warm8000 相对 `weighted i0.50`：
 - warm8000 没有压住容量，最终达到 2.74M Gaussians，远高于 baseline 与自然 i0.50。
 - 指标是混合结果：LPIPS 略优于 baseline 与 i0.50，但 PSNR/SSIM 均低，且容量代价极高。
 - 该结果说明简单关闭后半段 VFM descriptor 不足以解决 stump 容量问题；8k 前的早期轨迹已经改变了后续 FastGS/RGB densification 与 pruning。下一步应改动生成侧阈值或 densification 门槛，而不是只调 active window。
+
+## 2026-05-10 DINO descriptor top-k25 weighted i0.50 + densify budget 1.20M 高分辨率 stump 诊断
+
+目标：验证新增的默认关闭 `densify_budget_count` 生成侧阈值门控是否比事后 target prune 更稳。本轮不删除已有点，而是在当前点数接近 1.20M 预算时，把 FastGS densification 的 metric 阈值从 5.0 逐步提高到 12.0。
+
+命令：
+
+```bash
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0001_vfm_topology_dinov2_descriptor_densify_only_topk025_weighted_i050.yaml \
+  -s datasets/mipnerf360/stump \
+  -i images \
+  -m output/0001/descriptor_topk025_weighted_i050_densifybudget1200k_big_stump/vfm_dinov2_descriptor_topk25_weighted_i050_densifybudget1200k_big_30k_r_auto \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0001/vfm_cache/stump_dinov2_vits14 \
+  -r -1 \
+  --dense 0.01 \
+  --grad_abs_thresh 0.00015 \
+  --densify_budget_count 1200000 \
+  --densify_budget_start_ratio 0.90 \
+  --densify_budget_max_metric_thresh 12.0
+```
+
+训练和渲染日志均确认沿用 FastGS 原始大图规则：
+
+```text
+[ INFO ] Encountered quite large input images (>1.6K pixels width), rescaling to 1.6K.
+```
+
+stump 对照：
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| stump | FastGS big densify100 | 27.1310 | 0.7862 | 0.2406 | 1,062,281 | 189.72s |
+| stump | DINO descriptor top-k25 weighted i0.50 + FastGS big | 27.2233 | 0.7903 | 0.2317 | 1,196,350 | 283.46s |
+| stump | DINO descriptor top-k25 weighted i0.50 + densify budget 1.20M | 26.6899 | 0.7738 | 0.2371 | 2,378,891 | 315.61s |
+
+densify budget 1.20M 相对 FastGS big：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| -0.4411 | -0.0124 | -0.0035 | +1,316,610 | +125.89s | -5.6382 |
+
+densify budget 1.20M 相对 `weighted i0.50`：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| -0.5334 | -0.0166 | +0.0054 | +1,182,541 | +32.16s | -5.3219 |
+
+解读：
+
+- 生成侧阈值门控比 warm8000 的 2.74M 点有所降低，但最终仍有 2.38M 点，远高于 1.20M 预算和自然 i0.50 的 1.20M 结果。
+- 质量低于 FastGS big 和自然 i0.50；LPIPS 仍略优于 baseline，但没有保住 i0.50 的感知质量。
+- 结论：只把 metric 阈值从 5 提到 12 不能有效限制 high-res stump 的候选规模。下一步应采用更直接的候选数量门控，按剩余容量限制 clone/split 候选数；单纯继续调小 active window 或事后删除都不是主线。

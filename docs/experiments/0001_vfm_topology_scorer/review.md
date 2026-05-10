@@ -196,6 +196,7 @@ DB 的 DINO weighted 多档复验则给出相反信号。i0.50 平均为 30.3603
 - high-res stump `weighted i0.50 + post-densify staged target 1.18M` 诊断完成。结果为 26.5097 / 0.7595 / 0.2646、1,176,624 个 Gaussians、训练 380.42s；相对 FastGS big 为 -0.6213 PSNR、-0.0267 SSIM、LPIPS +0.0240。新增 `target_gaussian_stage_after_densify` 生效，iteration 24000 从 3.32M 裁到 1.20M，最终不再触发 final prune。相比 late target final-only 有明显恢复，但仍显著低于 baseline，说明“训练结束前留恢复窗口”有用，但单次删除 2M 级 Gaussians 仍破坏结构。下一步应在 densification 窗口内限制增长，或采用更高 target 的早期平滑反馈。
 - high-res stump `weighted i0.50 + staged target 1.45M` 诊断完成。结果为 26.5426 / 0.7636 / 0.2562、1,262,974 个 Gaussians、训练 288.31s；相对 FastGS big 为 -0.5884 PSNR、-0.0226 SSIM、LPIPS +0.0156。该 run 把 target 放宽并前移到 9k/12k/15k，但首次仍从 3.70M 裁到 1.479M，后续两次也删除 1.5M 级点。它比 1.18M 稍好，但仍低于 baseline。结论是 prune-to-target 系列在 high-res stump 上收束为负结果；后续应转向生成侧容量控制，例如动态提高 densification 门槛、降低 `dense` 或按容量关闭/降权 descriptor densification。
 - high-res stump `weighted i0.50 + warm8000` 诊断完成。结果为 26.8154 / 0.7780 / 0.2307、2,737,333 个 Gaussians、训练 362.21s；相对 FastGS big 为 -0.3156 PSNR、-0.0082 SSIM、LPIPS -0.0099。它保住并略改善 LPIPS，但 PSNR/SSIM 低且点数爆到 2.74M，QCGI 为 -6.8294。结论是仅靠 active window 不能解决生成侧容量问题；8k 前的早期轨迹已经让后续 RGB/FastGS densification/pruning 进入高容量状态。
+- high-res stump `weighted i0.50 + densify budget 1.20M` 诊断完成。结果为 26.6899 / 0.7738 / 0.2371、2,378,891 个 Gaussians、训练 315.61s；相对 FastGS big 为 -0.4411 PSNR、-0.0124 SSIM、LPIPS -0.0035。新增 `densify_budget_count` 阈值门控生效但力度不足：点数低于 warm8000 的 2.74M，却仍远高于 1.20M 预算和自然 i0.50 的 1.20M 结果。结论是 metric 阈值从 5 提到 12 不能可靠约束 high-res stump 的候选规模，下一步改为按剩余容量直接限制 clone/split 候选数。
 
 ## 下一版计划
 
