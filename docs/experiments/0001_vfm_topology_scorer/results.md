@@ -3425,4 +3425,69 @@ source .venv/bin/activate && uv run --active python -m vfm_gs.cli.train \
 | 620-step CLI 参数解析 | 通过，`cfg_args` 记录 `densify_budget_candidate_cap_mode='spatial_xyz'` 和 `densify_budget_spatial_bins=8` |
 | 620-step 紧预算候选截断 | 通过，最终 Gaussian 数量为 55,000，等于 `densify_budget_count=55000` |
 
-下一步：使用 high-res stump 跑 `spatial_xyz + densify_budget_count=1450000`。如果它能明显优于全局 1.45M cap，则继续比较 1.20M/1.35M；如果仍低于 baseline 和自然 i0.50，则优先转向 Depth Anything 几何边界分支。
+该验证后的 high-res stump 正式结果见下一节。
+
+## 2026-05-10 DINO descriptor top-k25 weighted i0.50 + spatial candidate cap 1.45M 高分辨率 stump 诊断
+
+目标：验证 `spatial_xyz` 分布保持型候选配额是否能修复全局 candidate cap 的质量损失。本轮沿用 high-res stump、FastGS big 场景超参、FastGS 原始 1.6K 自动缩放规则、DINO descriptor top-k25 weighted i0.50，并把预算设为 1.45M。注意：该 run 使用自包含配置 `configs/experiments/0001_vfm_topology_dinov2_descriptor_spatial_candidate_cap.yaml`，避免实验配置 `extends` 不被 legacy loader 递归解析导致 scorer 退回 `fastgs_photometric`。
+
+命令：
+
+```bash
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0001_vfm_topology_dinov2_descriptor_spatial_candidate_cap.yaml \
+  -s datasets/mipnerf360/stump \
+  -i images \
+  -m output/0001/descriptor_topk025_weighted_i050_spatialcap1450k_big_stump/vfm_dinov2_descriptor_topk25_weighted_i050_spatialcap1450k_big_30k_r_auto_v2 \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0001/vfm_cache/stump_dinov2_vits14 \
+  -r -1 \
+  --dense 0.01 \
+  --grad_abs_thresh 0.00015 \
+  --densify_budget_count 1450000
+```
+
+训练和渲染日志均确认沿用 FastGS 原始大图规则：
+
+```text
+[ INFO ] Encountered quite large input images (>1.6K pixels width), rescaling to 1.6K.
+```
+
+stump 对照：
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| stump | FastGS big densify100 | 27.1310 | 0.7862 | 0.2406 | 1,062,281 | 189.72s |
+| stump | DINO descriptor top-k25 weighted i0.50 + FastGS big | 27.2233 | 0.7903 | 0.2317 | 1,196,350 | 283.46s |
+| stump | DINO descriptor top-k25 weighted i0.50 + global candidate cap 1.45M | 26.4697 | 0.7588 | 0.2611 | 1,283,793 | 226.10s |
+| stump | DINO descriptor top-k25 weighted i0.50 + spatial candidate cap 1.45M | 26.4549 | 0.7579 | 0.2627 | 1,282,019 | 227.46s |
+
+spatial candidate cap 1.45M 相对 FastGS big：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| -0.6761 | -0.0283 | +0.0221 | +219,738 | +37.73s | -1.9308 |
+
+spatial candidate cap 1.45M 相对自然 `weighted i0.50`：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| -0.7684 | -0.0324 | +0.0310 | +85,669 | -56.00s | -1.6575 |
+
+spatial candidate cap 1.45M 相对全局 candidate cap 1.45M：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| -0.0148 | -0.0009 | +0.0016 | -1,774 | +1.36s | -0.0404 |
+
+解读：
+
+- `spatial_xyz` 能正常限制候选数量，最终 Gaussian 数量为 1,282,019，和全局 cap 1.45M 的 1,283,793 基本一致。
+- 质量没有恢复：相对全局 cap 1.45M 还低 -0.0148 PSNR、-0.0009 SSIM、LPIPS 差 +0.0016；相对自然 i0.50 仍低 -0.7684 PSNR、-0.0324 SSIM、LPIPS 差 +0.0310。
+- 因此 3D 坐标网格配额不是 high-res stump 的有效容量解法。它只证明“分区域候选门控可运行且能控点”，但没有保住 descriptor densification 的有效候选分布。
+- 下一步不继续扫描 `spatial_xyz` 的 1.20M/1.35M 或 bins 相邻参数。容量控制应转向更贴近训练信号的配额，例如屏幕空间/视角覆盖配额、clone/split 分支分离配额，或引入 Depth Anything 几何边界 residual 来判断新增 GS 是否位于真实结构边界。
