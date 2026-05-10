@@ -493,6 +493,28 @@ class GaussianModel:
 
         self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacities, new_scaling, new_rotation, new_tmp_radii)
 
+    def _densify_metric_threshold(self, args):
+        base_threshold = float(getattr(args, "densify_metric_thresh", 5.0) or 5.0)
+        budget_count = int(getattr(args, "densify_budget_count", 0) or 0)
+        if budget_count <= 0:
+            return base_threshold
+
+        current_count = int(self.get_xyz.shape[0])
+        start_ratio = float(getattr(args, "densify_budget_start_ratio", 0.9) or 0.9)
+        start_ratio = min(max(start_ratio, 0.0), 0.999)
+        start_count = int(budget_count * start_ratio)
+        if current_count <= start_count:
+            return base_threshold
+
+        max_threshold = float(getattr(args, "densify_budget_max_metric_thresh", base_threshold) or base_threshold)
+        max_threshold = max(base_threshold, max_threshold)
+        if budget_count <= start_count:
+            return max_threshold
+
+        progress = (current_count - start_count) / float(budget_count - start_count)
+        progress = min(max(progress, 0.0), 1.0)
+        return base_threshold + progress * (max_threshold - base_threshold)
+
     def densify_and_prune_fastgs(self, max_screen_size, min_opacity, extent, radii, args, importance_score = None, pruning_score = None):
         
         ''' 
@@ -519,7 +541,8 @@ class GaussianModel:
 
         # This is our multi-view consisent metric for densification
         # We use this metric to further filter the candidates for densification, which is similar to taming 3dgs.
-        metric_mask = importance_score > 5
+        metric_threshold = self._densify_metric_threshold(args)
+        metric_mask = importance_score > metric_threshold
 
         self.densify_and_clone_fastgs(metric_mask, all_clones)
         self.densify_and_split_fastgs(metric_mask, all_splits)
