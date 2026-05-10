@@ -16,6 +16,7 @@ _DINO_MODELS = {}
 _DINO_CACHE_BACKENDS = ("dinov2_vits14", "dinov2_vitb14", "dinov2_vitl14")
 _CACHED_BACKEND_MANIFESTS = {
     "cached_edge_l1": ("cached_edge_l1",),
+    "colmap_depth_edge_l1": ("colmap_depth_edge_l1",),
     "dinov2_token_edge_l1": _DINO_CACHE_BACKENDS,
     "dinov2_descriptor_cosine": _DINO_CACHE_BACKENDS,
     "dinov2_descriptor_cosine_l1": _DINO_CACHE_BACKENDS,
@@ -218,6 +219,16 @@ def _cached_edge_l1_error(rendered_image, viewpoint_cam, cache_dir):
     return torch.abs(rendered_edges - gt_edges)
 
 
+def _colmap_depth_edge_l1_error(rendered_image, viewpoint_cam, cache_dir):
+    rendered_edges = normalize01(_gradient_magnitude(_luma(rendered_image)))
+    gt_depth_edges = _get_cache(cache_dir).get_edge_map(
+        viewpoint_cam.image_name,
+        rendered_image.device,
+        rendered_edges.shape,
+    )
+    return torch.abs(rendered_edges - gt_depth_edges)
+
+
 def _dinov2_token_edge_l1_error(rendered_image, viewpoint_cam, cache_dir):
     gt_token_edges = _get_cache(cache_dir).get_dinov2_token_edge_map(viewpoint_cam.image_name, rendered_image.device)
     rendered_edges = normalize01(_gradient_magnitude(_luma(rendered_image)))
@@ -293,6 +304,8 @@ def _compute_pixel_error_map(
         return _mock_edge_l1_error(rendered_image, gt_image)
     if backend == "cached_edge_l1":
         return _cached_edge_l1_error(rendered_image, viewpoint_cam, cache_dir)
+    if backend == "colmap_depth_edge_l1":
+        return _colmap_depth_edge_l1_error(rendered_image, viewpoint_cam, cache_dir)
     if backend == "dinov2_token_edge_l1":
         return _dinov2_token_edge_l1_error(rendered_image, viewpoint_cam, cache_dir)
     if backend in ("dinov2_descriptor_cosine", "dinov2_descriptor_cosine_l1"):
@@ -306,7 +319,7 @@ def _compute_pixel_error_map(
         )
     raise ValueError(
         "Unsupported vfm_backend {!r}. Available backends: mock_l1, mock_edge_l1, cached_edge_l1, "
-        "dinov2_token_edge_l1, dinov2_descriptor_cosine.".format(backend)
+        "colmap_depth_edge_l1, dinov2_token_edge_l1, dinov2_descriptor_cosine.".format(backend)
     )
 
 

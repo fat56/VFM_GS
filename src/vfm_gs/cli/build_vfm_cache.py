@@ -15,9 +15,18 @@ from vfm_gs.scorers.vfm_cache import (
     sha256_file,
     write_manifest,
 )
+from vfm_gs.scene.colmap_loader import (
+    qvec2rotmat,
+    read_extrinsics_binary,
+    read_extrinsics_text,
+    read_intrinsics_binary,
+    read_intrinsics_text,
+    read_next_bytes,
+)
 
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".JPG", ".JPEG", ".PNG"}
+COLMAP_DEPTH_BACKENDS = ("colmap_depth_edge_l1",)
 DINO_BACKENDS = ("dinov2_vits14", "dinov2_vitb14", "dinov2_vitl14")
 DINO_DIMS = {
     "dinov2_vits14": 384,
@@ -38,6 +47,168 @@ def _resize_for_cache(image, max_width):
         return image
     height = max(1, round(image.height * (max_width / image.width)))
     return image.resize((max_width, height), Image.BILINEAR)
+
+
+def _read_points3d_xyz_by_id_binary(path):
+    points = {}
+    with open(path, "rb") as fid:
+        num_points = read_next_bytes(fid, 8, "Q")[0]
+        for _ in range(num_points):
+            point_data = read_next_bytes(fid, num_bytes=43, format_char_sequence="QdddBBBd")
+            point_id = int(point_data[0])
+            points[point_id] = np.array(point_data[1:4], dtype=np.float32)
+            track_length = read_next_bytes(fid, num_bytes=8, format_char_sequence="Q")[0]
+            if track_length:
+                read_next_bytes(fid, num_bytes=8 * track_length, format_char_sequence="ii" * track_length)
+    return points
+
+
+def _read_points3d_xyz_by_id_text(path):
+    points = {}
+    with open(path, "r", encoding="utf-8") as fid:
+        for line in fid:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            elems = line.split()
+            point_id = int(elems[0])
+            points[point_id] = np.array(tuple(map(float, elems[1:4])), dtype=np.float32)
+    return points
+
+
+def _read_colmap_points3d_xyz_by_id(sparse_dir):
+    sparse_dir = Path(sparse_dir)
+    bin_path = sparse_dir / "points3D.bin"
+    txt_path = sparse_dir / "points3D.txt"
+    if bin_path.exists():
+        return _read_points3d_xyz_by_id_binary(bin_path)
+    if txt_path.exists():
+        return _read_points3d_xyz_by_id_text(txt_path)
+    raise FileNotFoundError("Unable to find COLMAP points3D.bin or points3D.txt in {}".format(sparse_dir))
+
+
+def _read_colmap_cameras_and_images(sparse_dir):
+    sparse_dir = Path(sparse_dir)
+    try:
+        images = read_extrinsics_binary(sparse_dir / "images.bin")
+        cameras = read_intrinsics_binary(sparse_dir / "cameras.bin")
+        return cameras, images
+    except Exception:
+        images = read_extrinsics_text(sparse_dir / "images.txt")
+        cameras = read_intrinsics_text(sparse_dir / "cameras.txt")
+        return cameras, images
+
+
+def _dilate_sparse_values(value_map, valid_mask, radius):
+    radius = max(0, int(radius))
+    if radius <= 0:
+        return value_map, valid_mask
+
+    height, width = value_map.shape
+    padded_values = np.pad(value_map, radius, mode="edge")
+    padded_valid = np.pad(valid_mask.astype(np.float32), radius, mode="constant", constant_values=0.0)
+    out_values = value_map.copy()
+    out_valid = valid_mask.copy()
+    out_dist = np.full((height, width), np.inf, dtype=np.float32)
+    out_dist[valid_mask] = 0.0
+
+    for dy in range(-radius, radius + 1):
+        for dx in range(-radius, radius + 1):
+            distance = float(dx * dx + dy * dy)
+            src_values = padded_values[radius + dy : radius + dy + height, radius + dx : radius + dx + width]
+            src_valid = padded_valid[radius + dy : radius + dy + height, radius + dx : radius + dx + width] > 0
+            update = src_valid & (distance < out_dist)
+            out_values[update] = src_values[update]
+            out_valid[update] = True
+            out_dist[update] = distance
+    return out_values, out_valid
+
+
+def _box_blur_masked(value_map, valid_mask, radius, min_mask=1e-3):
+    radius = max(0, int(radius))
+    if radius <= 0:
+        return value_map, valid_mask
+
+    height, width = value_map.shape
+    padded_value = np.pad(
+        value_map * valid_mask.astype(np.float32),
+        radius,
+        mode="constant",
+        constant_values=0.0,
+    )
+    padded_mask = np.pad(valid_mask.astype(np.float32), radius, mode="constant", constant_values=0.0)
+    value_acc = np.zeros_like(value_map, dtype=np.float32)
+    mask_acc = np.zeros_like(value_map, dtype=np.float32)
+    for dy in range(2 * radius + 1):
+        for dx in range(2 * radius + 1):
+            value_acc += padded_value[dy : dy + height, dx : dx + width]
+            mask_acc += padded_mask[dy : dy + height, dx : dx + width]
+    blurred = np.zeros_like(value_map, dtype=np.float32)
+    valid = mask_acc > float(min_mask)
+    blurred[valid] = value_acc[valid] / np.maximum(mask_acc[valid], 1e-6)
+    return blurred, valid
+
+
+def _depth_edge_from_sparse_points(
+    image_entry,
+    camera_entry,
+    points_by_id,
+    source_size,
+    cache_size,
+    splat_radius,
+    blur_radius,
+):
+    source_width, source_height = source_size
+    cache_width, cache_height = cache_size
+    scale_x = float(cache_width) / max(float(source_width), 1.0)
+    scale_y = float(cache_height) / max(float(source_height), 1.0)
+
+    depth = np.full((cache_height, cache_width), np.inf, dtype=np.float32)
+    valid_ids = image_entry.point3D_ids >= 0
+    if not np.any(valid_ids):
+        return np.zeros((cache_height, cache_width), dtype=np.float32), 0
+
+    rotation = qvec2rotmat(image_entry.qvec).astype(np.float32)
+    translation = np.asarray(image_entry.tvec, dtype=np.float32)
+    observed = 0
+    for xy, point_id in zip(image_entry.xys[valid_ids], image_entry.point3D_ids[valid_ids]):
+        point = points_by_id.get(int(point_id))
+        if point is None:
+            continue
+        cam_point = rotation @ point + translation
+        z = float(cam_point[2])
+        if z <= 1e-6:
+            continue
+        x = int(round(float(xy[0]) * scale_x))
+        y = int(round(float(xy[1]) * scale_y))
+        if x < 0 or x >= cache_width or y < 0 or y >= cache_height:
+            continue
+        if z < depth[y, x]:
+            depth[y, x] = z
+        observed += 1
+
+    valid_mask = np.isfinite(depth)
+    if not np.any(valid_mask):
+        return np.zeros((cache_height, cache_width), dtype=np.float32), observed
+
+    inv_depth = np.zeros_like(depth, dtype=np.float32)
+    inv_depth[valid_mask] = 1.0 / np.maximum(depth[valid_mask], 1e-6)
+    valid_values = inv_depth[valid_mask]
+    min_value = float(valid_values.min())
+    max_value = float(valid_values.max())
+    inv_depth[valid_mask] = (valid_values - min_value) / max(max_value - min_value, 1e-6)
+
+    inv_depth, valid_mask = _dilate_sparse_values(inv_depth, valid_mask, splat_radius)
+    inv_depth, valid_mask = _box_blur_masked(inv_depth, valid_mask, blur_radius)
+
+    dx = np.zeros_like(inv_depth, dtype=np.float32)
+    dy = np.zeros_like(inv_depth, dtype=np.float32)
+    valid_x = valid_mask[:, 1:] & valid_mask[:, :-1]
+    valid_y = valid_mask[1:, :] & valid_mask[:-1, :]
+    dx[:, 1:][valid_x] = inv_depth[:, 1:][valid_x] - inv_depth[:, :-1][valid_x]
+    dy[1:, :][valid_y] = inv_depth[1:, :][valid_y] - inv_depth[:-1, :][valid_y]
+    depth_edge = np.sqrt(dx * dx + dy * dy + 1e-12)
+    return depth_edge, observed
 
 
 def _resize_to_patch_grid(image, max_width, patch_size=PATCH_SIZE):
@@ -116,6 +287,85 @@ def build_edge_cache(source_path, images, output_dir, backend, max_width=None, s
         "feature": "edge_magnitude",
         "max_width": max_width,
         "storage": storage,
+        "entries": entries,
+    }
+    write_manifest(output_dir, manifest)
+    return manifest
+
+
+def build_colmap_depth_edge_cache(
+    source_path,
+    images,
+    output_dir,
+    backend,
+    max_width=None,
+    storage="npy_float32",
+    splat_radius=2,
+    blur_radius=2,
+):
+    source_path = Path(source_path)
+    images_dir = source_path / images
+    sparse_dir = source_path / "sparse" / "0"
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    image_paths = list(_iter_images(images_dir))
+    if not image_paths:
+        raise FileNotFoundError("No images found in {}".format(images_dir))
+
+    cameras, colmap_images = _read_colmap_cameras_and_images(sparse_dir)
+    points_by_id = _read_colmap_points3d_xyz_by_id(sparse_dir)
+    colmap_by_name = {Path(entry.name).stem: entry for entry in colmap_images.values()}
+
+    entries = {}
+    for image_path in image_paths:
+        image_name = image_path.stem
+        if image_name not in colmap_by_name:
+            raise KeyError("Image {!r} is missing from COLMAP sparse images in {}".format(image_name, sparse_dir))
+        image_entry = colmap_by_name[image_name]
+        camera_entry = cameras[image_entry.camera_id]
+        with Image.open(image_path) as image:
+            source_width, source_height = image.size
+            resized = _resize_for_cache(image.convert("RGB"), max_width)
+            cache_width, cache_height = resized.size
+
+            depth_edge, observed_points = _depth_edge_from_sparse_points(
+            image_entry,
+            camera_entry,
+            points_by_id,
+            (int(camera_entry.width), int(camera_entry.height)),
+            (cache_width, cache_height),
+            splat_radius=splat_radius,
+            blur_radius=blur_radius,
+        )
+        depth_edge = np.nan_to_num(depth_edge.astype(np.float32), nan=0.0, posinf=0.0, neginf=0.0)
+
+        cache_file = "{}{}".format(safe_cache_stem(image_name), cache_extension(storage))
+        cache_path = output_dir / cache_file
+        save_feature(cache_path, depth_edge, storage, normalize=True)
+        entries[image_name] = {
+            "cache_file": cache_file,
+            "checksum_sha256": sha256_file(cache_path),
+            "image_file": image_path.name,
+            "source_shape": [source_height, source_width],
+            "shape": [cache_height, cache_width],
+            "dtype": "float32" if storage != "npz_uint8" else "uint8",
+            "normalization": "minmax_0_1",
+            "storage": storage,
+            "observed_sparse_points": int(observed_points),
+        }
+
+    manifest = {
+        "schema_version": 1,
+        "backend": backend,
+        "source_path": str(source_path.resolve()),
+        "images": images,
+        "entry_key": "image_name",
+        "feature": "colmap_depth_edge",
+        "max_width": max_width,
+        "storage": storage,
+        "splat_radius": int(splat_radius),
+        "blur_radius": int(blur_radius),
         "entries": entries,
     }
     write_manifest(output_dir, manifest)
@@ -267,7 +517,7 @@ def main(argv=None):
     parser.add_argument("--source_path", "-s", required=True, type=str)
     parser.add_argument("--images", "-i", default="images", type=str)
     parser.add_argument("--output_dir", "-o", required=True, type=str)
-    parser.add_argument("--backend", default="cached_edge_l1", choices=["cached_edge_l1", *DINO_BACKENDS])
+    parser.add_argument("--backend", default="cached_edge_l1", choices=["cached_edge_l1", *COLMAP_DEPTH_BACKENDS, *DINO_BACKENDS])
     parser.add_argument("--max_width", default=None, type=int)
     parser.add_argument(
         "--storage",
@@ -279,6 +529,8 @@ def main(argv=None):
     parser.add_argument("--device", default="cuda", type=str)
     parser.add_argument("--limit", default=None, type=int)
     parser.add_argument("--no_pretrained", action="store_true")
+    parser.add_argument("--depth_splat_radius", default=2, type=int)
+    parser.add_argument("--depth_blur_radius", default=2, type=int)
     parser.add_argument(
         "--project_token_edge",
         action="store_true",
@@ -289,6 +541,18 @@ def main(argv=None):
     if args.backend == "cached_edge_l1":
         storage = args.storage or "npy_float32"
         manifest = build_edge_cache(args.source_path, args.images, args.output_dir, args.backend, args.max_width, storage)
+    elif args.backend in COLMAP_DEPTH_BACKENDS:
+        storage = args.storage or "npy_float32"
+        manifest = build_colmap_depth_edge_cache(
+            args.source_path,
+            args.images,
+            args.output_dir,
+            args.backend,
+            args.max_width,
+            storage,
+            splat_radius=args.depth_splat_radius,
+            blur_radius=args.depth_blur_radius,
+        )
     else:
         storage = args.storage or "npy_float16"
         if storage == "npz_uint8" and not args.project_token_edge:

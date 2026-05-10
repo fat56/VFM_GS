@@ -4211,3 +4211,74 @@ adaptive metric 1.08M quadratic max5.5 相对 max6.0：
 - 降低最大门槛到 5.5 后，Gaussian 数量从 1,014,694 增至 1,051,932，但 PSNR/SSIM/LPIPS 全部劣于 max6.0；相对 FastGS big 的 QCGI 下降到 -1.3196。
 - 这说明 bonsai 的负例不是简单的“门槛太高导致复制不足”。在该场景上，连续 metric 前置门槛会改变有效 densification 分布；放松门槛只增加点数，不恢复质量。
 - 结论：bonsai 上停止扫描 5.5 到 6.0 的相邻 metric 门槛。后续应回到自然 `weighted i0.50` 作为 bonsai 的高质量正例，或引入 Depth Anything 几何/边界 residual，而不是继续用单一 metric 阈值控容量。
+
+## 2026-05-10 COLMAP depth-edge proxy 几何先验链路实现与 bicycle 620-step 验证
+
+目标：在正式接入 Depth Anything 前，先用已有 COLMAP 稀疏几何构建一个轻量 depth-edge proxy，验证“几何/遮挡边界先验”能否复用现有 `pixel_error_map -> metric_map -> per-Gaussian count` 接口。该分支默认关闭，只作为几何先验最小链路；它不引入新的模型依赖，也不改变现有 DINO/FastGS 配置。
+
+代码变更：
+
+- `src/vfm_gs/cli/build_vfm_cache.py` 新增 `colmap_depth_edge_l1` cache builder。它读取 `sparse/0` 的 COLMAP cameras/images/points3D，把每张图观测到的稀疏 3D 点投影为 inverse-depth map，经小半径 splat 和 masked blur 后计算 depth-edge map，并按现有 manifest/cache 规范保存。
+- `src/vfm_gs/scorers/vfm_topology.py` 新增 `colmap_depth_edge_l1` backend。训练时用 SH0/albedo 渲染图的 luma edge 与 GT 侧 COLMAP depth-edge cache 做 L1 残差，再走现有 top-k metric map。
+- `configs/experiments/0001_vfm_topology_colmap_depth_edge_densify_only_topk025_weighted_i050.yaml` 新增几何 proxy 配置。它保持 `vfm_weight=0.0`，只让几何边界残差参与 densification，不改变 pruning score。
+
+缓存构建与验证：
+
+```bash
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.build_vfm_cache \
+  -s datasets/mipnerf360/bicycle \
+  -i images_8 \
+  -o output/0001/vfm_cache/bicycle_colmap_depth_edge_images8 \
+  --backend colmap_depth_edge_l1 \
+  --depth_splat_radius 2 \
+  --depth_blur_radius 2 \
+  --storage npy_float32
+
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.validate_vfm_cache \
+  -s datasets/mipnerf360/bicycle \
+  -i images_8 \
+  --cache_dir output/0001/vfm_cache/bicycle_colmap_depth_edge_images8 \
+  --backend colmap_depth_edge_l1
+```
+
+验证结果：cache 共 194 entries，全部通过校验。修正坐标缩放后，194 张图全部有有效稀疏深度投影，单图观测点数量范围为 61 到 2446，平均 1311.44。该修正很关键：`images_8` 是下采样图，但 COLMAP 2D 点坐标对应原始相机尺寸，构建 cache 时必须用 `camera.width/height` 映射到 cache 尺寸，而不是用下采样图自身尺寸作为源尺寸。
+
+620-step 训练命令：
+
+```bash
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_colmap_depth_edge_densify_only_topk025_weighted_i050.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images_8 \
+  -m output/0001/colmap_depth_edge_integration_bicycle_620/vfm_colmap_depth_edge_topk25_weighted_i050_620_r8 \
+  --eval \
+  --iterations 620 \
+  --test_iterations 620 \
+  --save_iterations 620 \
+  --checkpoint_iterations 620 \
+  --vfm_cache_dir output/0001/vfm_cache/bicycle_colmap_depth_edge_images8
+```
+
+渲染与指标命令：
+
+```bash
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.render \
+  -m output/0001/colmap_depth_edge_integration_bicycle_620/vfm_colmap_depth_edge_topk25_weighted_i050_620_r8 \
+  --skip_train
+
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.metrics \
+  -m output/0001/colmap_depth_edge_integration_bicycle_620/vfm_colmap_depth_edge_topk25_weighted_i050_620_r8
+```
+
+验证结果：
+
+| 场景 | backend | 迭代数 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|---:|
+| bicycle `images_8` | `colmap_depth_edge_l1` | 620 | 20.4876 | 0.4439 | 0.5587 | 62,341 | 2.74s |
+
+解读：
+
+- `compileall`、cache build、cache validate、train/render/metrics 均通过，说明 COLMAP depth-edge proxy 已接入现有 VFM scorer 链路。
+- 620-step 指标只验证链路健康，不判断质量优劣。正式比较仍需要 30,000 iteration，并与 matched FastGS densify100、DINO descriptor top-k25 weighted i0.50 对照。
+- 下一步先在 `bicycle -r 8` 跑 30k。若几何 proxy 相对 baseline 或 DINO descriptor 互补正向，再考虑把同一接口替换成 Depth Anything 相对深度/边界残差。

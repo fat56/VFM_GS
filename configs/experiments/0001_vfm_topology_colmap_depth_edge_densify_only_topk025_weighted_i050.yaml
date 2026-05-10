@@ -1,0 +1,18 @@
+name: 0001_vfm_topology_colmap_depth_edge_densify_only_topk025_weighted_i050
+extends: fastgs_baseline
+scorer: vfm_topology_scorer
+training_args:
+  densification_interval: 100
+  vfm_enable: true
+  vfm_backend: colmap_depth_edge_l1
+  vfm_cache_dir: output/0001/vfm_cache/bicycle_colmap_depth_edge
+  vfm_metric_map_mode: topk
+  vfm_metric_topk: 0.25
+  vfm_weight: 0.0
+  vfm_importance_weight: 0.50
+  vfm_importance_mode: weighted
+  vfm_use_albedo_sh0: true
+experiment:
+  status: colmap_depth_edge_proxy_probe
+  proposal: docs/experiments/0001_vfm_topology_scorer/proposal.md
+  note: COLMAP sparse depth-edge 作为 Depth Anything 几何先验前的轻量 proxy；只介入 densification，不改变 pruning score。
