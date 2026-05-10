@@ -2738,3 +2738,63 @@ stump 对照：
 - `weighted i0.35` 没有压低容量，反而触发容量失控，最终达到 3.04M Gaussians。
 - 质量也没有保住：PSNR/SSIM 明显低于 FastGS big 和 i0.50，仅 LPIPS 相对 baseline 有轻微改善。
 - 该结果说明 high-res stump 上 `vfm_importance_weight` 与最终 Gaussian 数量不是单调关系；简单降低权重不是可靠的容量控制方式。后续应使用显式自适应容量约束、target 保护或训练过程点数反馈，而不是继续扫更低固定权重。
+
+## 2026-05-10 DINO descriptor top-k25 weighted i0.50 + soft budget 高分辨率 stump 探针
+
+目标：在不改变 i0.50 质量档的前提下，尝试用现有 `vfm_importance_budget_count` 软预算机制约束 stump 的容量增长。本轮设置 `vfm_importance_budget_count=1150000`、`vfm_importance_budget_start_ratio=0.90`、`vfm_importance_budget_min_weight=0.0`、`vfm_importance_budget_curve=linear`。训练使用 `fastgs_big` recipe，并对齐 FastGS big 的 stump 场景超参：`--dense 0.01 --grad_abs_thresh 0.00015`。输入为 `-i images -r -1`。
+
+命令：
+
+```bash
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0001_vfm_topology_dinov2_descriptor_densify_only_topk025_weighted_i050.yaml \
+  -s datasets/mipnerf360/stump \
+  -i images \
+  -m output/0001/descriptor_topk025_weighted_i050_budget1150k_big_stump/vfm_dinov2_descriptor_topk25_weighted_i050_budget1150k_big_30k_r_auto \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0001/vfm_cache/stump_dinov2_vits14 \
+  -r -1 \
+  --dense 0.01 \
+  --grad_abs_thresh 0.00015 \
+  --vfm_importance_budget_count 1150000 \
+  --vfm_importance_budget_start_ratio 0.90 \
+  --vfm_importance_budget_min_weight 0.0 \
+  --vfm_importance_budget_curve linear
+```
+
+训练日志确认沿用 FastGS 原始大图规则：
+
+```text
+[ INFO ] Encountered quite large input images (>1.6K pixels width), rescaling to 1.6K.
+```
+
+stump 对照：
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| stump | FastGS big densify100 | 27.1310 | 0.7862 | 0.2406 | 1,062,281 | 189.72s |
+| stump | DINO descriptor top-k25 weighted i0.50 + FastGS big | 27.2233 | 0.7903 | 0.2317 | 1,196,350 | 283.46s |
+| stump | DINO descriptor top-k25 weighted i0.50 + soft budget 1.15M | 26.6930 | 0.7743 | 0.2376 | 2,247,258 | 341.23s |
+
+soft budget 相对 FastGS big：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| -0.4379 | -0.0119 | -0.0030 | +1,184,977 | +151.51s | -5.1007 |
+
+soft budget 相对 `weighted i0.50`：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| -0.5303 | -0.0160 | +0.0059 | +1,050,908 | +57.78s | -4.7844 |
+
+解读：
+
+- 现有软预算机制不足以约束 high-res stump。它只衰减 VFM densification 权重，无法约束 FastGS/RGB 路径自身的 densification 轨迹，最终仍增长到 2.25M Gaussians。
+- 质量也明显低于 i0.50 和 FastGS big，说明单纯软衰减会改变训练轨迹，但没有形成有效容量-质量折中。
+- 后续如果继续做容量控制，需要更硬的训练期点数反馈，例如在超过预算后同时降低 RGB/VFM densification、缩短 densification 窗口、提高 clone/split 门槛，或在 densify 后立即执行小步 staged prune 与恢复；仅靠当前 `vfm_importance_budget_count` 不够。
