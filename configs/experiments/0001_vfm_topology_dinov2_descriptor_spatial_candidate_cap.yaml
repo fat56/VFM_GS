@@ -1,0 +1,12 @@
+name: 0001_vfm_topology_dinov2_descriptor_spatial_candidate_cap
+extends: 0001_vfm_topology_dinov2_descriptor_densify_only_topk025_weighted_i050
+training_args:
+  densify_budget_candidate_cap: true
+  densify_budget_candidate_cap_mode: spatial_xyz
+  densify_budget_spatial_bins: 8
+  densify_budget_start_ratio: 0.90
+  densify_budget_max_metric_thresh: 12.0
+experiment:
+  status: spatial_candidate_cap_probe
+  proposal: docs/experiments/0001_vfm_topology_scorer/proposal.md
+  note: 默认不写死 densify_budget_count；每个场景通过 CLI 传入预算，用 3D 空间网格配额替代全局 top-k 截断。

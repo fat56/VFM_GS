@@ -532,12 +532,90 @@ class GaussianModel:
         if candidate_count <= remaining:
             return metric_mask
 
+        cap_mode = str(getattr(args, "densify_budget_candidate_cap_mode", "global") or "global")
         candidate_indices = candidates.nonzero(as_tuple=False).squeeze(1)
         candidate_scores = importance_score[candidate_indices]
+        if cap_mode == "spatial_xyz":
+            keep_mask = self._cap_densify_candidates_spatial_xyz(
+                args,
+                metric_mask,
+                candidate_indices,
+                candidate_scores,
+                remaining,
+            )
+            return torch.logical_and(metric_mask, keep_mask)
+
         topk_indices = torch.topk(candidate_scores, k=remaining, largest=True, sorted=False).indices
         keep_mask = torch.zeros_like(metric_mask, dtype=torch.bool)
         keep_mask[candidate_indices[topk_indices]] = True
         return torch.logical_and(metric_mask, keep_mask)
+
+    def _cap_densify_candidates_spatial_xyz(self, args, metric_mask, candidate_indices, candidate_scores, remaining):
+        keep_mask = torch.zeros_like(metric_mask, dtype=torch.bool)
+        bins_per_axis = int(getattr(args, "densify_budget_spatial_bins", 8) or 8)
+        bins_per_axis = max(1, min(bins_per_axis, 64))
+
+        xyz = self.get_xyz.detach()
+        candidate_xyz = xyz[candidate_indices]
+        xyz_min = xyz.min(dim=0).values
+        xyz_extent = (xyz.max(dim=0).values - xyz_min).clamp_min(1e-6)
+        bin_xyz = torch.floor((candidate_xyz - xyz_min) / xyz_extent * bins_per_axis)
+        bin_xyz = torch.clamp(bin_xyz, min=0, max=bins_per_axis - 1).to(torch.long)
+        bin_ids = bin_xyz[:, 0] * bins_per_axis * bins_per_axis + bin_xyz[:, 1] * bins_per_axis + bin_xyz[:, 2]
+        _, inverse_bins, bin_counts = torch.unique(
+            bin_ids,
+            sorted=False,
+            return_inverse=True,
+            return_counts=True,
+        )
+
+        raw_quotas = bin_counts.to(torch.float32) * (float(remaining) / float(candidate_indices.numel()))
+        quotas = torch.floor(raw_quotas).to(torch.long)
+        quotas = torch.minimum(quotas, bin_counts)
+
+        allocated = int(quotas.sum().item())
+        if allocated < remaining:
+            fractional = raw_quotas - torch.floor(raw_quotas)
+            grow_order = torch.argsort(fractional, descending=True)
+            for bin_pos in grow_order.tolist():
+                if allocated >= remaining:
+                    break
+                if quotas[bin_pos] >= bin_counts[bin_pos]:
+                    continue
+                quotas[bin_pos] += 1
+                allocated += 1
+
+        if allocated < remaining:
+            grow_order = torch.argsort(bin_counts - quotas, descending=True)
+            for bin_pos in grow_order.tolist():
+                if allocated >= remaining:
+                    break
+                if quotas[bin_pos] >= bin_counts[bin_pos]:
+                    continue
+                quotas[bin_pos] += 1
+                allocated += 1
+
+        for local_bin, quota in enumerate(quotas.tolist()):
+            if quota <= 0:
+                continue
+            bin_mask = inverse_bins == local_bin
+            bin_candidate_indices = candidate_indices[bin_mask]
+            quota = min(quota, bin_candidate_indices.numel())
+            bin_scores = candidate_scores[bin_mask]
+            selected = torch.topk(bin_scores, k=quota, largest=True, sorted=False).indices
+            keep_mask[bin_candidate_indices[selected]] = True
+
+        remaining_capacity = remaining - int(keep_mask[candidate_indices].sum().item())
+        if remaining_capacity > 0:
+            unused_candidate_flags = torch.logical_not(keep_mask[candidate_indices])
+            unused_indices = candidate_indices[unused_candidate_flags]
+            unused_scores = candidate_scores[unused_candidate_flags]
+            quota = min(remaining_capacity, unused_indices.numel())
+            if quota > 0:
+                selected = torch.topk(unused_scores, k=quota, largest=True, sorted=False).indices
+                keep_mask[unused_indices[selected]] = True
+
+        return keep_mask
 
     def densify_and_prune_fastgs(self, max_screen_size, min_opacity, extent, radii, args, importance_score = None, pruning_score = None):
         

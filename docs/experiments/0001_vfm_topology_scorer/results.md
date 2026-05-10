@@ -3387,3 +3387,42 @@ candidate cap 1.45M 相对自然 `weighted i0.50`：
 - 1.45M candidate cap 比 1.35M 多保留约 83,960 个 Gaussians，PSNR 只恢复 +0.0703，SSIM 只恢复 +0.0018，LPIPS 只恢复 -0.0026，仍显著低于 FastGS big 和自然 i0.50。
 - 相对自然 i0.50，1.45M cap 反而多 87,443 个 Gaussians，却低 -0.7536 PSNR、-0.0315 SSIM、LPIPS 差 +0.0294。这说明问题不是最终容量不足，而是全局 top-k 截断在训练期改变了有效候选分布。
 - 1.20M、1.35M、1.45M 三个点共同收敛到同一结论：全局 candidate cap 可以控制点数，但不是可用的质量-容量解法。下一轮不再继续扫描全局预算，应转向“保留分布”的生成侧控制，例如按空间区域/视角/clone-split 类型分配候选配额，或引入 Depth Anything 几何边界先验来决定哪些新增 GS 值得保留。
+
+## 2026-05-10 spatial candidate cap 集成验证
+
+目标：在全局 candidate cap 明确负向后，实现默认关闭的分布保持型候选控制。新参数 `densify_budget_candidate_cap_mode` 默认为 `global`，保持旧行为；当设为 `spatial_xyz` 时，候选会按当前 Gaussian 的 3D 坐标网格分配配额，再在每个网格内按 `importance_score` 取 top-k。新增 `densify_budget_spatial_bins` 控制每个坐标轴的网格数，默认 8。配套配置为 `configs/experiments/0001_vfm_topology_dinov2_descriptor_spatial_candidate_cap.yaml`，不写死 `densify_budget_count`，每个场景仍通过 CLI 传入预算。
+
+集成验证使用 `datasets/mipnerf360/bicycle`、`images_8`、620 iterations、DINO descriptor cache，只验证链路健康和候选截断可触发，不作为质量结论。
+
+命令：
+
+```bash
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_dinov2_descriptor_densify_only_topk025_weighted_i050.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images_8 \
+  -m output/0001/spatial_candidatecap_integration_bicycle_620/vfm_descriptor_spatialcap_55000_620_r8 \
+  --eval \
+  --iterations 620 \
+  --test_iterations 620 \
+  --save_iterations 620 \
+  --checkpoint_iterations 620 \
+  --vfm_cache_dir output/0001/vfm_cache/bicycle_dinov2_vits14 \
+  --densify_budget_count 55000 \
+  --densify_budget_start_ratio 0.90 \
+  --densify_budget_max_metric_thresh 12.0 \
+  --densify_budget_candidate_cap \
+  --densify_budget_candidate_cap_mode spatial_xyz \
+  --densify_budget_spatial_bins 8
+```
+
+验证结果：
+
+| 验证项 | 结果 |
+|---|---|
+| `python -m compileall src/vfm_gs` | 通过 |
+| 620-step CLI 参数解析 | 通过，`cfg_args` 记录 `densify_budget_candidate_cap_mode='spatial_xyz'` 和 `densify_budget_spatial_bins=8` |
+| 620-step 紧预算候选截断 | 通过，最终 Gaussian 数量为 55,000，等于 `densify_budget_count=55000` |
+
+下一步：使用 high-res stump 跑 `spatial_xyz + densify_budget_count=1450000`。如果它能明显优于全局 1.45M cap，则继续比较 1.20M/1.35M；如果仍低于 baseline 和自然 i0.50，则优先转向 Depth Anything 几何边界分支。
