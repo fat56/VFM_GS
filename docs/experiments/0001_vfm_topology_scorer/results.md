@@ -3527,3 +3527,75 @@ source .venv/bin/activate && uv run --active python -m vfm_gs.cli.train \
 | 620-step 紧预算候选截断 | 通过，最终 Gaussian 数量为 55,000，等于 `densify_budget_count=55000` |
 
 下一步：使用 high-res stump 跑 `branch_type + densify_budget_count=1450000`，直接与自然 i0.50、全局 cap 1.45M 和 `spatial_xyz` cap 1.45M 对照。如果仍低于 baseline 和自然 i0.50，则这条“候选硬截断”支线应整体收束，转向屏幕空间/视角覆盖配额或 Depth Anything 几何边界 residual。
+
+## 2026-05-10 DINO descriptor top-k25 weighted i0.50 + branch-type candidate cap 1.45M 高分辨率 stump 诊断
+
+目标：验证 clone/split 分支分离配额是否能恢复全局 candidate cap 和 `spatial_xyz` cap 丢失的有效 densification 分布。本轮沿用 high-res stump、FastGS big 场景超参、FastGS 原始 1.6K 自动缩放规则、DINO descriptor top-k25 weighted i0.50，并把预算设为 1.45M。
+
+命令：
+
+```bash
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0001_vfm_topology_dinov2_descriptor_branch_candidate_cap.yaml \
+  -s datasets/mipnerf360/stump \
+  -i images \
+  -m output/0001/descriptor_topk025_weighted_i050_branchcap1450k_big_stump/vfm_dinov2_descriptor_topk25_weighted_i050_branchcap1450k_big_30k_r_auto \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0001/vfm_cache/stump_dinov2_vits14 \
+  -r -1 \
+  --dense 0.01 \
+  --grad_abs_thresh 0.00015 \
+  --densify_budget_count 1450000
+```
+
+训练和渲染日志均确认沿用 FastGS 原始大图规则：
+
+```text
+[ INFO ] Encountered quite large input images (>1.6K pixels width), rescaling to 1.6K.
+```
+
+stump 对照：
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| stump | FastGS big densify100 | 27.1310 | 0.7862 | 0.2406 | 1,062,281 | 189.72s |
+| stump | DINO descriptor top-k25 weighted i0.50 + FastGS big | 27.2233 | 0.7903 | 0.2317 | 1,196,350 | 283.46s |
+| stump | DINO descriptor top-k25 weighted i0.50 + global candidate cap 1.45M | 26.4697 | 0.7588 | 0.2611 | 1,283,793 | 226.10s |
+| stump | DINO descriptor top-k25 weighted i0.50 + spatial candidate cap 1.45M | 26.4549 | 0.7579 | 0.2627 | 1,282,019 | 227.46s |
+| stump | DINO descriptor top-k25 weighted i0.50 + branch-type candidate cap 1.45M | 26.4961 | 0.7613 | 0.2591 | 1,284,312 | 227.32s |
+
+branch-type candidate cap 1.45M 相对 FastGS big：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| -0.6349 | -0.0249 | +0.0185 | +222,031 | +37.60s | -1.8135 |
+
+branch-type candidate cap 1.45M 相对自然 `weighted i0.50`：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| -0.7272 | -0.0290 | +0.0275 | +87,962 | -56.13s | -1.5333 |
+
+branch-type candidate cap 1.45M 相对全局 candidate cap 1.45M：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| +0.0264 | +0.0025 | -0.0019 | +519 | +1.23s | +0.0856 |
+
+branch-type candidate cap 1.45M 相对 `spatial_xyz` cap 1.45M：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| +0.0412 | +0.0034 | -0.0035 | +2,293 | -0.13s | +0.1242 |
+
+解读：
+
+- `branch_type` 比全局 cap 和 `spatial_xyz` cap 有小幅恢复：相对全局 cap 为 +0.0264 PSNR、+0.0025 SSIM、LPIPS 改善 -0.0019；相对 `spatial_xyz` cap 为 +0.0412 PSNR、+0.0034 SSIM、LPIPS 改善 -0.0035。
+- 恢复幅度仍远远不够：相对 FastGS big 仍低 -0.6349 PSNR、-0.0249 SSIM、LPIPS 差 +0.0185；相对自然 i0.50 仍低 -0.7272 PSNR、-0.0290 SSIM、LPIPS 差 +0.0275，且还多 87,962 个 Gaussians。
+- 结论：clone/split 分支分离能缓解一点全局混池截断问题，但不是 high-res stump 的有效容量解法。全局、3D 空间、clone/split 三种硬候选 cap 都控制住了点数，却都没有保住自然 i0.50 的质量，说明问题更可能发生在训练期候选生成轨迹和视角/屏幕覆盖分布，而不是最终候选池内的简单排序策略。
+- 下一步不继续扫描硬 candidate cap 的相邻预算。优先转向两条更有方法价值的方向：一是屏幕空间/视角覆盖配额，避免单纯按 3D 坐标或分支类型裁剪；二是 Depth Anything 几何边界 residual，用结构边界证据判断新增 GS 是否应保留。
