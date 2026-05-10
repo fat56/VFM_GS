@@ -1648,3 +1648,25 @@ Tandt 逐场景：
 - 稳定 scorer 单次调用约 172-188ms，主要由两部分组成：FastGS 原始 multi-view score 约 63-81ms，在线 DINO descriptor error 约 50-52ms；其余是 SH0 渲染和 metric-map count raster。
 - descriptor 30k 在 densification 阶段会多次调用 scorer，因此在线 DINO descriptor 是可解释的主要额外成本。下一步优化优先级应是降低 descriptor 参与频率或缩短参与窗口，而不是继续细扫 i0.60/i0.65/i0.70 一类相邻权重。
 - 值得测试的下一版方向：`descriptor_warm_window`，只在较早 densification 阶段使用 DINO descriptor，例如 600-8000 iteration；后半段回到 RGB/FastGS score 或 token-edge 轻量 proxy。目标是在保留早期结构引导收益的同时减少 30k 额外耗时。
+
+## 2026-05-10 DINO descriptor warm window 机制验证
+
+目标：把 profiling 中发现的在线 DINO descriptor 开销转化为可控参数。新增 `vfm_active_from_iter` 和 `vfm_active_until_iter`，默认均为 0，表示全程启用；当当前训练 iteration 不在窗口内时，`vfm_topology_scorer` 只返回原始 FastGS score，跳过 SH0 渲染、在线 DINO descriptor、metric map 和 VFM count raster。训练循环在 densification、15k 后 pruning 和 target prune 调用 scorer 前写入 `current_iteration`，避免窗口判断依赖外部状态。
+
+新增配置：`configs/experiments/0001_vfm_topology_dinov2_descriptor_densify_only_topk025_weighted_i070_warm8000.yaml`。配置保持 `dinov2_descriptor_cosine`、top-k25、token smoothing 3、`vfm_weight=0.0`、`vfm_importance_mode=weighted`、`vfm_importance_weight=0.70`，只增加 `vfm_active_until_iter=8000`。设计意图是：早期 densification 继续使用 DINO descriptor residual 引导新增 GS，后半段回到 FastGS score，验证质量保留和训练耗时下降。
+
+短程窗口验证使用 bicycle `-r 8`、820 iterations，并临时覆盖 `--vfm_active_until_iter 650`，输出在 `output/0001/descriptor_warm650_i070_bicycle_820_r8`。该设置会让 iteration 600 的 densification 走 DINO descriptor，iteration 700/800 回到 FastGS。
+
+| 调用 | iteration 区间 | active | 当前 GS | 总耗时 | RGB score | DINO descriptor error | 说明 |
+|---:|---|---|---:|---:|---:|---:|---|
+| 1 | 600 | true | 54,275 | 2041.38ms | 79.74ms | 1905.36ms | 包含首次 DINO 模型加载 |
+| 2 | 700 | false | 60,350 | 78.08ms | 78.06ms | - | 已跳过 DINO/VFM 路径 |
+| 3 | 800 | false | 70,553 | 76.59ms | 76.57ms | - | 已跳过 DINO/VFM 路径 |
+
+短程结果：820 iteration 结束时 Gaussian 数量为 85,013，训练耗时 6.69s。该结果只用于验证窗口机制，不作为质量判断。
+
+解读：
+
+- `active=false` 时 scorer 耗时几乎等于 FastGS 原始 multi-view score，说明窗口确实绕过了在线 DINO descriptor 和 VFM raster 计数。
+- 窗口机制不改变默认行为；旧配置未设置窗口时仍全程启用 VFM。
+- 下一步应跑 bicycle 30k `warm8000`，直接比较三组：FastGS densify100、原 i0.70/profile i0.70、warm8000 i0.70。若 PSNR/SSIM/LPIPS 基本保留且训练时间明显下降，再扩展到 garden/stump/bonsai 四场景。

@@ -95,6 +95,7 @@ def _prune_to_target_budget(scene, gaussians, gaussian_scorer, pipe, bg, opt, ta
     from vfm_gs.utils.fast_utils import sampling_cameras
 
     camlist = sampling_cameras(my_viewpoint_stack)
+    opt.current_iteration = iteration if iteration is not None else int(getattr(opt, "iterations", 0) or 0)
     _, pruning_score = gaussian_scorer(camlist, gaussians, pipe, bg, opt)
     prune_order = _target_gaussian_prune_order(opt)
     pruned_count = gaussians.prune_to_target_count(
@@ -377,6 +378,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                     camlist = sampling_cameras(my_viewpoint_stack)
 
                     # The multiview consistent densification of fastgs
+                    opt.current_iteration = iteration
                     importance_score, pruning_score = gaussian_scorer(camlist, gaussians, pipe, bg, opt, DENSIFY=True)
                     gaussians.densify_and_prune_fastgs(max_screen_size = size_threshold, 
                                                 min_opacity = 0.005, 
@@ -415,6 +417,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 my_viewpoint_stack = scene.getTrainCameras().copy()
                 camlist = sampling_cameras(my_viewpoint_stack)
 
+                opt.current_iteration = iteration
                 _, pruning_score = gaussian_scorer(camlist, gaussians, pipe, bg, opt)
                 gaussians.final_prune_fastgs(
                     min_opacity=0.1,

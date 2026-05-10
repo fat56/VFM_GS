@@ -130,6 +130,8 @@ class OptimizationParams(ParamGroup):
         self.vfm_dinov2_device = "cuda"
         self.vfm_profile_scorer = False
         self.vfm_profile_interval = 1
+        self.vfm_active_from_iter = 0
+        self.vfm_active_until_iter = 0
         self.target_gaussian_count = 0
         self.target_gaussian_staged = False
         self.target_gaussian_stage_margin = 1.2

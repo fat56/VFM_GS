@@ -44,6 +44,19 @@ def _elapsed_ms(start, enabled):
     return (time.perf_counter() - start) * 1000.0
 
 
+def _is_vfm_active(args):
+    iteration = int(getattr(args, "current_iteration", 0) or 0)
+    if iteration <= 0:
+        return True
+    active_from = int(getattr(args, "vfm_active_from_iter", 0) or 0)
+    active_until = int(getattr(args, "vfm_active_until_iter", 0) or 0)
+    if active_from > 0 and iteration < active_from:
+        return False
+    if active_until > 0 and iteration > active_until:
+        return False
+    return True
+
+
 class VFMFeatureCache:
     def __init__(self, cache_dir):
         self.cache_dir = cache_dir
@@ -482,11 +495,25 @@ def compute_gaussian_score_fastgs_with_vfm(camlist, gaussians, pipe, bg, args, D
         camlist, gaussians, pipe, bg, args, DENSIFY=DENSIFY
     )
     rgb_ms = _elapsed_ms(rgb_start, profile_this)
+    backend = getattr(args, "vfm_backend", "mock_l1")
+    if not _is_vfm_active(args):
+        if profile_this:
+            total_ms = _elapsed_ms(total_start, profile_this)
+            print(
+                "[VFM PROFILE] call={} densify={} backend={} active=false gs={} total_ms={:.2f} rgb_ms={:.2f}".format(
+                    profile_call,
+                    bool(DENSIFY),
+                    backend,
+                    int(gaussians._xyz.shape[0]),
+                    total_ms,
+                    rgb_ms,
+                )
+            )
+        return rgb_importance if DENSIFY else None, rgb_pruning
 
     vfm_counts_total = None
     vfm_support_total = None
     vfm_pruning_total = None
-    backend = getattr(args, "vfm_backend", "mock_l1")
     vfm_weight = getattr(args, "vfm_weight", 0.25)
     vfm_importance_mode = getattr(args, "vfm_importance_mode", "max").lower()
     vfm_importance_weight = max(0.0, getattr(args, "vfm_importance_weight", 1.0))
