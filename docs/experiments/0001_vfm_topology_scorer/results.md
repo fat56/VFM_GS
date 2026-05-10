@@ -2383,3 +2383,76 @@ source .venv/bin/activate && uv run --active python -m vfm_gs.cli.train \
 - flowers 不是三项质量正例：PSNR 和 SSIM 小幅提升，LPIPS 小幅变差。
 - Gaussian 数量减少 48,729，因此 QCGI 仍为正；但训练时间增加 70.92s，说明 online descriptor 成本在该场景没有换来足够清晰的感知收益。
 - 该结果应作为 high-res `weighted i0.50` 的混合样本保留，不放入正向效率主表。后续若要提升 flowers，优先尝试更高 descriptor 强度或 quality-first `max/i0.70`，而不是继续降低容量。
+
+## 2026-05-10 DINO descriptor top-k25 + weighted i0.50 高分辨率 treehill 复验与 MipNeRF360 汇总
+
+目标：补齐 MipNeRF360 high-res 最后一个场景 treehill，并形成同一功能模块在 9 个 MipNeRF360 场景上的数据集均值。treehill 训练使用 `fastgs_big` recipe，并对齐 FastGS big 场景超参：`--dense 0.01 --grad_abs_thresh 0.0018`。输入为 `-i images -r -1`，cache 使用 `output/0001/vfm_cache/treehill_dinov2_vits14`。
+
+命令：
+
+```bash
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0001_vfm_topology_dinov2_descriptor_densify_only_topk025_weighted_i050.yaml \
+  -s datasets/mipnerf360/treehill \
+  -i images \
+  -m output/0001/descriptor_topk025_weighted_i050_big_treehill/vfm_dinov2_descriptor_topk25_weighted_i050_big_30k_r_auto \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0001/vfm_cache/treehill_dinov2_vits14 \
+  -r -1 \
+  --dense 0.01 \
+  --grad_abs_thresh 0.0018
+```
+
+训练日志确认沿用 FastGS 原始大图规则：
+
+```text
+[ INFO ] Encountered quite large input images (>1.6K pixels width), rescaling to 1.6K.
+```
+
+treehill 单场景结果：
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| treehill | FastGS big densify100 | 22.8339 | 0.6318 | 0.3770 | 998,983 | 189.59s |
+| treehill | DINO descriptor top-k25 weighted i0.50 + FastGS big | 22.8069 | 0.6317 | 0.3774 | 945,930 | 240.89s |
+
+相对 FastGS big：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| -0.0270 | -0.0001 | +0.0004 | -53,053 | +51.29s | -0.0318 |
+
+treehill 是 high-res `weighted i0.50` 的明确质量负例。它虽然少 53,053 个 Gaussians，但 PSNR/SSIM/LPIPS 三项都低于 FastGS big，说明在该场景上降低容量没有带来有效质量收益。后续如果继续处理 treehill，应优先试 `max/i0.70` 或加入几何/深度先验，而不是继续压低 weighted 强度。
+
+MipNeRF360 high-res 9 场景汇总：
+
+| 场景 | ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---|---:|---:|---:|---:|---:|---:|
+| bicycle | +0.0406 | +0.0053 | -0.0085 | +46,111 | +33.93s | +0.1422 |
+| flowers | +0.0127 | +0.0004 | +0.0008 | -48,729 | +70.92s | +0.0172 |
+| garden | +0.0239 | +0.0002 | -0.0004 | -53,503 | +12.90s | +0.0307 |
+| stump | +0.0923 | +0.0042 | -0.0089 | +134,069 | +93.74s | -0.0162 |
+| treehill | -0.0270 | -0.0001 | +0.0004 | -53,053 | +51.29s | -0.0318 |
+| counter | +0.0570 | +0.0014 | -0.0041 | +78,100 | +20.56s | +0.0274 |
+| kitchen | +0.1650 | +0.0007 | -0.0008 | +107,209 | +48.79s | +0.0546 |
+| room | +0.0596 | +0.0025 | -0.0059 | +45,129 | +33.57s | +0.0948 |
+| bonsai | +0.1297 | +0.0037 | -0.0040 | +251,478 | +52.84s | -0.4824 |
+| **平均** | **+0.0615** | **+0.0020** | **-0.0035** | **+56,312** | **+46.50s** | **+0.0633** |
+
+绝对均值：
+
+| 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---:|---:|---:|---:|---:|
+| FastGS big densify100 | 27.9293 | 0.8198 | 0.2157 | 1,161,242 | 236.23s |
+| DINO descriptor top-k25 weighted i0.50 + FastGS big | 27.9908 | 0.8218 | 0.2122 | 1,217,554 | 282.73s |
+
+解读：
+
+- 数据集均值是正向的：PSNR +0.0615、SSIM +0.0020、LPIPS 改善 -0.0035，说明同一 VFM descriptor densify-only 模块在 MipNeRF360 high-res 口径下具备整体质量收益。
+- 场景分布不是全胜：bicycle/garden/counter/kitchen/room/bonsai/stump 三项或主要质量指标正向，flowers 是混合样本，treehill 是明确负例。
+- 平均多 56,312 个 Gaussians，处于 `0.01M_to_0.10M` 可接受增长区间；但训练时间平均多 46.50s，且 bonsai/stump 出现容量边界问题。下一步应针对 bonsai/stump 做更强容量约束，针对 flowers/treehill 做更高 descriptor 强度或几何先验，而不是把 i0.50 直接视为最终收束。

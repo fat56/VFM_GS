@@ -231,6 +231,7 @@ QCGI = quality_gain - gs_penalty
 | high-res MipNeRF360 `counter` descriptor weighted i0.50 vs FastGS big | +0.0570 | +0.0014 | -0.0041 | +78,100 | `0.01M_to_0.10M` | +0.0274 | 大分辨率室内场景三项正向，增点低于 0.1M |
 | high-res MipNeRF360 `kitchen` descriptor weighted i0.50 vs FastGS big | +0.1650 | +0.0007 | -0.0008 | +107,209 | `gte_0.10M` | +0.0546 | 大分辨率高基线室内场景 PSNR 收益明确，容量增长略超阈值但仍正向 |
 | high-res MipNeRF360 `room` descriptor weighted i0.50 vs FastGS big | +0.0596 | +0.0025 | -0.0059 | +45,129 | `0.01M_to_0.10M` | +0.0958 | 大分辨率室内场景 SSIM/LPIPS 收益明确，增点低于 0.1M |
+| high-res MipNeRF360 平均 descriptor weighted i0.50 vs FastGS big | +0.0615 | +0.0020 | -0.0035 | +56,312 | `0.01M_to_0.10M` | +0.0633 | 9 场景数据集均值正向，证明 1.6K 自动缩放口径下 VFM descriptor residual 仍有效 |
 
 `scripts/summarize_0001_cross_dataset_selector.py` 已把 `quality_gain`、`quality_gain_per_10k_gs`、`gs_growth_band`、`gs_penalty` 和 `qcgi` 写入 comparison 表，并新增 `qcgi_pick_method`。展示时应优先使用按数据集拆分的 `scripts/summarize_0001_dataset_policies.py` 产物，尤其是 `dataset_averages.csv` 和 `dataset_comparisons.csv`。`scripts/summarize_0001_weighted_candidates.py` 也已把 QCGI 接入 MipNeRF360 weighted 档位选择；严格 `quality_pick` 均值为 28.8641 / 0.8665 / 0.1392、257,326 个 Gaussians，`QCGI pick` 均值为 28.8641 / 0.8667 / 0.1388、255,822 个 Gaussians。下一阶段可以先继续把 QCGI 作为离线选择准则；当更多数据集验证稳定后，再把 QCGI 或其分档信号接入 density/prune 强度的自适应控制。
 
