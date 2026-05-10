@@ -3324,4 +3324,66 @@ candidate cap 1.35M 相对自然 `weighted i0.50`：
 
 - 1.35M candidate cap 最终 1.200M Gaussians，几乎等于自然 i0.50 的 1.196M，并且训练时间比自然 i0.50 少 64.85s。
 - 质量只比 1.20M cap 略有恢复，仍显著低于 FastGS big 和自然 i0.50；因此主要问题不只是“最终点数太少”，而是 cap 改变了 densification 过程中保留候选的空间/结构分布。
-- 该结果说明当前按全局 `importance_score` top-k 截断候选不是可用容量解法。仍需跑 1.45M 作为边界检查：如果 1.45M 也不能恢复质量，就应放弃全局 candidate cap，转向分视角/分区域配额、分 clone/split 配额、或 Depth Anything 几何边界辅助。
+- 该结果说明当前按全局 `importance_score` top-k 截断候选不是可用容量解法。1.45M 边界检查继续验证这一判断：如果放宽后仍不能恢复质量，就应放弃全局 candidate cap，转向分视角/分区域配额、分 clone/split 配额、或 Depth Anything 几何边界辅助。
+
+## 2026-05-10 DINO descriptor top-k25 weighted i0.50 + candidate cap 1.45M 高分辨率 stump 边界检查
+
+目标：在 1.35M candidate cap 已经把最终点数恢复到自然 i0.50 水平但质量仍未恢复后，继续放宽 `densify_budget_count` 到 1.45M，检查全局候选截断是否存在可用质量-容量拐点。本轮仍使用 high-res stump、FastGS big 超参、FastGS 原始大图自动缩放规则和相同 DINO descriptor 配置。
+
+命令：
+
+```bash
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0001_vfm_topology_dinov2_descriptor_densify_only_topk025_weighted_i050.yaml \
+  -s datasets/mipnerf360/stump \
+  -i images \
+  -m output/0001/descriptor_topk025_weighted_i050_candidatecap1450k_big_stump/vfm_dinov2_descriptor_topk25_weighted_i050_candidatecap1450k_big_30k_r_auto \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0001/vfm_cache/stump_dinov2_vits14 \
+  -r -1 \
+  --dense 0.01 \
+  --grad_abs_thresh 0.00015 \
+  --densify_budget_count 1450000 \
+  --densify_budget_start_ratio 0.90 \
+  --densify_budget_max_metric_thresh 12.0 \
+  --densify_budget_candidate_cap
+```
+
+训练和渲染日志均确认沿用 FastGS 原始大图规则：
+
+```text
+[ INFO ] Encountered quite large input images (>1.6K pixels width), rescaling to 1.6K.
+```
+
+stump 对照：
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| stump | FastGS big densify100 | 27.1310 | 0.7862 | 0.2406 | 1,062,281 | 189.72s |
+| stump | DINO descriptor top-k25 weighted i0.50 + FastGS big | 27.2233 | 0.7903 | 0.2317 | 1,196,350 | 283.46s |
+| stump | DINO descriptor top-k25 weighted i0.50 + candidate cap 1.20M | 26.3268 | 0.7522 | 0.2712 | 1,076,427 | 212.35s |
+| stump | DINO descriptor top-k25 weighted i0.50 + candidate cap 1.35M | 26.3994 | 0.7570 | 0.2637 | 1,199,833 | 218.61s |
+| stump | DINO descriptor top-k25 weighted i0.50 + candidate cap 1.45M | 26.4697 | 0.7588 | 0.2611 | 1,283,793 | 226.10s |
+
+candidate cap 1.45M 相对 FastGS big：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| -0.6613 | -0.0274 | +0.0205 | +221,512 | +36.38s | -1.8975 |
+
+candidate cap 1.45M 相对自然 `weighted i0.50`：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| -0.7536 | -0.0315 | +0.0294 | +87,443 | -57.36s | -1.6189 |
+
+解读：
+
+- 1.45M candidate cap 比 1.35M 多保留约 83,960 个 Gaussians，PSNR 只恢复 +0.0703，SSIM 只恢复 +0.0018，LPIPS 只恢复 -0.0026，仍显著低于 FastGS big 和自然 i0.50。
+- 相对自然 i0.50，1.45M cap 反而多 87,443 个 Gaussians，却低 -0.7536 PSNR、-0.0315 SSIM、LPIPS 差 +0.0294。这说明问题不是最终容量不足，而是全局 top-k 截断在训练期改变了有效候选分布。
+- 1.20M、1.35M、1.45M 三个点共同收敛到同一结论：全局 candidate cap 可以控制点数，但不是可用的质量-容量解法。下一轮不再继续扫描全局预算，应转向“保留分布”的生成侧控制，例如按空间区域/视角/clone-split 类型分配候选配额，或引入 Depth Anything 几何边界先验来决定哪些新增 GS 值得保留。
