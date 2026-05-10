@@ -2625,3 +2625,60 @@ flowers 对照：
 - `weighted i0.70` 没有修复 flowers 的 LPIPS，反而使 PSNR、SSIM、LPIPS 三项都低于 FastGS big。
 - 它比 i0.50 少 45,667 个 Gaussians、训练少 43.99s，但质量同步下降，说明该场景不是简单提高 weighted importance 就能解决。
 - flowers 后续如果继续处理，应改试 `max` 质量上界或引入几何/深度 residual；`i0.70` 不再扩展。
+
+## 2026-05-10 DINO descriptor top-k25 max 高分辨率 flowers 复验
+
+目标：在 flowers 上检查 `max` 质量优先档是否能修复 `weighted i0.50/i0.70` 的 LPIPS 问题，并判断该场景是否存在 DINO descriptor residual 的质量上界。训练继续使用 `fastgs_big` recipe，并对齐 FastGS big 的 flowers 场景超参：`--dense 0.005 --grad_abs_thresh 0.001`。输入为 `-i images -r -1`，cache 使用 `output/0001/vfm_cache/flowers_dinov2_vits14`。
+
+命令：
+
+```bash
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0001_vfm_topology_dinov2_descriptor_densify_only_topk025.yaml \
+  -s datasets/mipnerf360/flowers \
+  -i images \
+  -m output/0001/descriptor_topk025_max_big_flowers/vfm_dinov2_descriptor_topk25_max_big_30k_r_auto \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0001/vfm_cache/flowers_dinov2_vits14 \
+  -r -1 \
+  --dense 0.005 \
+  --grad_abs_thresh 0.001
+```
+
+训练日志确认沿用 FastGS 原始大图规则：
+
+```text
+[ INFO ] Encountered quite large input images (>1.6K pixels width), rescaling to 1.6K.
+```
+
+flowers 对照：
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| flowers | FastGS big densify100 | 21.6166 | 0.6017 | 0.3403 | 1,140,260 | 207.76s |
+| flowers | DINO descriptor top-k25 weighted i0.50 + FastGS big | 21.6293 | 0.6022 | 0.3412 | 1,091,531 | 278.68s |
+| flowers | DINO descriptor top-k25 weighted i0.70 + FastGS big | 21.5801 | 0.6001 | 0.3442 | 1,045,864 | 234.69s |
+| flowers | DINO descriptor top-k25 max + FastGS big | 21.6394 | 0.6039 | 0.3386 | 1,273,570 | 275.79s |
+
+`max` 相对 FastGS big：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| +0.0228 | +0.0021 | -0.0017 | +133,310 | +68.03s | -0.1595 |
+
+`max` 相对 `weighted i0.50`：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| +0.0101 | +0.0017 | -0.0026 | +182,039 | -2.89s | -0.3716 |
+
+解读：
+
+- `max` 修复了 flowers 的感知指标：相对 FastGS big 三项质量都正向，也优于 `weighted i0.50/i0.70`。
+- 该收益依赖额外 133,310 个 Gaussians，QCGI 为负；因此它是质量上界证据，而不是容量高效方案。
+- flowers 的结论与 treehill 类似：DINO descriptor residual 有效，但固定 weighted 档不能在 high-res 下稳定取得质量-容量折中。后续应尝试自适应容量控制或 Depth Anything 几何/边界 residual，而不是继续扫描相邻权重。

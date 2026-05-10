@@ -188,6 +188,7 @@ DB 的 DINO weighted 多档复验则给出相反信号。i0.50 平均为 30.3603
 - high-res treehill `top-k25 max` 复验完成。相对 FastGS big，结果从 `weighted i0.50` 的 22.8069 / 0.6317 / 0.3774 恢复到 22.8700 / 0.6367 / 0.3665，三项质量指标全部正向；Gaussian 数量从 945,930 增至 1,129,614，相对 baseline 多 130,631 个点，QCGI 为 -0.0360。该结果说明 treehill 更像 descriptor 强度不足，而不是 descriptor residual 无效；但 `max` 容量代价偏高，下一步应扫 high-res `i0.70` 或自适应容量约束。
 - high-res treehill `weighted i0.70` 复验完成。该档结果为 22.8614 / 0.6305 / 0.3813、877,180 个 Gaussians、训练 221.12s；相对 FastGS big 为 +0.0276 PSNR、-0.0014 SSIM、LPIPS +0.0043，同时少 121,803 个点，QCGI 为 -0.0212。它比 i0.50 省点省时且 PSNR 更高，但 SSIM/LPIPS 变差；说明 treehill 并不存在简单的 `i0.50 -> i0.70 -> max` 平滑折中，后续应转向自适应容量或几何先验。
 - high-res flowers `weighted i0.70` 复验完成。结果为 21.5801 / 0.6001 / 0.3442、1,045,864 个 Gaussians、训练 234.69s；相对 FastGS big 为 -0.0365 PSNR、-0.0017 SSIM、LPIPS +0.0039，同时少 94,396 个点，QCGI 为 -0.0895。该档比 i0.50 少 45,667 个点、训练少 43.99s，但三项质量同步下降，说明 flowers 不能靠简单提高 weighted importance 修复。
+- high-res flowers `top-k25 max` 复验完成。结果为 21.6394 / 0.6039 / 0.3386、1,273,570 个 Gaussians、训练 275.79s；相对 FastGS big 为 +0.0228 PSNR、+0.0021 SSIM、LPIPS -0.0017，同时多 133,310 个点，QCGI 为 -0.1595。它证明 flowers 存在 descriptor 质量上界，但容量收益比不足；后续应转向自适应容量或 Depth Anything，而不是继续扫描固定 weighted 权重。
 
 ## 下一版计划
 
