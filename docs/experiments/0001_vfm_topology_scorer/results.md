@@ -4342,3 +4342,48 @@ source .venv/bin/activate && uv run --active python -m vfm_gs.cli.metrics \
 - 相对已验证正向的 DINO descriptor weighted i0.50，三项质量全部更差，说明当前 `rendered luma edge vs sparse depth edge` 的 L1 残差形式不适合作为主线。
 - 可能原因是信号错配：渲染亮度边缘包含纹理、曝光和颜色变化，而 COLMAP 稀疏 depth-edge 只覆盖部分几何/遮挡边界，直接做 L1 会把很多不对应区域推成误差。
 - 下一步不继续扩展该 L1 残差到其他场景。更合理的几何 proxy 是让 COLMAP depth-edge 本身作为 densification prior，即直接增强真实稀疏几何边界附近的复制，而不是要求渲染亮度边缘与稀疏深度边缘逐像素一致。
+
+## 2026-05-10 COLMAP depth-edge prior backend 实现与 bicycle 620-step 验证
+
+目标：修正上一轮 `colmap_depth_edge_l1` 的信号错配问题。新 backend `colmap_depth_edge_prior` 不再比较“渲染亮度边缘”和“稀疏深度边缘”，而是直接把 COLMAP sparse inverse-depth edge cache 作为 pixel prior，后续仍走现有 `normalize -> top-k metric map -> per-Gaussian count` 流程。该形式更接近“在真实几何/遮挡边界附近鼓励复制”，也更接近后续 Depth Anything edge protect 的目标。
+
+代码变更：
+
+- `src/vfm_gs/scorers/vfm_topology.py` 新增 `colmap_depth_edge_prior` backend，manifest 仍接受 `colmap_depth_edge_l1` cache，因此可以复用上一轮已经构建和验证过的 cache。
+- `configs/experiments/0001_vfm_topology_colmap_depth_edge_prior_densify_only_topk025_weighted_i050.yaml` 新增 prior 配置，保持 `vfm_weight=0.0`、top-k25、weighted i0.50，只参与 densification，不改变 pruning score。
+
+620-step 验证命令：
+
+```bash
+source .venv/bin/activate && uv run --active python -m compileall src/vfm_gs && \
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_colmap_depth_edge_prior_densify_only_topk025_weighted_i050.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images_8 \
+  -m output/0001/colmap_depth_edge_prior_integration_bicycle_620/vfm_colmap_depth_edge_prior_topk25_weighted_i050_620_r8 \
+  --eval \
+  --iterations 620 \
+  --test_iterations 620 \
+  --save_iterations 620 \
+  --checkpoint_iterations 620 \
+  --vfm_cache_dir output/0001/vfm_cache/bicycle_colmap_depth_edge_images8
+
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.render \
+  -m output/0001/colmap_depth_edge_prior_integration_bicycle_620/vfm_colmap_depth_edge_prior_topk25_weighted_i050_620_r8 \
+  --skip_train
+
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.metrics \
+  -m output/0001/colmap_depth_edge_prior_integration_bicycle_620/vfm_colmap_depth_edge_prior_topk25_weighted_i050_620_r8
+```
+
+验证结果：
+
+| 场景 | backend | 迭代数 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|---:|
+| bicycle `images_8` | `colmap_depth_edge_prior` | 620 | 20.5299 | 0.4477 | 0.5569 | 62,086 | 3.16s |
+
+解读：
+
+- `compileall`、cache preflight、train/render/metrics 均通过，说明 prior backend 可以复用 `colmap_depth_edge_l1` cache。
+- 620-step 只验证链路健康，不判断正式质量。下一步直接跑 bicycle `-r 8` 30k，与 FastGS densify100、DINO descriptor top-k25 weighted i0.50、COLMAP depth-edge L1 三者对照。
