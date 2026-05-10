@@ -3934,3 +3934,57 @@ matched densify metric 6.0 相对自然 `weighted i0.50`：
 - 质量损失过大：相对自然 `weighted i0.50`，PSNR 低 -0.5450；相对 FastGS big，PSNR 也低 -0.4154。虽然 SSIM 和 LPIPS 相对 FastGS big 仍小幅正向，但 QCGI 为 -0.7601，不是可展示的正向容量收益。
 - 与 stump 的 6.0 正向结果形成对照：同一个绝对 `densify_metric_thresh=6.0` 在 stump 上能保住三项质量并把增点压到 +82,238，但在 bonsai 上会明显伤害 PSNR。这说明固定绝对阈值不是跨场景容量控制解法。
 - 下一步不把 `densify_metric_thresh=6.0` 当作全局默认。更合理的方向是场景自适应前置门槛：根据 baseline/自然 VFM 的早期 Gaussian 增长轨迹、目标 ΔGS 分档或训练期质量-容量信号，自动调整 densification 强度；或转向 Depth Anything 几何/边界 residual，让新增点的保留由结构证据决定，而不是靠固定阈值。
+
+## 2026-05-10 自适应 densification metric budget 集成验证
+
+目标：把固定绝对 `densify_metric_thresh` 改成默认关闭的连续前置门槛机制，支持不同场景按目标容量和曲线自适应提高 densification metric 门槛。该机制用于后续正式 30k 诊断；本节只记录链路验证，不作为重建质量结论。
+
+代码变更：
+
+- `OptimizationParams` 新增 `densify_budget_curve`，默认值为 `linear`，历史行为不变。
+- `_densify_metric_threshold(args)` 在 `densify_budget_count > 0` 时读取当前 Gaussian 数量、`densify_budget_start_ratio` 和 `densify_budget_max_metric_thresh`，并按 `linear`、`quadratic` 或 `sqrt` 曲线把基础门槛连续抬高到最大门槛。
+- 新增配置 `configs/experiments/0001_vfm_topology_dinov2_descriptor_adaptive_metric_budget.yaml`，保持 `dinov2_descriptor_cosine + top-k25 + weighted i0.50 + vfm_weight=0.0`，默认不写死 `densify_budget_count`，由每个场景的 CLI 覆盖传入目标容量。
+
+验证命令：
+
+```bash
+source .venv/bin/activate && uv run --active python -m compileall src/vfm_gs
+
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_dinov2_descriptor_adaptive_metric_budget.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images_8 \
+  -m output/0001/adaptive_metric_budget_integration_bicycle_620/vfm_descriptor_adaptive_metric_budget_55000_sqrt_620_r8 \
+  --eval \
+  --iterations 620 \
+  --test_iterations 620 \
+  --save_iterations 620 \
+  --checkpoint_iterations 620 \
+  --vfm_cache_dir output/0001/vfm_cache/bicycle_dinov2_vits14 \
+  --densify_budget_count 55000 \
+  --densify_budget_curve sqrt \
+  --densify_budget_start_ratio 0.90 \
+  --densify_budget_max_metric_thresh 6.0
+
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.render \
+  -m output/0001/adaptive_metric_budget_integration_bicycle_620/vfm_descriptor_adaptive_metric_budget_55000_sqrt_620_r8 \
+  --skip_train
+
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.metrics \
+  -m output/0001/adaptive_metric_budget_integration_bicycle_620/vfm_descriptor_adaptive_metric_budget_55000_sqrt_620_r8
+```
+
+验证结果：
+
+| 场景 | 迭代数 | 曲线 | 目标容量 | 最大门槛 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---:|---|---:|---:|---:|---:|---:|---:|---:|
+| bicycle | 620 | sqrt | 55,000 | 6.0 | 20.5506 | 0.4487 | 0.5586 | 61,032 | 5.76s |
+
+`cfg_args` 已记录 `densify_budget_count=55000`、`densify_budget_curve='sqrt'`、`densify_budget_start_ratio=0.9` 和 `densify_budget_max_metric_thresh=6.0`。DINO cache 训练前检查通过，`point_cloud.ply` header 记录最终 `element vertex 61032`。
+
+解读：
+
+- `compileall`、训练、渲染和指标计算均通过，说明新增参数可以从 YAML/CLI 进入训练，并参与 densification 前置门槛计算。
+- 620-step 指标只验证链路和输出完整性，不比较方案优劣。正式质量判断仍以 30,000 iteration、test split render 后的 PSNR/SSIM/LPIPS、Gaussian 数量和训练时间为准。
+- 下一步优先在 high-res stump 上用该机制做正式诊断，目标容量设在 FastGS big baseline 和自然 `weighted i0.50` 之间，判断连续曲线是否能保留 `metric6` 的正向收益，同时降低固定阈值跨场景失效风险。

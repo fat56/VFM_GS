@@ -9,6 +9,8 @@
 # For inquiries contact  george.drettakis@inria.fr
 #
 
+import math
+
 import torch
 import numpy as np
 from vfm_gs.utils.general_utils import inverse_sigmoid, get_expon_lr_func, build_rotation, identity_gate
@@ -513,6 +515,17 @@ class GaussianModel:
 
         progress = (current_count - start_count) / float(budget_count - start_count)
         progress = min(max(progress, 0.0), 1.0)
+        curve = str(getattr(args, "densify_budget_curve", "linear") or "linear").lower()
+        if curve == "linear":
+            pass
+        elif curve == "quadratic":
+            progress = progress * progress
+        elif curve == "sqrt":
+            progress = math.sqrt(progress)
+        else:
+            raise ValueError(
+                "Unsupported densify_budget_curve {!r}. Available: linear, quadratic, sqrt.".format(curve)
+            )
         return base_threshold + progress * (max_threshold - base_threshold)
 
     def _cap_densify_candidates(self, args, importance_score, metric_mask, all_clones, all_splits):
