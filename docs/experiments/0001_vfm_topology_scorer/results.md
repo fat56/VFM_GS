@@ -1995,3 +1995,47 @@ source .venv/bin/activate && uv run --active python -m vfm_gs.cli.train \
 - 质量仍三项正向：PSNR +0.0406、SSIM +0.0053、LPIPS 改善 -0.0085。虽然低于 `max` 的质量上界，但不再是高增点方案。
 - 按当前 QCGI，`max` 因 ΔGS 进入重惩罚区间而为负，`weighted i0.50` 为正。因此 high-res 后续扩展应优先采用 `top-k25 weighted i0.50` 作为容量受控候选，而不是直接扩展 `max`。
 - 下一步建议先在 high-res `garden` 或 `truck` 上复验 `weighted i0.50`。若第二、第三个场景也保持三项指标正向且 ΔGS < 0.1M，再进入 MipNeRF360/DB/Tandt 全量 high-res 评估。
+
+## 2026-05-10 DINO descriptor top-k25 + weighted i0.50 高分辨率 truck 复验
+
+目标：用 Tandt `truck` 检查 high-res `top-k25 weighted i0.50` 是否能从 bicycle 外推到第二个公开数据集场景。训练使用 `fastgs_big` recipe，并对齐 FastGS big 的 truck 场景超参：`--highfeature_lr 0.04 --grad_abs_thresh 0.0004 --mult 0.7`。输入仍为 `-i images -r -1`；该场景日志没有触发 1.6K 自动缩放提示，说明原图尺寸没有超过 FastGS 的自动缩放阈值。
+
+命令：
+
+```bash
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0001_vfm_topology_dinov2_descriptor_densify_only_topk025_weighted_i050.yaml \
+  -s datasets/tandt_db/tandt/truck \
+  -i images \
+  -m output/0001/descriptor_topk025_weighted_i050_big_truck/vfm_dinov2_descriptor_topk25_weighted_i050_big_30k_r_auto \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0001/vfm_cache/truck_dinov2_vits14 \
+  -r -1 \
+  --highfeature_lr 0.04 \
+  --grad_abs_thresh 0.0004 \
+  --mult 0.7
+```
+
+对照使用已完成的 `output/0001/large_res_fastgs_big_baseline/tandt/truck/fastgs_big_densify100_30k_r_auto`。
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| truck | FastGS big densify100 | 26.1085 | 0.8894 | 0.1394 | 623,129 | 172.65s |
+| truck | DINO descriptor top-k25 weighted i0.50 + FastGS big | 26.0251 | 0.8886 | 0.1374 | 727,663 | 227.00s |
+
+相对 FastGS big：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| -0.0835 | -0.0008 | -0.0019 | +104,534 | +54.34s | -0.2088 |
+
+解读：
+
+- truck 是 high-res `weighted i0.50` 的边界负例：LPIPS 小幅改善 -0.0019，但 PSNR 和 SSIM 分别回落 -0.0835、-0.0008。
+- Gaussian 数量增加 104,534，略高于 0.1M 单场景关注阈值；训练时间增加 54.34s。该容量增长没有换来足够的三项质量收益。
+- 因此 high-res `weighted i0.50` 不能直接扩展到三个公开数据集全量评估。当前更稳妥的下一步是增加第三个 MipNeRF360 场景，例如 `garden`，判断负例是否集中在 Tandt truck；若 garden 也不稳定，应改为扫描 high-res i0.35/i0.70 或引入场景自适应 importance，而不是继续固定 i0.50。
