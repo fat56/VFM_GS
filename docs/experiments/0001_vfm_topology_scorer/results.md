@@ -4145,3 +4145,69 @@ adaptive metric 1.08M quadratic 相对自然 `weighted i0.50`：
 - 该 run 相对固定 metric 6.0 有轻微改善，但没有修复 bonsai 的主要问题：PSNR 仍比 FastGS big 低 0.4109，比自然 `weighted i0.50` 低 0.5406。
 - 最终 Gaussian 数量为 1,014,694，几乎贴近固定 metric 6.0 的 1,012,191，而没有接近 1.08M 目标。这说明当前 `max_metric_thresh=6.0` 对 bonsai 仍然过强，曲线变晚不足以恢复自然 `weighted i0.50` 的有效复制分布。
 - 结论：bonsai 不应继续沿用 `max_metric_thresh=6.0`；下一轮应把最大门槛降到 5.5 或更接近原始 5.0，并保持目标容量接近自然 `weighted i0.50`，判断是否能在少量控点的同时保住 PSNR。
+
+## 2026-05-10 DINO descriptor top-k25 weighted i0.50 + adaptive metric 1.08M quadratic max5.5 高分辨率 bonsai 诊断
+
+目标：检查 bonsai 负例是否只是 `max_metric_thresh=6.0` 过强导致。该 run 保持 1.08M 目标和 `quadratic` 曲线，只把最大 metric 门槛从 6.0 降到 5.5。
+
+训练命令：
+
+```bash
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0001_vfm_topology_dinov2_descriptor_adaptive_metric_budget.yaml \
+  -s datasets/mipnerf360/bonsai \
+  -i images \
+  -m output/0001/descriptor_topk025_weighted_i050_adaptive_metric1080k_quadratic55_big_bonsai/vfm_dinov2_descriptor_topk25_weighted_i050_adaptive_metric1080k_quadratic55_big_30k_r_auto \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0001/vfm_cache/bonsai_dinov2_vits14 \
+  -r -1 \
+  --dense 0.001 \
+  --grad_abs_thresh 0.0002 \
+  --densify_budget_count 1080000 \
+  --densify_budget_curve quadratic \
+  --densify_budget_start_ratio 0.90 \
+  --densify_budget_max_metric_thresh 5.5
+```
+
+渲染与指标命令：
+
+```bash
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.render \
+  -m output/0001/descriptor_topk025_weighted_i050_adaptive_metric1080k_quadratic55_big_bonsai/vfm_dinov2_descriptor_topk25_weighted_i050_adaptive_metric1080k_quadratic55_big_30k_r_auto \
+  --skip_train
+
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.metrics \
+  -m output/0001/descriptor_topk025_weighted_i050_adaptive_metric1080k_quadratic55_big_bonsai/vfm_dinov2_descriptor_topk25_weighted_i050_adaptive_metric1080k_quadratic55_big_30k_r_auto
+```
+
+bonsai 对照：
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| bonsai | FastGS big densify100 | 32.9863 | 0.9512 | 0.1600 | 842,636 | 212.97s |
+| bonsai | DINO descriptor top-k25 weighted i0.50 + FastGS big | 33.1160 | 0.9549 | 0.1560 | 1,094,114 | 265.81s |
+| bonsai | adaptive metric 1.08M quadratic max6.0 | 32.5754 | 0.9529 | 0.1578 | 1,014,694 | 249.06s |
+| bonsai | adaptive metric 1.08M quadratic max5.5 | 32.2328 | 0.9494 | 0.1586 | 1,051,932 | 251.98s |
+
+adaptive metric 1.08M quadratic max5.5 相对 FastGS big：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| -0.7535 | -0.0018 | -0.0014 | +209,296 | +39.02s | -1.3196 |
+
+adaptive metric 1.08M quadratic max5.5 相对 max6.0：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| -0.3426 | -0.0035 | +0.0007 | +37,238 | +2.92s | -0.4526 |
+
+解读：
+
+- 降低最大门槛到 5.5 后，Gaussian 数量从 1,014,694 增至 1,051,932，但 PSNR/SSIM/LPIPS 全部劣于 max6.0；相对 FastGS big 的 QCGI 下降到 -1.3196。
+- 这说明 bonsai 的负例不是简单的“门槛太高导致复制不足”。在该场景上，连续 metric 前置门槛会改变有效 densification 分布；放松门槛只增加点数，不恢复质量。
+- 结论：bonsai 上停止扫描 5.5 到 6.0 的相邻 metric 门槛。后续应回到自然 `weighted i0.50` 作为 bonsai 的高质量正例，或引入 Depth Anything 几何/边界 residual，而不是继续用单一 metric 阈值控容量。
