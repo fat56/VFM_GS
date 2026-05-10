@@ -3016,3 +3016,75 @@ post-densify staged target 相对 `weighted i0.50`：
 - 新增开关生效：iteration 24000 触发了 `Post-densify staged target Gaussian prune`，最终点数 1.18M，且没有再执行 final target prune。
 - 相比 late target final-only 的 22.4721 / 0.6603 / 0.3091，post-densify staged target 明显恢复到 26.5097 / 0.7595 / 0.2646，说明训练结束前保留 6k iteration 恢复确实有帮助。
 - 但 24k 时仍然是从 3.32M 一次性裁到 1.20M，质量仍显著低于 FastGS big 和自然 i0.50。下一步不应继续把裁剪推得更晚，而应在 densification 窗口内就限制容量增长，或把 staged target start 提前但 target 设得更高、更平滑，避免单次删除 2M 级 Gaussians。
+
+## 2026-05-10 DINO descriptor top-k25 weighted i0.50 + staged target 1.45M 高分辨率 stump 诊断
+
+目标：把容量反馈前移到 densification 窗口内，并放宽 target 到 1.45M，尝试避免 1.18M 方案的大幅质量破坏。本轮从 iteration 9000 开始，每 3000 step 执行 staged target，stage 上限为 `1.02 * 1.45M = 1.479M`，并保留 post-densify staged target 开关。
+
+命令：
+
+```bash
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0001_vfm_topology_dinov2_descriptor_densify_only_topk025_weighted_i050.yaml \
+  -s datasets/mipnerf360/stump \
+  -i images \
+  -m output/0001/descriptor_topk025_weighted_i050_staged1450k_big_stump/vfm_dinov2_descriptor_topk25_weighted_i050_staged1450k_big_30k_r_auto \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0001/vfm_cache/stump_dinov2_vits14 \
+  -r -1 \
+  --dense 0.01 \
+  --grad_abs_thresh 0.00015 \
+  --target_gaussian_count 1450000 \
+  --target_gaussian_staged \
+  --target_gaussian_stage_margin 1.02 \
+  --target_gaussian_stage_start 9000 \
+  --target_gaussian_stage_interval 3000 \
+  --target_gaussian_stage_after_densify \
+  --target_gaussian_prune_order lowest_score
+```
+
+训练日志确认沿用 FastGS 原始大图规则：
+
+```text
+[ INFO ] Encountered quite large input images (>1.6K pixels width), rescaling to 1.6K.
+```
+
+实际裁剪轨迹：
+
+| iteration | 裁剪前 | 裁剪后 | 删除数量 |
+|---:|---:|---:|---:|
+| 9000 | 3,703,938 | 1,479,000 | 2,224,938 |
+| 12000 | 2,988,769 | 1,479,000 | 1,509,769 |
+| 15000 | 2,929,055 | 1,479,000 | 1,450,055 |
+| final | 1,262,974 | 1,262,974 | 0 |
+
+stump 对照：
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| stump | FastGS big densify100 | 27.1310 | 0.7862 | 0.2406 | 1,062,281 | 189.72s |
+| stump | DINO descriptor top-k25 weighted i0.50 + FastGS big | 27.2233 | 0.7903 | 0.2317 | 1,196,350 | 283.46s |
+| stump | DINO descriptor top-k25 weighted i0.50 + staged target 1.45M | 26.5426 | 0.7636 | 0.2562 | 1,262,974 | 288.31s |
+
+staged target 1.45M 相对 FastGS big：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| -0.5884 | -0.0226 | +0.0156 | +200,693 | +98.59s | -1.6212 |
+
+staged target 1.45M 相对 `weighted i0.50`：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| -0.6807 | -0.0268 | +0.0245 | +66,624 | +4.85s | -1.4051 |
+
+解读：
+
+- 1.45M target 相比 1.18M post-densify 稍好，但仍明显低于 FastGS big 和自然 i0.50。
+- 即使 target 放宽到 1.45M，iteration 9000 首次仍需删除 2.22M Gaussians，说明 high-res stump 的 descriptor densification 在早期已经出现 3M 级容量激增。
+- 结论：`prune_to_target` 系列已经不适合作为 stump 的主容量解法。下一步应转向生成侧控制：按当前点数动态提高 densification 门槛、降低 `dense`、缩短 descriptor 参与窗口，或对 clone/split 分支分别加容量反馈。
