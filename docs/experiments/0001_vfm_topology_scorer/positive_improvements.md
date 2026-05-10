@@ -234,6 +234,8 @@ QCGI = quality_gain - gs_penalty
 | high-res MipNeRF360 `room` descriptor weighted i0.50 vs FastGS big | +0.0596 | +0.0025 | -0.0059 | +45,129 | `0.01M_to_0.10M` | +0.0958 | 大分辨率室内场景 SSIM/LPIPS 收益明确，增点低于 0.1M |
 | high-res MipNeRF360 平均 descriptor weighted i0.50 vs FastGS big | +0.0615 | +0.0020 | -0.0035 | +56,312 | `0.01M_to_0.10M` | +0.0633 | 9 场景数据集均值正向，证明 1.6K 自动缩放口径下 VFM descriptor residual 仍有效 |
 | high-res MipNeRF360 `stump` descriptor weighted i0.50 + densify metric 6.0 vs FastGS big | +0.0493 | +0.0026 | -0.0066 | +82,238 | `0.01M_to_0.10M` | +0.0513 | 连续前置门槛保留三项质量收益，同时把自然 i0.50 的增点从 +134,069 降到 +82,238 |
+| high-res MipNeRF360 `stump` descriptor weighted i0.50 + adaptive metric 1.15M sqrt vs FastGS big | +0.0819 | +0.0038 | -0.0082 | +101,424 | `gte_0.10M` | +0.0935 | 自适应曲线门槛比固定 metric 6.0 质量更高，增点刚过 0.10M，需要跨场景复验 |
+| high-res MipNeRF360 `stump` adaptive metric 1.15M sqrt vs fixed metric 6.0 | +0.0326 | +0.0013 | -0.0016 | +19,186 | `0.01M_to_0.10M` | +0.0465 | 相对固定绝对门槛三项质量正向且训练更快，是当前 stump 最优容量收益点 |
 
 `scripts/summarize_0001_cross_dataset_selector.py` 已把 `quality_gain`、`quality_gain_per_10k_gs`、`gs_growth_band`、`gs_penalty` 和 `qcgi` 写入 comparison 表，并新增 `qcgi_pick_method`。展示时应优先使用按数据集拆分的 `scripts/summarize_0001_dataset_policies.py` 产物，尤其是 `dataset_averages.csv` 和 `dataset_comparisons.csv`。`scripts/summarize_0001_weighted_candidates.py` 也已把 QCGI 接入 MipNeRF360 weighted 档位选择；严格 `quality_pick` 均值为 28.8641 / 0.8665 / 0.1392、257,326 个 Gaussians，`QCGI pick` 均值为 28.8641 / 0.8667 / 0.1388、255,822 个 Gaussians。下一阶段可以先继续把 QCGI 作为离线选择准则；当更多数据集验证稳定后，再把 QCGI 或其分档信号接入 density/prune 强度的自适应控制。
 

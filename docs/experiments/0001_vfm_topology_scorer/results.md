@@ -3988,3 +3988,82 @@ source .venv/bin/activate && uv run --active python -m vfm_gs.cli.metrics \
 - `compileall`、训练、渲染和指标计算均通过，说明新增参数可以从 YAML/CLI 进入训练，并参与 densification 前置门槛计算。
 - 620-step 指标只验证链路和输出完整性，不比较方案优劣。正式质量判断仍以 30,000 iteration、test split render 后的 PSNR/SSIM/LPIPS、Gaussian 数量和训练时间为准。
 - 下一步优先在 high-res stump 上用该机制做正式诊断，目标容量设在 FastGS big baseline 和自然 `weighted i0.50` 之间，判断连续曲线是否能保留 `metric6` 的正向收益，同时降低固定阈值跨场景失效风险。
+
+## 2026-05-10 DINO descriptor top-k25 weighted i0.50 + adaptive metric 1.15M sqrt 高分辨率 stump 诊断
+
+目标：在 stump 上验证自适应前置门槛是否优于固定 `densify_metric_thresh=6.0`。该 run 保持 high-res FastGS big 场景超参，使用 `densify_budget_count=1150000`、`densify_budget_curve=sqrt`、`densify_budget_start_ratio=0.90`、`densify_budget_max_metric_thresh=6.0`。目标容量设在 FastGS big baseline 的 1,062,281 和自然 `weighted i0.50` 的 1,196,350 之间，允许小幅正向增点，但抑制 0.1M 以上的低效增长。
+
+训练命令：
+
+```bash
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0001_vfm_topology_dinov2_descriptor_adaptive_metric_budget.yaml \
+  -s datasets/mipnerf360/stump \
+  -i images \
+  -m output/0001/descriptor_topk025_weighted_i050_adaptive_metric1150k_sqrt_big_stump/vfm_dinov2_descriptor_topk25_weighted_i050_adaptive_metric1150k_sqrt_big_30k_r_auto \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0001/vfm_cache/stump_dinov2_vits14 \
+  -r -1 \
+  --dense 0.004 \
+  --grad_abs_thresh 0.001 \
+  --densify_budget_count 1150000 \
+  --densify_budget_curve sqrt \
+  --densify_budget_start_ratio 0.90 \
+  --densify_budget_max_metric_thresh 6.0
+```
+
+训练和渲染日志均确认沿用 FastGS 原始大图规则：
+
+```text
+[ INFO ] Encountered quite large input images (>1.6K pixels width), rescaling to 1.6K.
+```
+
+渲染与指标命令：
+
+```bash
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.render \
+  -m output/0001/descriptor_topk025_weighted_i050_adaptive_metric1150k_sqrt_big_stump/vfm_dinov2_descriptor_topk25_weighted_i050_adaptive_metric1150k_sqrt_big_30k_r_auto \
+  --skip_train
+
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.metrics \
+  -m output/0001/descriptor_topk025_weighted_i050_adaptive_metric1150k_sqrt_big_stump/vfm_dinov2_descriptor_topk25_weighted_i050_adaptive_metric1150k_sqrt_big_30k_r_auto
+```
+
+stump 对照：
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| stump | FastGS big densify100 | 27.1310 | 0.7862 | 0.2406 | 1,062,281 | 189.72s |
+| stump | DINO descriptor top-k25 weighted i0.50 + FastGS big | 27.2233 | 0.7903 | 0.2317 | 1,196,350 | 283.46s |
+| stump | DINO descriptor top-k25 weighted i0.50 + densify metric 6.0 | 27.1803 | 0.7887 | 0.2340 | 1,144,519 | 221.76s |
+| stump | DINO descriptor top-k25 weighted i0.50 + adaptive metric 1.15M sqrt | 27.2129 | 0.7900 | 0.2324 | 1,163,705 | 217.44s |
+
+adaptive metric 1.15M sqrt 相对 FastGS big：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| +0.0819 | +0.0038 | -0.0082 | +101,424 | +27.71s | +0.0935 |
+
+adaptive metric 1.15M sqrt 相对固定 `densify_metric_thresh=6.0`：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| +0.0326 | +0.0013 | -0.0016 | +19,186 | -4.33s | +0.0465 |
+
+adaptive metric 1.15M sqrt 相对自然 `weighted i0.50`：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| -0.0104 | -0.0003 | +0.0007 | -32,645 | -66.02s | -0.0208 |
+
+解读：
+
+- 自适应 1.15M sqrt 保持了相对 FastGS big 的三项质量正向，且 QCGI 为 +0.0935，高于固定 metric6 的 +0.0513。
+- 相对固定 `densify_metric_thresh=6.0`，该方案多 19,186 个 Gaussians，但 PSNR/SSIM/LPIPS 全部改善，训练时间还少 4.33s。说明曲线门槛比固定绝对门槛在 stump 上更合理。
+- 相对自然 `weighted i0.50`，质量几乎持平但略低，少 32,645 个 Gaussians、训练少 66.02s。它没有达到自然 i0.50 的最高质量，但给出了更好的质量-容量折中。
+- 需要注意，ΔGaussian 相对 FastGS big 为 +101,424，刚刚超过 0.10M 重惩罚线；该结果可记录为正向容量收益点，但不应直接作为跨场景默认。下一步应在 bonsai 上用同机制做 matched 复验，优先尝试 `quadratic` 或更高目标容量，避免重演固定 metric6 对 PSNR 的强损伤。
