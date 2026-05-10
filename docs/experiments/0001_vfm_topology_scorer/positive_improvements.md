@@ -50,7 +50,7 @@
 
 这个结果和上面的 `VFM_GS-DINO-Weighted` 策略线作用不同：descriptor 线不是当前所有数据集的最高指标，但它避免了“效果不好回退 FastGS”的争议。MipNeRF360 是强证据，Tandt 是关键正例，因为此前 token-edge weighted 在 Tandt 低于 baseline；DB 只算弱正向，`playroom` 单场景仍回落。
 
-高分辨率同口径探针也给出质量正向信号。MipNeRF360 `bicycle` 使用 `fastgs_big` recipe、`-i images -r -1`，训练日志确认沿用 FastGS 的 1.6K 自动缩放规则；descriptor top-k25 max 相对 FastGS big 从 25.2532 / 0.7554 / 0.2446 提升到 25.3279 / 0.7646 / 0.2277，三项指标正向。但 Gaussian 数量从 1,560,079 增到 1,809,292，ΔGS 为 +249,213，超过单场景 0.1M 关注阈值。因此它只作为“质量可迁移到 high-res”的证据，不作为预算效率结论；下一步 high-res 应测试 weighted/预算受控版本。
+高分辨率同口径探针也给出质量正向信号。MipNeRF360 `bicycle` 使用 `fastgs_big` recipe、`-i images -r -1`，训练日志确认沿用 FastGS 的 1.6K 自动缩放规则。descriptor top-k25 max 相对 FastGS big 从 25.2532 / 0.7554 / 0.2446 提升到 25.3279 / 0.7646 / 0.2277，三项指标正向，但 ΔGS 为 +249,213，超过单场景 0.1M 关注阈值。随后 high-res `top-k25 weighted i0.50` 取得 25.2937 / 0.7606 / 0.2361，仍三项正向，同时 ΔGS 降到 +46,111。它比 max 少 203,102 个 Gaussians，是当前 high-res 更合理的容量受控候选。
 
 ## 总览
 
@@ -66,6 +66,7 @@
 | 无回退 VFM 证据 | DINO descriptor top-k25 max | 同上 | DB 2 场景 | 30.6022 | +0.0085 | 0.9369 | +0.0002 | 0.0620 | -0.0011 | 72,468 | +9,189 | 148.18s | 数据集均值弱正向，playroom 单场景负向 |
 | 无回退 VFM 证据 | DINO descriptor top-k25 max | 同上 | Tandt 2 场景 | 25.8759 | +0.1004 | 0.9363 | +0.0017 | 0.0554 | -0.0016 | 41,744 | +2,081 | 172.89s | 两场景全部正向，修复此前 token-edge Tandt 负向问题 |
 | 高分辨率探针 | DINO descriptor top-k25 max + FastGS big | 同上，`-i images -r -1`，1.6K 自动缩放 | MipNeRF360 bicycle | 25.3279 | +0.0748 | 0.7646 | +0.0093 | 0.2277 | -0.0169 | 1,809,292 | +249,213 | 291.88s | 质量正向但容量过高，只作为迁移证据 |
+| 高分辨率容量受控候选 | DINO descriptor top-k25 weighted i0.50 + FastGS big | `dinov2_descriptor_cosine + top-k25 + weighted i0.50 + vfm_weight=0.0`，1.6K 自动缩放 | MipNeRF360 bicycle | 25.2937 | +0.0406 | 0.7606 | +0.0053 | 0.2361 | -0.0085 | 1,606,190 | +46,111 | 268.87s | 三项质量正向且 ΔGS < 0.1M，适合 high-res 扩场景复验 |
 | proxy 控制组 | cached edge v1 | `cached_edge_l1 + staged target ~= 1.42x baseline` | MipNeRF360 9 场景 | 28.7213 | +0.0686 | 0.8579 | +0.0028 | 0.1551 | -0.0068 | 215,869 | +42,528 | 139.33s | 确定性边缘代理，适合作为 v1 正向控制组 |
 | 质量候选 | DINO token-edge i0.50 | `dinov2_token_edge_l1 + top-k25 + importance_weight=0.50` | MipNeRF360 9 场景 | 28.8577 | +0.2051 | 0.8666 | +0.0115 | 0.1385 | -0.0234 | 263,572 | +90,231 | 140.47s | 当前全场景质量最强，但预算偏高 |
 | 预算效率候选 | weighted i0.50 | `top-k25 + importance_mode=weighted + importance_weight=0.50` | MipNeRF360 9 场景 | 28.8505 | +0.1978 | 0.8660 | +0.0109 | 0.1397 | -0.0223 | 254,736 | +81,395 | 137.60s | 相比普通 i0.50 少 8,836 点、少 2.87s，质量只小幅回落 |

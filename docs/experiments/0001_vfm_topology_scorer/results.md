@@ -1939,3 +1939,59 @@ source .venv/bin/activate && uv run --active python -m vfm_gs.cli.train \
 - 显存没有形成阻塞：训练阶段观测约 9.5GB，低于 24GB 上限；DINO-S/224 descriptor 路径可在 1.6K 自动缩放口径下运行。
 - 但 Gaussian 增长达到 +249,213，明显超过 0.1M 的单场景关注阈值；训练时间也多 56.94s。因此这不是可直接扩全场景的默认方案，而是“质量可迁移、容量待控制”的探针。
 - 下一步不应立即扩大到全 MipNeRF360；应先在 bicycle 跑更保守的 high-res descriptor weighted 或预算/频率控制版本，目标是在保持 PSNR/SSIM/LPIPS 正向的同时把 ΔGS 压回 0.1M 以内。
+
+## 2026-05-10 DINO descriptor top-k25 + weighted i0.50 高分辨率 bicycle
+
+目标：在上一个 high-res `top-k25 max` 质量正向但 ΔGS 过高的基础上，测试 `importance_mode=weighted + importance_weight=0.50` 能否保留质量收益并把容量增长压回 0.1M 以内。训练仍使用 `fastgs_big` recipe、`-i images -r -1` 和同一个 DINO-S/224 descriptor cache。
+
+命令：
+
+```bash
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0001_vfm_topology_dinov2_descriptor_densify_only_topk025_weighted_i050.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0001/descriptor_topk025_weighted_i050_big_bicycle/vfm_dinov2_descriptor_topk25_weighted_i050_big_30k_r_auto \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0001/vfm_cache/bicycle_dinov2_vits14 \
+  -r -1
+```
+
+训练日志同样确认沿用 FastGS 原始大图规则：
+
+```text
+[ INFO ] Encountered quite large input images (>1.6K pixels width), rescaling to 1.6K.
+```
+
+结果：
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| bicycle | FastGS big densify100 | 25.2532 | 0.7554 | 0.2446 | 1,560,079 | 234.94s |
+| bicycle | DINO descriptor top-k25 max + FastGS big | 25.3279 | 0.7646 | 0.2277 | 1,809,292 | 291.88s |
+| bicycle | DINO descriptor top-k25 weighted i0.50 + FastGS big | 25.2937 | 0.7606 | 0.2361 | 1,606,190 | 268.87s |
+
+相对 FastGS big：
+
+| 方法 | ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---|---:|---:|---:|---:|---:|---:|
+| top-k25 max | +0.0748 | +0.0093 | -0.0169 | +249,213 | +56.94s | -0.3525 |
+| top-k25 weighted i0.50 | +0.0406 | +0.0053 | -0.0085 | +46,111 | +33.93s | +0.1422 |
+
+相对 top-k25 max：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 |
+|---:|---:|---:|---:|---:|
+| -0.0342 | -0.0040 | +0.0084 | -203,102 | -23.01s |
+
+解读：
+
+- `weighted i0.50` 达成当前 high-res 容量目标：相对 FastGS big 只多 46,111 个 Gaussians，低于 0.1M 单场景关注阈值；相对 `max` 少 203,102 个点。
+- 质量仍三项正向：PSNR +0.0406、SSIM +0.0053、LPIPS 改善 -0.0085。虽然低于 `max` 的质量上界，但不再是高增点方案。
+- 按当前 QCGI，`max` 因 ΔGS 进入重惩罚区间而为负，`weighted i0.50` 为正。因此 high-res 后续扩展应优先采用 `top-k25 weighted i0.50` 作为容量受控候选，而不是直接扩展 `max`。
+- 下一步建议先在 high-res `garden` 或 `truck` 上复验 `weighted i0.50`。若第二、第三个场景也保持三项指标正向且 ΔGS < 0.1M，再进入 MipNeRF360/DB/Tandt 全量 high-res 评估。
