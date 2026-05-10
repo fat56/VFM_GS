@@ -3863,3 +3863,74 @@ densify metric 5.5 相对 `densify_metric_thresh=6.0`：
 - 相对自然 `weighted i0.50`，5.5 几乎恢复了同等点数，但质量没有恢复：PSNR 低 -0.1021，SSIM 低 -0.0005，LPIPS 基本持平但略差。
 - 相对 6.0，5.5 多 49,218 个 Gaussians，却降低 -0.0592 PSNR；综合 QCGI 为负。因此 5.5 不进入正向改进表。
 - 当前 high-res stump 的连续门槛结论收束为：`densify_metric_thresh=6.0` 是比 5.5 更合理的容量收益点；不继续做 5.0 到 6.0 之间的长网格扫描。下一步应转向更有信息量的先验或控制方式，例如 Depth Anything 几何/边界 residual，或按训练过程信号自适应调整 VFM densification 强度。
+
+## 2026-05-10 DINO descriptor top-k25 weighted i0.50 + densify metric 6.0 高分辨率 bonsai 复验
+
+目标：验证 stump 上正向的 `densify_metric_thresh=6.0` 是否能迁移到另一个 high-res MipNeRF360 场景。选择 bonsai 的原因是自然 `weighted i0.50` 相对 FastGS big 质量正向，但新增 Gaussian 达到 +251,478，属于需要容量收益约束的典型样本。
+
+先说明一个无效诊断：第一次 bonsai metric6 误用了 stump 的场景超参 `--dense 0.004 --grad_abs_thresh 0.001`，而 bonsai 的同口径 baseline 和自然 `weighted i0.50` 使用的是 `dense=0.001`、`grad_abs_thresh=0.0002`。该 run 最终只有 331,485 个 Gaussians，PSNR/SSIM/LPIPS 为 31.9126 / 0.9439 / 0.1875，明显低于 FastGS big。这个结果只说明场景超参不能混用，不参与方法结论。
+
+有效复验命令如下：
+
+```bash
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0001_vfm_topology_dinov2_descriptor_densify_only_topk025_weighted_i050.yaml \
+  -s datasets/mipnerf360/bonsai \
+  -i images \
+  -m output/0001/descriptor_topk025_weighted_i050_metric6_matched_big_bonsai/vfm_dinov2_descriptor_topk25_weighted_i050_metric6_matched_big_30k_r_auto \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0001/vfm_cache/bonsai_dinov2_vits14 \
+  -r -1 \
+  --dense 0.001 \
+  --grad_abs_thresh 0.0002 \
+  --densify_metric_thresh 6.0
+```
+
+训练和渲染日志均确认沿用 FastGS 原始大图规则：
+
+```text
+[ INFO ] Encountered quite large input images (>1.6K pixels width), rescaling to 1.6K.
+```
+
+渲染与指标命令：
+
+```bash
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.render \
+  -m output/0001/descriptor_topk025_weighted_i050_metric6_matched_big_bonsai/vfm_dinov2_descriptor_topk25_weighted_i050_metric6_matched_big_30k_r_auto \
+  --skip_train
+
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.metrics \
+  -m output/0001/descriptor_topk025_weighted_i050_metric6_matched_big_bonsai/vfm_dinov2_descriptor_topk25_weighted_i050_metric6_matched_big_30k_r_auto
+```
+
+bonsai 对照：
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| bonsai | FastGS big densify100 | 32.9863 | 0.9512 | 0.1600 | 842,636 | 212.97s |
+| bonsai | DINO descriptor top-k25 weighted i0.50 + FastGS big | 33.1160 | 0.9549 | 0.1560 | 1,094,114 | 265.81s |
+| bonsai | DINO descriptor top-k25 weighted i0.50 + densify metric 6.0 matched | 32.5709 | 0.9525 | 0.1587 | 1,012,191 | 245.90s |
+
+matched densify metric 6.0 相对 FastGS big：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| -0.4154 | +0.0013 | -0.0013 | +169,555 | +32.93s | -0.7601 |
+
+matched densify metric 6.0 相对自然 `weighted i0.50`：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| -0.5450 | -0.0023 | +0.0027 | -81,923 | -19.91s | -0.6054 |
+
+解读：
+
+- matched metric6 确实减少了自然 `weighted i0.50` 的点数：从 1,094,114 降到 1,012,191，少 81,923 个 Gaussians。
+- 质量损失过大：相对自然 `weighted i0.50`，PSNR 低 -0.5450；相对 FastGS big，PSNR 也低 -0.4154。虽然 SSIM 和 LPIPS 相对 FastGS big 仍小幅正向，但 QCGI 为 -0.7601，不是可展示的正向容量收益。
+- 与 stump 的 6.0 正向结果形成对照：同一个绝对 `densify_metric_thresh=6.0` 在 stump 上能保住三项质量并把增点压到 +82,238，但在 bonsai 上会明显伤害 PSNR。这说明固定绝对阈值不是跨场景容量控制解法。
+- 下一步不把 `densify_metric_thresh=6.0` 当作全局默认。更合理的方向是场景自适应前置门槛：根据 baseline/自然 VFM 的早期 Gaussian 增长轨迹、目标 ΔGS 分档或训练期质量-容量信号，自动调整 densification 强度；或转向 Depth Anything 几何/边界 residual，让新增点的保留由结构证据决定，而不是靠固定阈值。
