@@ -193,6 +193,7 @@ DB 的 DINO weighted 多档复验则给出相反信号。i0.50 平均为 30.3603
 - high-res stump `weighted i0.50 + soft budget 1.15M` 探针完成。结果为 26.6930 / 0.7743 / 0.2376、2,247,258 个 Gaussians、训练 341.23s；相对 FastGS big 为 -0.4379 PSNR、-0.0119 SSIM、LPIPS -0.0030，同时多 1,184,977 个点，QCGI 为 -5.1007。现有 `vfm_importance_budget_count` 只衰减 VFM 路径，无法约束 RGB/FastGS densification 轨迹；后续需要更硬的训练期点数反馈或阶段性 prune/recovery。
 - high-res stump `weighted i0.50 + staged target 1.15M` 探针完成。结果为 25.9591 / 0.7401 / 0.2799、1,150,000 个 Gaussians、训练 303.26s；相对 FastGS big 为 -1.1719 PSNR、-0.0460 SSIM、LPIPS +0.0393，同时多 87,719 个点，QCGI 为 -2.3764。它成功控制最终点数，但 iteration 9000 首次从 3.70M 直接裁到 1.17M，随后连续大批量 staged prune，质量被严重破坏。结论是“硬反馈有效控制容量，但不能早期大幅裁剪”；下一步应改为更晚启动、更接近自然点数的轻量 target，或 staged prune 后立即恢复。
 - high-res stump `weighted i0.50 + late target 1.18M` 诊断完成。结果为 22.4721 / 0.6603 / 0.3091、1,180,000 个 Gaussians、训练 425.10s；相对 FastGS big 为 -4.6589 PSNR、-0.1258 SSIM、LPIPS +0.0685。该 run 暴露了实现限制：staged target 只挂在 densification 分支内，`stage_start=24000` 晚于 `densify_until_iter=15000` 时不会触发，最终变成一次性从 3.32M 裁到 1.18M。结论是 final target-prune 已明确负向；下一步先增加默认关闭的 post-densify staged target，再跑真正的 late feedback。
+- high-res stump `weighted i0.50 + post-densify staged target 1.18M` 诊断完成。结果为 26.5097 / 0.7595 / 0.2646、1,176,624 个 Gaussians、训练 380.42s；相对 FastGS big 为 -0.6213 PSNR、-0.0267 SSIM、LPIPS +0.0240。新增 `target_gaussian_stage_after_densify` 生效，iteration 24000 从 3.32M 裁到 1.20M，最终不再触发 final prune。相比 late target final-only 有明显恢复，但仍显著低于 baseline，说明“训练结束前留恢复窗口”有用，但单次删除 2M 级 Gaussians 仍破坏结构。下一步应在 densification 窗口内限制增长，或采用更高 target 的早期平滑反馈。
 
 ## 下一版计划
 
