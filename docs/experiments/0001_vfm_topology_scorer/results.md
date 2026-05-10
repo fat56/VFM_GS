@@ -2334,3 +2334,52 @@ source .venv/bin/activate && uv run --active python -m vfm_gs.cli.train \
 - bonsai 是 high-res `weighted i0.50` 的第七个 MipNeRF360 三项质量正例，说明 descriptor residual 在该场景上仍能提升测试集渲染质量。
 - 但新增 251,478 个 Gaussians，远高于 0.1M 单场景关注阈值；按当前 QCGI 计算，容量惩罚明显超过质量收益。
 - 因此 bonsai 应记录为“质量正向但容量过强”的边界样本，不放入正向效率主表。后续更适合对 bonsai/stump 扫描 `i0.35` 或加入自适应容量约束，而不是直接扩大同一档位。
+
+## 2026-05-10 DINO descriptor top-k25 + weighted i0.50 高分辨率 flowers 复验
+
+目标：补 MipNeRF360 植被/细碎纹理场景，检查 high-res `top-k25 weighted i0.50` 在低 PSNR、高感知难度的 flowers 上是否能延续低分辨率 descriptor 正例。训练使用 `fastgs_big` recipe，并对齐 FastGS big 的 flowers 场景超参：`--dense 0.005 --grad_abs_thresh 0.001`。输入为 `-i images -r -1`，cache 使用 `output/0001/vfm_cache/flowers_dinov2_vits14`。
+
+命令：
+
+```bash
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0001_vfm_topology_dinov2_descriptor_densify_only_topk025_weighted_i050.yaml \
+  -s datasets/mipnerf360/flowers \
+  -i images \
+  -m output/0001/descriptor_topk025_weighted_i050_big_flowers/vfm_dinov2_descriptor_topk25_weighted_i050_big_30k_r_auto \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0001/vfm_cache/flowers_dinov2_vits14 \
+  -r -1 \
+  --dense 0.005 \
+  --grad_abs_thresh 0.001
+```
+
+训练日志确认沿用 FastGS 原始大图规则：
+
+```text
+[ INFO ] Encountered quite large input images (>1.6K pixels width), rescaling to 1.6K.
+```
+
+对照使用已完成的 `output/0001/large_res_fastgs_big_baseline/mipnerf360/flowers/fastgs_big_densify100_30k_r_auto`。
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| flowers | FastGS big densify100 | 21.6166 | 0.6017 | 0.3403 | 1,140,260 | 207.76s |
+| flowers | DINO descriptor top-k25 weighted i0.50 + FastGS big | 21.6293 | 0.6022 | 0.3412 | 1,091,531 | 278.68s |
+
+相对 FastGS big：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| +0.0127 | +0.0004 | +0.0008 | -48,729 | +70.92s | +0.0172 |
+
+解读：
+
+- flowers 不是三项质量正例：PSNR 和 SSIM 小幅提升，LPIPS 小幅变差。
+- Gaussian 数量减少 48,729，因此 QCGI 仍为正；但训练时间增加 70.92s，说明 online descriptor 成本在该场景没有换来足够清晰的感知收益。
+- 该结果应作为 high-res `weighted i0.50` 的混合样本保留，不放入正向效率主表。后续若要提升 flowers，优先尝试更高 descriptor 强度或 quality-first `max/i0.70`，而不是继续降低容量。
