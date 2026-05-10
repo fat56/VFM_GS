@@ -2878,3 +2878,71 @@ staged target 相对 `weighted i0.50`：
 - staged target 成功把最终点数压到 1.15M，但质量严重下降，明显低于 FastGS big 和自然结束的 i0.50。
 - 关键问题不是最终小幅裁剪，而是 iteration 9000 首次从 3.70M 直接裁到 1.17M，随后在 9500-14500 间连续大批量裁剪。这会破坏训练中期已经形成的结构，并且后续 30k 内没有恢复回来。
 - 该结果把容量控制方向收窄为：不要早期大幅 staged prune；下一轮应测试更晚启动、更小步的 target 反馈，例如接近 i0.50 自然点数的 1.18M late target，或 staged prune 后立即加短恢复阶段。
+
+## 2026-05-10 DINO descriptor top-k25 weighted i0.50 + late target 1.18M 高分辨率 stump 诊断
+
+目标：尝试更晚启动的容量反馈，避免上一轮 iteration 9000 的大幅 staged prune。本轮设置 `target_gaussian_count=1180000`、`target_gaussian_stage_start=24000`、`target_gaussian_stage_interval=3000`。训练参数仍对齐 high-res stump 的 `fastgs_big` recipe。
+
+命令：
+
+```bash
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0001_vfm_topology_dinov2_descriptor_densify_only_topk025_weighted_i050.yaml \
+  -s datasets/mipnerf360/stump \
+  -i images \
+  -m output/0001/descriptor_topk025_weighted_i050_late1180k_big_stump/vfm_dinov2_descriptor_topk25_weighted_i050_late1180k_big_30k_r_auto \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0001/vfm_cache/stump_dinov2_vits14 \
+  -r -1 \
+  --dense 0.01 \
+  --grad_abs_thresh 0.00015 \
+  --target_gaussian_count 1180000 \
+  --target_gaussian_staged \
+  --target_gaussian_stage_margin 1.02 \
+  --target_gaussian_stage_start 24000 \
+  --target_gaussian_stage_interval 3000 \
+  --target_gaussian_prune_order lowest_score
+```
+
+训练日志确认沿用 FastGS 原始大图规则：
+
+```text
+[ INFO ] Encountered quite large input images (>1.6K pixels width), rescaling to 1.6K.
+```
+
+实际裁剪轨迹：
+
+| 阶段 | 裁剪前 | 裁剪后 | 删除数量 |
+|---|---:|---:|---:|
+| final target prune | 3,322,015 | 1,180,000 | 2,142,015 |
+
+stump 对照：
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| stump | FastGS big densify100 | 27.1310 | 0.7862 | 0.2406 | 1,062,281 | 189.72s |
+| stump | DINO descriptor top-k25 weighted i0.50 + FastGS big | 27.2233 | 0.7903 | 0.2317 | 1,196,350 | 283.46s |
+| stump | DINO descriptor top-k25 weighted i0.50 + late target 1.18M | 22.4721 | 0.6603 | 0.3091 | 1,180,000 | 425.10s |
+
+late target 相对 FastGS big：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| -4.6589 | -0.1258 | +0.0685 | +117,719 | +235.38s | -7.6888 |
+
+late target 相对 `weighted i0.50`：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| -4.7512 | -0.1300 | +0.0774 | -16,350 | +141.64s | -7.7379 |
+
+解读：
+
+- 这轮没有真正执行 late staged prune。原因是当前实现把 staged target 放在 densification 分支内部；当 `target_gaussian_stage_start=24000` 晚于 `densify_until_iter=15000` 时，staged target 不会触发。
+- 最终实际变成一次性 target prune，从 3.32M 直接裁到 1.18M，质量比上一轮 1.15M staged target 更差。
+- 结论：final target-prune 已明确不适合 high-res descriptor 容量控制；需要先修正 staged target 触发位置，允许其在 densification 结束后继续运行，才能验证真正的后期轻量反馈。

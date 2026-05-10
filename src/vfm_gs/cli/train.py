@@ -85,6 +85,16 @@ def _staged_target_gaussian_count(opt):
     return max(target_count, int(round(target_count * margin)))
 
 
+def _should_run_staged_target_prune(opt, iteration, staged_target_count):
+    if not bool(getattr(opt, "target_gaussian_staged", False)):
+        return False
+    if staged_target_count <= 0:
+        return False
+    stage_start = int(getattr(opt, "target_gaussian_stage_start", 0) or 0)
+    stage_interval = max(1, int(getattr(opt, "target_gaussian_stage_interval", 500) or 1))
+    return iteration >= stage_start and iteration % stage_interval == 0
+
+
 def _prune_to_target_budget(scene, gaussians, gaussian_scorer, pipe, bg, opt, target_count, label, iteration=None):
     current_count = gaussians._xyz.shape[0]
     if target_count <= 0 or current_count <= target_count:
@@ -302,8 +312,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     bg = torch.rand((3), device="cuda") if opt.random_background else background
     target_gaussian_staged = bool(getattr(opt, "target_gaussian_staged", False))
     staged_target_gaussian_count = _staged_target_gaussian_count(opt)
-    target_gaussian_stage_start = int(getattr(opt, "target_gaussian_stage_start", 0) or 0)
-    target_gaussian_stage_interval = max(1, int(getattr(opt, "target_gaussian_stage_interval", 500) or 1))
+    target_gaussian_stage_after_densify = bool(getattr(opt, "target_gaussian_stage_after_densify", False))
     staged_pruned_count = 0
 
     for iteration in range(first_iter, opt.iterations + 1):
@@ -387,12 +396,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                                                 args = opt,
                                                 importance_score = importance_score,
                                                 pruning_score = pruning_score)
-                    if (
-                        target_gaussian_staged
-                        and staged_target_gaussian_count > 0
-                        and iteration >= target_gaussian_stage_start
-                        and iteration % target_gaussian_stage_interval == 0
-                    ):
+                    if _should_run_staged_target_prune(opt, iteration, staged_target_gaussian_count):
                         pruned_count, budget_time = _prune_to_target_budget(
                             scene,
                             gaussians,
@@ -424,6 +428,26 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                     pruning_score=pruning_score,
                     min_gaussian_count=getattr(opt, "prune_min_gaussian_count", 0),
                 )
+
+            if (
+                target_gaussian_staged
+                and target_gaussian_stage_after_densify
+                and iteration >= opt.densify_until_iter
+                and _should_run_staged_target_prune(opt, iteration, staged_target_gaussian_count)
+            ):
+                pruned_count, budget_time = _prune_to_target_budget(
+                    scene,
+                    gaussians,
+                    gaussian_scorer,
+                    pipe,
+                    bg,
+                    opt,
+                    staged_target_gaussian_count,
+                    "Post-densify staged target",
+                    iteration=iteration,
+                )
+                staged_pruned_count += pruned_count
+                total_time += budget_time
         
             # Optimization step
             if iteration < opt.iterations:

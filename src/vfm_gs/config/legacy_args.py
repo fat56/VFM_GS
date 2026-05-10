@@ -137,6 +137,7 @@ class OptimizationParams(ParamGroup):
         self.target_gaussian_stage_margin = 1.2
         self.target_gaussian_stage_start = 0
         self.target_gaussian_stage_interval = 500
+        self.target_gaussian_stage_after_densify = False
         self.target_gaussian_prune_order = "lowest_score"
         self.prune_min_gaussian_count = 0
         self.prune_min_gaussian_target_ratio = 0.0
