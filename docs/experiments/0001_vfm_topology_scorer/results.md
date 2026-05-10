@@ -1610,3 +1610,41 @@ Tandt 逐场景：
 - 相比 i0.50，i0.65 平均只多 3,839 个点，但 PSNR 低 -0.0183；SSIM 和 LPIPS 只极小幅改善。这个权重没有形成比 i0.50 更好的质量-容量折中。
 - 相比 i0.70，i0.65 平均点数几乎相同，训练时间也没有回落，反而略高 2.14s；同时 PSNR 低 -0.0602。这说明 i0.70 的时间开销不是单纯由权重大小导致，i0.65 不能作为性能修复点。
 - 结论：i0.65 记录为边界负例，不推荐继续作为主线。当前 descriptor 分支的清晰结论保持不变：top-k25 `max` 是质量优先档，top-k25 weighted i0.50 是容量受控正向档，top-k25 weighted i0.70 是质量折中档但需要 profiling。下一步优先检查 descriptor scoring 的调用频率和耗时，而不是继续在相邻权重上做密集扫描。
+
+## 2026-05-10 DINO descriptor scorer profiling 诊断
+
+目标：解释 i0.65/i0.70 训练时间偏高的来源，并确认是否需要继续扫描相邻权重。新增默认关闭的 profiling 参数：`--vfm_profile_scorer` 和 `--vfm_profile_interval`。默认训练不启用 profiling，不会额外同步 CUDA；只有显式传参时才打印 `[VFM PROFILE]`。
+
+先用 bicycle 620/820-step 链路确认 profiling 可用，再用 bicycle i0.70 30k 复跑采样诊断。30k 命令仍使用 `configs/experiments/0001_vfm_topology_dinov2_descriptor_densify_only_topk025_weighted_i070.yaml`、`-r 8`、`vfm_weight=0.0`，输出到 `output/0001/descriptor_profile_i070_bicycle_30k_r8`。
+
+30k 复跑结果：
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| bicycle | DINO descriptor top-k25 weighted i0.70 profile | 26.9835 | 0.8314 | 0.1831 | 445,245 | 184.47s |
+| bicycle | 原 i0.70 记录 | 26.9848 | 0.8309 | 0.1840 | 442,608 | 210.12s |
+| bicycle | FastGS densify100 对照 | 26.9221 | 0.8237 | 0.1970 | 413,084 | 129.72s |
+
+采样 profile：
+
+| 调用 | 当前 GS | 总耗时 | RGB score | SH0 渲染 | DINO descriptor error | metric map | count raster |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 50 | 415,470 | 171.56ms | 63.24ms | 24.69ms | 51.90ms | 3.81ms | 26.38ms |
+| 100 | 479,580 | 188.26ms | 80.85ms | 25.36ms | 50.11ms | 3.81ms | 26.60ms |
+
+短程首轮加载诊断：
+
+| 运行 | 调用 | 总耗时 | RGB score | DINO descriptor error | 说明 |
+|---|---:|---:|---:|---:|---|
+| 620-step | 1 | 2511.96ms | 85.07ms | 2367.03ms | 包含首次 DINO 模型加载，不代表稳定训练开销 |
+| 820-step | 1 | 2953.07ms | 85.63ms | 2800.05ms | 同上 |
+| 820-step | 2 | 218.22ms | 85.07ms | 69.31ms | 稳定调用 |
+| 820-step | 3 | 218.66ms | 85.17ms | 69.92ms | 稳定调用 |
+
+解读：
+
+- i0.70 复跑质量稳定：PSNR 基本不变，SSIM/LPIPS 略好；Gaussian 数量比原记录多 2,637 个。它仍是质量折中档，不是偶然正例。
+- 训练时间从原记录 210.12s 降到 184.47s，说明早先 210s 中存在运行波动；但它仍明显慢于 i0.50 的 149.26s 和 FastGS densify100 的 129.72s。
+- 稳定 scorer 单次调用约 172-188ms，主要由两部分组成：FastGS 原始 multi-view score 约 63-81ms，在线 DINO descriptor error 约 50-52ms；其余是 SH0 渲染和 metric-map count raster。
+- descriptor 30k 在 densification 阶段会多次调用 scorer，因此在线 DINO descriptor 是可解释的主要额外成本。下一步优化优先级应是降低 descriptor 参与频率或缩短参与窗口，而不是继续细扫 i0.60/i0.65/i0.70 一类相邻权重。
+- 值得测试的下一版方向：`descriptor_warm_window`，只在较早 densification 阶段使用 DINO descriptor，例如 600-8000 iteration；后半段回到 RGB/FastGS score 或 token-edge 轻量 proxy。目标是在保留早期结构引导收益的同时减少 30k 额外耗时。

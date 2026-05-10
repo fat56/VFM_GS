@@ -1,4 +1,5 @@
 import math
+import time
 
 import torch
 import torch.nn.functional as F
@@ -20,6 +21,27 @@ _CACHED_BACKEND_MANIFESTS = {
     "dinov2_descriptor_cosine_l1": _DINO_CACHE_BACKENDS,
 }
 _DINO_PATCH_SIZE = 14
+_PROFILE_STATE = {"calls": 0}
+
+
+def _profile_enabled(args):
+    return bool(getattr(args, "vfm_profile_scorer", False))
+
+
+def _profile_interval(args):
+    return max(1, int(getattr(args, "vfm_profile_interval", 1) or 1))
+
+
+def _sync_if_needed(enabled):
+    if enabled and torch.cuda.is_available():
+        torch.cuda.synchronize()
+
+
+def _elapsed_ms(start, enabled):
+    if not enabled:
+        return 0.0
+    _sync_if_needed(True)
+    return (time.perf_counter() - start) * 1000.0
 
 
 class VFMFeatureCache:
@@ -448,9 +470,18 @@ def compute_gaussian_score_fastgs_with_vfm(camlist, gaussians, pipe, bg, args, D
     original photometric FastGS scores.
     """
 
+    profile_this = _profile_enabled(args)
+    if profile_this:
+        _PROFILE_STATE["calls"] += 1
+    profile_call = int(_PROFILE_STATE["calls"]) if profile_this else 0
+    profile_this = profile_this and (profile_call % _profile_interval(args) == 0)
+    _sync_if_needed(profile_this)
+    total_start = time.perf_counter()
+    rgb_start = total_start
     rgb_importance, rgb_pruning = compute_gaussian_score_fastgs(
         camlist, gaussians, pipe, bg, args, DENSIFY=DENSIFY
     )
+    rgb_ms = _elapsed_ms(rgb_start, profile_this)
 
     vfm_counts_total = None
     vfm_support_total = None
@@ -469,13 +500,25 @@ def compute_gaussian_score_fastgs_with_vfm(camlist, gaussians, pipe, bg, args, D
     dinov2_repo = getattr(args, "vfm_dinov2_repo", "")
     dinov2_device = getattr(args, "vfm_dinov2_device", "cuda")
     descriptor_token_smooth_kernel = getattr(args, "vfm_descriptor_token_smooth_kernel", 1)
+    render_ms = 0.0
+    error_ms = 0.0
+    metric_ms = 0.0
+    count_ms = 0.0
+    support_ms = 0.0
+    combine_ms = 0.0
+    view_count = 0
+    layer_count = 0
 
     for viewpoint_cam in camlist:
+        view_count += 1
+        stage_start = time.perf_counter()
         if use_albedo_sh0:
             rendered_image = _render_with_sh0(viewpoint_cam, gaussians, pipe, bg, args.mult)
         else:
             rendered_image = render_fastgs(viewpoint_cam, gaussians, pipe, bg, args.mult)["render"]
+        render_ms += _elapsed_ms(stage_start, profile_this)
 
+        stage_start = time.perf_counter()
         pixel_error_map = _compute_pixel_error_map(
             rendered_image,
             viewpoint_cam,
@@ -485,9 +528,14 @@ def compute_gaussian_score_fastgs_with_vfm(camlist, gaussians, pipe, bg, args, D
             dinov2_device=dinov2_device,
             descriptor_token_smooth_kernel=descriptor_token_smooth_kernel,
         )
+        error_ms += _elapsed_ms(stage_start, profile_this)
+        stage_start = time.perf_counter()
         metric_layers = _build_vfm_metric_map_layers(pixel_error_map, args)
+        metric_ms += _elapsed_ms(stage_start, profile_this)
         counts = None
         for metric_map, layer_weight in metric_layers:
+            layer_count += 1
+            stage_start = time.perf_counter()
             render_pkg = render_fastgs(
                 viewpoint_cam,
                 gaussians,
@@ -497,6 +545,7 @@ def compute_gaussian_score_fastgs_with_vfm(camlist, gaussians, pipe, bg, args, D
                 get_flag=True,
                 metric_map=metric_map,
             )
+            count_ms += _elapsed_ms(stage_start, profile_this)
             layer_counts = render_pkg["accum_metric_counts"]
             if layer_weight != 1.0:
                 layer_counts = layer_counts.to(torch.float32) * layer_weight
@@ -511,6 +560,7 @@ def compute_gaussian_score_fastgs_with_vfm(camlist, gaussians, pipe, bg, args, D
             else:
                 vfm_counts_total += counts
             if DENSIFY and vfm_importance_normalizer == "support_ratio":
+                stage_start = time.perf_counter()
                 support_pkg = render_fastgs(
                     viewpoint_cam,
                     gaussians,
@@ -525,13 +575,17 @@ def compute_gaussian_score_fastgs_with_vfm(camlist, gaussians, pipe, bg, args, D
                     vfm_support_total = support_counts.clone()
                 else:
                     vfm_support_total += support_counts
+                support_ms += _elapsed_ms(stage_start, profile_this)
 
+        stage_start = time.perf_counter()
         weighted_counts = pixel_error_map.detach().mean() * counts.to(torch.float32)
         if vfm_pruning_total is None:
             vfm_pruning_total = weighted_counts.clone()
         else:
             vfm_pruning_total += weighted_counts
+        combine_ms += _elapsed_ms(stage_start, profile_this)
 
+    stage_start = time.perf_counter()
     vfm_pruning = normalize01(vfm_pruning_total)
     pruning_score = normalize01(rgb_pruning + vfm_weight * vfm_pruning)
     protection, protection_weight = _build_prune_protection(vfm_counts_total, rgb_pruning, args)
@@ -581,6 +635,30 @@ def compute_gaussian_score_fastgs_with_vfm(camlist, gaussians, pipe, bg, args, D
             )
     else:
         importance_score = None
+    combine_ms += _elapsed_ms(stage_start, profile_this)
+    total_ms = _elapsed_ms(total_start, profile_this)
+
+    if profile_this:
+        print(
+            "[VFM PROFILE] call={} densify={} backend={} views={} layers={} gs={} total_ms={:.2f} "
+            "rgb_ms={:.2f} render_ms={:.2f} error_ms={:.2f} metric_ms={:.2f} count_ms={:.2f} "
+            "support_ms={:.2f} combine_ms={:.2f}".format(
+                profile_call,
+                bool(DENSIFY),
+                backend,
+                view_count,
+                layer_count,
+                int(gaussians._xyz.shape[0]),
+                total_ms,
+                rgb_ms,
+                render_ms,
+                error_ms,
+                metric_ms,
+                count_ms,
+                support_ms,
+                combine_ms,
+            )
+        )
 
     return importance_score, pruning_score
 
