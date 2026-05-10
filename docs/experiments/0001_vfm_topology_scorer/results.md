@@ -1789,3 +1789,105 @@ source .venv/bin/activate && uv run --active python scripts/run_0001_descriptor_
 - 新补的 `counter/flowers/kitchen/room/treehill` 五场景全部正向，尤其 `treehill` 在过去多个分支中经常是压力场景，本轮仍获得 +0.0489 PSNR、+0.0052 SSIM、LPIPS -0.0143，说明 descriptor top-k25 max 的鲁棒性强于 warm-window 和若干 weighted 边界档。
 - 代价主要是训练时间：平均 +23.20s。该成本来自在线 DINO descriptor 对渲染图与 GT cache 的比较，后续不应再用 warm8000 这类质量损失较大的窗口截断，而应优先研究更轻量的 descriptor 近似、cache/投影复用或自适应调用频率。
 - 下一轮建议把 top-k25 max 作为 MipNeRF360 `-r 8` 的质量优先证据保留，同时在 DB/Tandt 做同一功能模块的跨数据集验证；若 DB/Tandt 也正向，再进入高分辨率或 Depth Anything 几何先验分支。
+
+## 2026-05-10 DINO descriptor top-k25 max DB/Tandt 跨数据集验证
+
+目标：沿用同一个 `dinov2_descriptor_topk25_max` 功能模块，不做数据集级回退，也不调节超参，检查 descriptor densify-only 是否能从 MipNeRF360 推广到 `datasets/tandt_db/db` 和 `datasets/tandt_db/tandt`。该方案仍保持 `vfm_weight=0.0`，因此 VFM 只影响 densification importance，不改变 pruning score。
+
+DB 命令：
+
+```bash
+source .venv/bin/activate && uv run --active python scripts/run_0001_descriptor_quality_probe.py \
+  --dataset-name db \
+  --dataset-root datasets/tandt_db/db \
+  --output-root output/0001/descriptor_topk025_db_full \
+  --scenes drjohnson playroom \
+  --config configs/experiments/0001_vfm_topology_dinov2_descriptor_densify_only_topk025.yaml \
+  --descriptor-method dinov2_descriptor_topk25_max \
+  --descriptor-run-name vfm_dinov2_descriptor_topk25_max_30k_r8 \
+  --baseline-run-name fastgs_densify100_30k_r8 \
+  --cache-root output/0001/vfm_cache \
+  --cache-max-width 224 \
+  --cache-storage npy_float16 \
+  --dino-backend dinov2_vits14 \
+  --dinov2-repo output/0001/external/dinov2 \
+  --resolution 8 \
+  --iterations 30000 \
+  --densification-interval 100
+```
+
+Tandt 命令：
+
+```bash
+source .venv/bin/activate && uv run --active python scripts/run_0001_descriptor_quality_probe.py \
+  --dataset-name tandt \
+  --dataset-root datasets/tandt_db/tandt \
+  --output-root output/0001/descriptor_topk025_tandt_full \
+  --scenes train truck \
+  --config configs/experiments/0001_vfm_topology_dinov2_descriptor_densify_only_topk025.yaml \
+  --descriptor-method dinov2_descriptor_topk25_max \
+  --descriptor-run-name vfm_dinov2_descriptor_topk25_max_30k_r8 \
+  --baseline-run-name fastgs_densify100_30k_r8 \
+  --cache-root output/0001/vfm_cache \
+  --cache-max-width 224 \
+  --cache-storage npy_float16 \
+  --dino-backend dinov2_vits14 \
+  --dinov2-repo output/0001/external/dinov2 \
+  --resolution 8 \
+  --iterations 30000 \
+  --densification-interval 100
+```
+
+DB 结果：
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| drjohnson | FastGS densify100 | 30.5704 | 0.9287 | 0.0714 | 78,984 | 139.81s |
+| drjohnson | DINO descriptor top-k25 max | 30.6938 | 0.9306 | 0.0690 | 92,273 | 153.76s |
+| playroom | FastGS densify100 | 30.6169 | 0.9447 | 0.0548 | 47,574 | 126.62s |
+| playroom | DINO descriptor top-k25 max | 30.5105 | 0.9432 | 0.0551 | 52,662 | 142.59s |
+| **平均** | **FastGS densify100** | **30.5937** | **0.9367** | **0.0631** | **63,279** | **133.22s** |
+| **平均** | **DINO descriptor top-k25 max** | **30.6022** | **0.9369** | **0.0620** | **72,468** | **148.18s** |
+
+DB 逐场景差值：
+
+| 场景 | ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 |
+|---|---:|---:|---:|---:|---:|
+| drjohnson | +0.1234 | +0.0020 | -0.0024 | +13,289 | +13.95s |
+| playroom | -0.1064 | -0.0015 | +0.0003 | +5,088 | +15.97s |
+| **平均** | **+0.0085** | **+0.0002** | **-0.0011** | **+9,189** | **+14.96s** |
+
+Tandt 结果：
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| train | FastGS densify100 | 23.5886 | 0.9110 | 0.0792 | 43,476 | 144.24s |
+| train | DINO descriptor top-k25 max | 23.5941 | 0.9132 | 0.0771 | 44,034 | 169.54s |
+| truck | FastGS densify100 | 27.9625 | 0.9582 | 0.0349 | 35,851 | 135.54s |
+| truck | DINO descriptor top-k25 max | 28.1578 | 0.9593 | 0.0338 | 39,454 | 176.24s |
+| **平均** | **FastGS densify100** | **25.7755** | **0.9346** | **0.0571** | **39,664** | **139.89s** |
+| **平均** | **DINO descriptor top-k25 max** | **25.8759** | **0.9363** | **0.0554** | **41,744** | **172.89s** |
+
+Tandt 逐场景差值：
+
+| 场景 | ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 |
+|---|---:|---:|---:|---:|---:|
+| train | +0.0055 | +0.0022 | -0.0021 | +558 | +25.31s |
+| truck | +0.1953 | +0.0011 | -0.0011 | +3,603 | +40.70s |
+| **平均** | **+0.1004** | **+0.0017** | **-0.0016** | **+2,081** | **+33.00s** |
+
+分数据集汇总：
+
+| 数据集 | 方法 | 场景数 | PSNR | ΔPSNR | SSIM | ΔSSIM | LPIPS | ΔLPIPS | Gaussian 数 | ΔGaussian | 训练时间 | Δ训练时间 |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| MipNeRF360 | DINO descriptor top-k25 max | 9 | 28.9035 | +0.1066 | 0.8687 | +0.0050 | 0.1347 | -0.0093 | 292,690 | +50,131 | 157.96s | +23.20s |
+| DB | DINO descriptor top-k25 max | 2 | 30.6022 | +0.0085 | 0.9369 | +0.0002 | 0.0620 | -0.0011 | 72,468 | +9,189 | 148.18s | +14.96s |
+| Tandt | DINO descriptor top-k25 max | 2 | 25.8759 | +0.1004 | 0.9363 | +0.0017 | 0.0554 | -0.0016 | 41,744 | +2,081 | 172.89s | +33.00s |
+
+解读：
+
+- 这是目前最干净的“同一功能模块强制启用 VFM”证据：三个公开数据集的平均 PSNR、SSIM、LPIPS 都相对各自 FastGS densify100 正向，且不依赖数据集级回退。
+- MipNeRF360 的证据最强，9/9 场景三项指标全部正向；Tandt 的两场景也全部正向，说明 descriptor residual 与此前 token-edge weighted 分支不同，能在 Tandt 上提供有效复制引导。
+- DB 均值虽然正向，但强依赖 `drjohnson`，`playroom` 单场景三项回落。因此 DB 上 descriptor top-k25 max 只能算弱正向，不应替代 DB 目前更强的 DINO weighted i0.90 或 cached-edge 正例。
+- Gaussian 增长整体可接受：DB 平均只多 9,189 个点，Tandt 平均只多 2,081 个点；MipNeRF360 平均多 50,131 个点，但 `bicycle` 和 `stump` 已超过 0.1M 单场景关注阈值。
+- 下一步应把 descriptor top-k25 max 作为“强制 VFM、无回退”的第一版核心证据之一。若继续推进质量，应优先在高分辨率同口径上做小范围 bicycle/garden/truck 试验；若推进效率，应研究 descriptor 调用频率和近似缓存，而不是继续调相邻 top-k 比例。

@@ -4,7 +4,7 @@
 
 ## 当前最佳统一方法
 
-当前最佳方法不是把不同后端拼成一个结果，而是统一使用同一套 `VFM_GS-DINO-Weighted` 功能模块：`vfm_topology_scorer + dinov2_token_edge_l1 + top-k 25% topology map + importance_mode=weighted`。不同公开数据集只调整 `importance_weight` 或触发安全回退；`cached_edge_l1` 只作为 proxy 控制组，不再作为最佳方法的一部分。
+当前需要区分两条展示线。质量最强的第一版策略仍是 `VFM_GS-DINO-Weighted`：`vfm_topology_scorer + dinov2_token_edge_l1 + top-k 25% topology map + importance_mode=weighted`，不同公开数据集只调整 `importance_weight` 或触发安全门控。更贴近“强制启用 VFM 并证明先验有效”的证据线是 `DINO descriptor top-k25 max`：`vfm_topology_scorer + dinov2_descriptor_cosine + top-k25 descriptor residual + importance_mode=max + vfm_weight=0.0`，三个公开数据集平均都相对 FastGS densify100 正向。
 
 | 部分 | 固定设置 |
 |---|---|
@@ -38,6 +38,18 @@
 
 如果要求 Tandt 也强制启用同一套 VFM 模块，则当前最小损失档是 `importance_weight=0.50`，但仍低于 baseline：PSNR 25.7519、SSIM 0.9346、LPIPS 0.0575，分别为 -0.2032、-0.0031、+0.0035。因此第一版最佳方法应明确包含安全门控：当数据集级验证显示 VFM 候选三项指标不能超过 baseline 时，不启用 VFM 增强。
 
+## 无回退 VFM 证据线
+
+`DINO descriptor top-k25 max` 不依赖数据集级回退，也不改变 pruning score。它只用 DINO descriptor residual 指导 densification，因此更适合作为“VFM 先验能指导复制并提升质量”的核心证据。当前三个公开数据集按各自均值分开统计如下。
+
+| 数据集 | 场景数 | Baseline PSNR | Descriptor PSNR | ΔPSNR | Baseline SSIM | Descriptor SSIM | ΔSSIM | Baseline LPIPS | Descriptor LPIPS | ΔLPIPS | Baseline GS | Descriptor GS | ΔGS |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| MipNeRF360 | 9 | 28.7969 | 28.9035 | +0.1066 | 0.8637 | 0.8687 | +0.0050 | 0.1440 | 0.1347 | -0.0093 | 242,559 | 292,690 | +50,131 |
+| DB | 2 | 30.5937 | 30.6022 | +0.0085 | 0.9367 | 0.9369 | +0.0002 | 0.0631 | 0.0620 | -0.0011 | 63,279 | 72,468 | +9,189 |
+| Tandt | 2 | 25.7755 | 25.8759 | +0.1004 | 0.9346 | 0.9363 | +0.0017 | 0.0571 | 0.0554 | -0.0016 | 39,664 | 41,744 | +2,081 |
+
+这个结果和上面的 `VFM_GS-DINO-Weighted` 策略线作用不同：descriptor 线不是当前所有数据集的最高指标，但它避免了“效果不好回退 FastGS”的争议。MipNeRF360 是强证据，Tandt 是关键正例，因为此前 token-edge weighted 在 Tandt 低于 baseline；DB 只算弱正向，`playroom` 单场景仍回落。
+
 ## 总览
 
 | 保留级别 | 方法/改进 | 后端与关键设置 | 范围 | PSNR | ΔPSNR vs baseline | SSIM | ΔSSIM | LPIPS | ΔLPIPS | Gaussian 数 | ΔGS | 训练时间 | 结论 |
@@ -48,6 +60,9 @@
 | 第一版质量展示线 | dataset quality policy | MipNeRF360 weighted QCGI | MipNeRF360 9 场景 | 28.8641 | +0.2114 | 0.8667 | +0.0116 | 0.1388 | -0.0231 | 255,822 | +82,481 | 158.78s | 质量优先，数据集内三项指标最强 |
 | 第一版质量展示线 | dataset quality policy | DB `dino_weighted_i090` | DB 2 场景 | 30.6074 | +0.4894 | 0.9376 | +0.0051 | 0.0620 | -0.0038 | 63,006 | +8,320 | 197.47s | 与保守线一致 |
 | 第一版质量展示线 | dataset quality policy | Tandt baseline 回退 | Tandt 2 场景 | 25.9551 | 0.0000 | 0.9377 | 0.0000 | 0.0541 | 0.0000 | 50,370 | 0 | 140.26s | 不把负向 VFM 候选计入正向改进 |
+| 无回退 VFM 证据 | DINO descriptor top-k25 max | `dinov2_descriptor_cosine + top-k25 + vfm_weight=0.0` | MipNeRF360 9 场景 | 28.9035 | +0.1066 | 0.8687 | +0.0050 | 0.1347 | -0.0093 | 292,690 | +50,131 | 157.96s | 9/9 场景三项指标正向 |
+| 无回退 VFM 证据 | DINO descriptor top-k25 max | 同上 | DB 2 场景 | 30.6022 | +0.0085 | 0.9369 | +0.0002 | 0.0620 | -0.0011 | 72,468 | +9,189 | 148.18s | 数据集均值弱正向，playroom 单场景负向 |
+| 无回退 VFM 证据 | DINO descriptor top-k25 max | 同上 | Tandt 2 场景 | 25.8759 | +0.1004 | 0.9363 | +0.0017 | 0.0554 | -0.0016 | 41,744 | +2,081 | 172.89s | 两场景全部正向，修复此前 token-edge Tandt 负向问题 |
 | proxy 控制组 | cached edge v1 | `cached_edge_l1 + staged target ~= 1.42x baseline` | MipNeRF360 9 场景 | 28.7213 | +0.0686 | 0.8579 | +0.0028 | 0.1551 | -0.0068 | 215,869 | +42,528 | 139.33s | 确定性边缘代理，适合作为 v1 正向控制组 |
 | 质量候选 | DINO token-edge i0.50 | `dinov2_token_edge_l1 + top-k25 + importance_weight=0.50` | MipNeRF360 9 场景 | 28.8577 | +0.2051 | 0.8666 | +0.0115 | 0.1385 | -0.0234 | 263,572 | +90,231 | 140.47s | 当前全场景质量最强，但预算偏高 |
 | 预算效率候选 | weighted i0.50 | `top-k25 + importance_mode=weighted + importance_weight=0.50` | MipNeRF360 9 场景 | 28.8505 | +0.1978 | 0.8660 | +0.0109 | 0.1397 | -0.0223 | 254,736 | +81,395 | 137.60s | 相比普通 i0.50 少 8,836 点、少 2.87s，质量只小幅回落 |
