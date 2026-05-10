@@ -548,6 +548,19 @@ class GaussianModel:
             )
             return torch.logical_and(metric_mask, keep_mask)
 
+        if cap_mode == "screen_support":
+            support_counts = getattr(args, "densify_budget_support_counts", None)
+            if support_counts is not None:
+                keep_mask = self._cap_densify_candidates_screen_support(
+                    args,
+                    metric_mask,
+                    candidate_indices,
+                    candidate_scores,
+                    support_counts[candidate_indices],
+                    remaining,
+                )
+                return torch.logical_and(metric_mask, keep_mask)
+
         if cap_mode == "spatial_xyz":
             keep_mask = self._cap_densify_candidates_spatial_xyz(
                 args,
@@ -612,6 +625,83 @@ class GaussianModel:
         if split_quota > 0:
             selected = torch.topk(split_scores, k=min(split_quota, split_count), largest=True, sorted=False).indices
             keep_mask[split_indices[selected]] = True
+
+        return keep_mask
+
+    def _cap_densify_candidates_screen_support(
+        self,
+        args,
+        metric_mask,
+        candidate_indices,
+        candidate_scores,
+        candidate_support,
+        remaining,
+    ):
+        keep_mask = torch.zeros_like(metric_mask, dtype=torch.bool)
+        support = candidate_support.detach().to(torch.float32)
+        support_positive = support[support > 0]
+        if support_positive.numel() == 0:
+            topk_indices = torch.topk(candidate_scores, k=remaining, largest=True, sorted=False).indices
+            keep_mask[candidate_indices[topk_indices]] = True
+            return keep_mask
+
+        bins = int(getattr(args, "densify_budget_support_bins", 4) or 4)
+        bins = max(1, min(bins, 16))
+        quantiles = torch.linspace(0.0, 1.0, bins + 1, device=support.device)
+        edges = torch.quantile(support_positive, quantiles)
+        bucket_ids = torch.bucketize(support, edges[1:-1], right=False)
+
+        _, inverse_bins, bin_counts = torch.unique(
+            bucket_ids,
+            sorted=True,
+            return_inverse=True,
+            return_counts=True,
+        )
+        raw_quotas = bin_counts.to(torch.float32) * (float(remaining) / float(candidate_indices.numel()))
+        quotas = torch.floor(raw_quotas).to(torch.long)
+        quotas = torch.minimum(quotas, bin_counts)
+
+        allocated = int(quotas.sum().item())
+        if allocated < remaining:
+            fractional = raw_quotas - torch.floor(raw_quotas)
+            grow_order = torch.argsort(fractional, descending=True)
+            for bin_pos in grow_order.tolist():
+                if allocated >= remaining:
+                    break
+                if quotas[bin_pos] >= bin_counts[bin_pos]:
+                    continue
+                quotas[bin_pos] += 1
+                allocated += 1
+
+        if allocated < remaining:
+            grow_order = torch.argsort(bin_counts - quotas, descending=True)
+            for bin_pos in grow_order.tolist():
+                if allocated >= remaining:
+                    break
+                if quotas[bin_pos] >= bin_counts[bin_pos]:
+                    continue
+                quotas[bin_pos] += 1
+                allocated += 1
+
+        for local_bin, quota in enumerate(quotas.tolist()):
+            if quota <= 0:
+                continue
+            bin_mask = inverse_bins == local_bin
+            bin_candidate_indices = candidate_indices[bin_mask]
+            quota = min(quota, bin_candidate_indices.numel())
+            bin_scores = candidate_scores[bin_mask]
+            selected = torch.topk(bin_scores, k=quota, largest=True, sorted=False).indices
+            keep_mask[bin_candidate_indices[selected]] = True
+
+        remaining_capacity = remaining - int(keep_mask[candidate_indices].sum().item())
+        if remaining_capacity > 0:
+            unused_candidate_flags = torch.logical_not(keep_mask[candidate_indices])
+            unused_indices = candidate_indices[unused_candidate_flags]
+            unused_scores = candidate_scores[unused_candidate_flags]
+            quota = min(remaining_capacity, unused_indices.numel())
+            if quota > 0:
+                selected = torch.topk(unused_scores, k=quota, largest=True, sorted=False).indices
+                keep_mask[unused_indices[selected]] = True
 
         return keep_mask
 

@@ -3599,3 +3599,41 @@ branch-type candidate cap 1.45M 相对 `spatial_xyz` cap 1.45M：
 - 恢复幅度仍远远不够：相对 FastGS big 仍低 -0.6349 PSNR、-0.0249 SSIM、LPIPS 差 +0.0185；相对自然 i0.50 仍低 -0.7272 PSNR、-0.0290 SSIM、LPIPS 差 +0.0275，且还多 87,962 个 Gaussians。
 - 结论：clone/split 分支分离能缓解一点全局混池截断问题，但不是 high-res stump 的有效容量解法。全局、3D 空间、clone/split 三种硬候选 cap 都控制住了点数，却都没有保住自然 i0.50 的质量，说明问题更可能发生在训练期候选生成轨迹和视角/屏幕覆盖分布，而不是最终候选池内的简单排序策略。
 - 下一步不继续扫描硬 candidate cap 的相邻预算。优先转向两条更有方法价值的方向：一是屏幕空间/视角覆盖配额，避免单纯按 3D 坐标或分支类型裁剪；二是 Depth Anything 几何边界 residual，用结构边界证据判断新增 GS 是否应保留。
+
+## 2026-05-10 screen-support candidate cap 集成验证
+
+目标：在全局、3D 空间和 clone/split 分支配额都没有恢复 high-res stump 质量后，增加更贴近渲染过程的候选配额模式。新模式 `densify_budget_candidate_cap_mode=screen_support` 默认关闭；启用后，scorer 在 densification 打分阶段额外用全 1 的 metric map 统计每个 Gaussian 在采样视角中的屏幕像素覆盖次数，并把候选按 screen support 分桶分配剩余容量，再在桶内按 `importance_score` 取 top-k。它用于诊断硬候选 cap 是否因为只看 3D 坐标或 clone/split 分支，而忽略了候选在训练视角中的可见覆盖分布。
+
+配套配置为 `configs/experiments/0001_vfm_topology_dinov2_descriptor_screen_support_candidate_cap.yaml`。该配置保持与 descriptor top-k25 weighted i0.50 相同的功能模块，只把 candidate cap mode 改为 `screen_support`，新增 `densify_budget_support_bins=4`，且不写死 `densify_budget_count`，每个场景仍通过 CLI 传入预算。
+
+命令：
+
+```bash
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_dinov2_descriptor_screen_support_candidate_cap.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images_8 \
+  -m output/0001/screen_support_candidatecap_integration_bicycle_620/vfm_descriptor_screencap_55000_620_r8 \
+  --eval \
+  --iterations 620 \
+  --test_iterations 620 \
+  --save_iterations 620 \
+  --checkpoint_iterations 620 \
+  --vfm_cache_dir output/0001/vfm_cache/bicycle_dinov2_vits14 \
+  --densify_budget_count 55000 \
+  --densify_budget_start_ratio 0.90 \
+  --densify_budget_max_metric_thresh 12.0
+```
+
+验证结果：
+
+| 验证项 | 结果 |
+|---|---|
+| `python -m compileall src/vfm_gs` | 通过 |
+| 620-step scorer 与 cache preflight | 通过，日志记录 `Using Gaussian scorer: vfm_topology_scorer`，DINO descriptor cache preflight 通过 |
+| 620-step 参数落盘 | 通过，`cfg_args` 记录 `densify_budget_candidate_cap_mode='screen_support'` 和 `densify_budget_support_bins=4` |
+| 620-step 紧预算候选截断 | 通过，最终 Gaussian 数量为 55,000，等于 `densify_budget_count=55000` |
+| 620-step render/metrics | 通过，PSNR 20.9523、SSIM 0.4655、LPIPS 0.5530；该指标只用于链路检查，不作为质量结论 |
+
+下一步：使用 high-res stump 跑 `screen_support + densify_budget_count=1450000`，直接与自然 i0.50、全局 cap、`spatial_xyz` cap 和 `branch_type` cap 对照。如果 screen-support 仍不能接近自然 i0.50，则生成侧硬候选截断需要整体收束，转向 Depth Anything 几何/边界 residual 或更连续的自适应 densification 强度控制。

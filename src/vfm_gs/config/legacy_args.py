@@ -104,6 +104,7 @@ class OptimizationParams(ParamGroup):
         self.densify_budget_candidate_cap = False
         self.densify_budget_candidate_cap_mode = "global"
         self.densify_budget_spatial_bins = 8
+        self.densify_budget_support_bins = 4
         self.mult = 0.5      # multiplier for the compact box to control the tile number of each splat
 
         self.random_background = False

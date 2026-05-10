@@ -522,6 +522,10 @@ def compute_gaussian_score_fastgs_with_vfm(camlist, gaussians, pipe, bg, args, D
     vfm_importance_normalizer = getattr(args, "vfm_importance_normalizer", "none").lower()
     vfm_prune_protect_weight = max(0.0, float(getattr(args, "vfm_prune_protect_weight", 0.0) or 0.0))
     needs_vfm_counts = DENSIFY or vfm_prune_protect_weight > 0.0
+    support_cap_mode = (
+        DENSIFY
+        and str(getattr(args, "densify_budget_candidate_cap_mode", "") or "").lower() == "screen_support"
+    )
     use_albedo_sh0 = getattr(args, "vfm_use_albedo_sh0", True)
     cache_dir = getattr(args, "vfm_cache_dir", "")
     dinov2_repo = getattr(args, "vfm_dinov2_repo", "")
@@ -586,23 +590,24 @@ def compute_gaussian_score_fastgs_with_vfm(camlist, gaussians, pipe, bg, args, D
                 vfm_counts_total = counts.clone()
             else:
                 vfm_counts_total += counts
-            if DENSIFY and vfm_importance_normalizer == "support_ratio":
-                stage_start = time.perf_counter()
-                support_pkg = render_fastgs(
-                    viewpoint_cam,
-                    gaussians,
-                    pipe,
-                    bg,
-                    args.mult,
-                    get_flag=True,
-                    metric_map=_support_metric_map(viewpoint_cam, rendered_image.device),
-                )
-                support_counts = support_pkg["accum_metric_counts"]
-                if vfm_support_total is None:
-                    vfm_support_total = support_counts.clone()
-                else:
-                    vfm_support_total += support_counts
-                support_ms += _elapsed_ms(stage_start, profile_this)
+
+        if DENSIFY and (vfm_importance_normalizer == "support_ratio" or support_cap_mode):
+            stage_start = time.perf_counter()
+            support_pkg = render_fastgs(
+                viewpoint_cam,
+                gaussians,
+                pipe,
+                bg,
+                args.mult,
+                get_flag=True,
+                metric_map=_support_metric_map(viewpoint_cam, rendered_image.device),
+            )
+            support_counts = support_pkg["accum_metric_counts"]
+            if vfm_support_total is None:
+                vfm_support_total = support_counts.clone()
+            else:
+                vfm_support_total += support_counts
+            support_ms += _elapsed_ms(stage_start, profile_this)
 
         stage_start = time.perf_counter()
         weighted_counts = pixel_error_map.detach().mean() * counts.to(torch.float32)
@@ -629,6 +634,7 @@ def compute_gaussian_score_fastgs_with_vfm(camlist, gaussians, pipe, bg, args, D
                         vfm_importance_normalizer
                     )
                 )
+        args.densify_budget_support_counts = vfm_support_total
         vfm_importance = torch.floor(vfm_counts_total.to(torch.float32) / len(camlist))
         if vfm_importance_mode == "rgb_only":
             importance_score = rgb_importance

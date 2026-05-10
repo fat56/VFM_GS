@@ -1,0 +1,26 @@
+name: 0001_vfm_topology_dinov2_descriptor_screen_support_candidate_cap
+extends: fastgs_baseline
+scorer: vfm_topology_scorer
+training_args:
+  densification_interval: 100
+  vfm_enable: true
+  vfm_backend: dinov2_descriptor_cosine
+  vfm_cache_dir: output/0001/vfm_cache/bicycle_dinov2_vits14
+  vfm_dinov2_repo: output/0001/external/dinov2
+  vfm_dinov2_device: cuda
+  vfm_metric_map_mode: topk
+  vfm_metric_topk: 0.25
+  vfm_descriptor_token_smooth_kernel: 3
+  vfm_weight: 0.0
+  vfm_importance_weight: 0.50
+  vfm_importance_mode: weighted
+  vfm_use_albedo_sh0: true
+  densify_budget_candidate_cap: true
+  densify_budget_candidate_cap_mode: screen_support
+  densify_budget_support_bins: 4
+  densify_budget_start_ratio: 0.90
+  densify_budget_max_metric_thresh: 12.0
+experiment:
+  status: screen_support_candidate_cap_probe
+  proposal: docs/experiments/0001_vfm_topology_scorer/proposal.md
+  note: 默认不写死 densify_budget_count；每个场景通过 CLI 传入预算，按采样视角下的屏幕像素覆盖 support 分桶配额后再各桶取 top-k。
