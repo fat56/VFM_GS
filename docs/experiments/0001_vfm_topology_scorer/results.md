@@ -2798,3 +2798,83 @@ soft budget 相对 `weighted i0.50`：
 - 现有软预算机制不足以约束 high-res stump。它只衰减 VFM densification 权重，无法约束 FastGS/RGB 路径自身的 densification 轨迹，最终仍增长到 2.25M Gaussians。
 - 质量也明显低于 i0.50 和 FastGS big，说明单纯软衰减会改变训练轨迹，但没有形成有效容量-质量折中。
 - 后续如果继续做容量控制，需要更硬的训练期点数反馈，例如在超过预算后同时降低 RGB/VFM densification、缩短 densification 窗口、提高 clone/split 门槛，或在 densify 后立即执行小步 staged prune 与恢复；仅靠当前 `vfm_importance_budget_count` 不够。
+
+## 2026-05-10 DINO descriptor top-k25 weighted i0.50 + staged target 1.15M 高分辨率 stump 探针
+
+目标：检验更硬的训练期点数反馈是否能解决 stump 的容量边界问题。本轮在 `weighted i0.50` 基础上设置 `target_gaussian_count=1150000`，并启用 staged target：从 iteration 9000 开始，每 500 step 将点数裁到 `1.02 * target`，最终再裁到 1.15M。训练仍使用 `fastgs_big` recipe，对齐 stump 的 `--dense 0.01 --grad_abs_thresh 0.00015`，输入为 `-i images -r -1`。
+
+命令：
+
+```bash
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0001_vfm_topology_dinov2_descriptor_densify_only_topk025_weighted_i050.yaml \
+  -s datasets/mipnerf360/stump \
+  -i images \
+  -m output/0001/descriptor_topk025_weighted_i050_staged1150k_big_stump/vfm_dinov2_descriptor_topk25_weighted_i050_staged1150k_big_30k_r_auto \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0001/vfm_cache/stump_dinov2_vits14 \
+  -r -1 \
+  --dense 0.01 \
+  --grad_abs_thresh 0.00015 \
+  --target_gaussian_count 1150000 \
+  --target_gaussian_staged \
+  --target_gaussian_stage_margin 1.02 \
+  --target_gaussian_stage_start 9000 \
+  --target_gaussian_stage_interval 500 \
+  --target_gaussian_prune_order lowest_score
+```
+
+训练日志确认沿用 FastGS 原始大图规则：
+
+```text
+[ INFO ] Encountered quite large input images (>1.6K pixels width), rescaling to 1.6K.
+```
+
+staged pruning 轨迹：
+
+| iteration | 裁剪前 | 裁剪后 | 删除数量 |
+|---:|---:|---:|---:|
+| 9000 | 3,702,269 | 1,173,000 | 2,529,269 |
+| 9500 | 1,372,895 | 1,173,000 | 199,895 |
+| 10000 | 1,365,028 | 1,173,000 | 192,028 |
+| 10500 | 1,440,307 | 1,173,000 | 267,307 |
+| 11000 | 1,468,639 | 1,173,000 | 295,639 |
+| 11500 | 1,566,211 | 1,173,000 | 393,211 |
+| 12000 | 1,562,803 | 1,173,000 | 389,803 |
+| 12500 | 1,590,424 | 1,173,000 | 417,424 |
+| 13000 | 1,455,595 | 1,173,000 | 282,595 |
+| 13500 | 1,461,691 | 1,173,000 | 288,691 |
+| 14000 | 1,499,122 | 1,173,000 | 326,122 |
+| 14500 | 1,485,451 | 1,173,000 | 312,451 |
+| final | 1,157,762 | 1,150,000 | 7,762 |
+
+stump 对照：
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| stump | FastGS big densify100 | 27.1310 | 0.7862 | 0.2406 | 1,062,281 | 189.72s |
+| stump | DINO descriptor top-k25 weighted i0.50 + FastGS big | 27.2233 | 0.7903 | 0.2317 | 1,196,350 | 283.46s |
+| stump | DINO descriptor top-k25 weighted i0.50 + staged target 1.15M | 25.9591 | 0.7401 | 0.2799 | 1,150,000 | 303.26s |
+
+staged target 相对 FastGS big：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| -1.1719 | -0.0460 | +0.0393 | +87,719 | +113.53s | -2.3764 |
+
+staged target 相对 `weighted i0.50`：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| -1.2642 | -0.0502 | +0.0482 | -46,350 | +19.80s | -2.5087 |
+
+解读：
+
+- staged target 成功把最终点数压到 1.15M，但质量严重下降，明显低于 FastGS big 和自然结束的 i0.50。
+- 关键问题不是最终小幅裁剪，而是 iteration 9000 首次从 3.70M 直接裁到 1.17M，随后在 9500-14500 间连续大批量裁剪。这会破坏训练中期已经形成的结构，并且后续 30k 内没有恢复回来。
+- 该结果把容量控制方向收窄为：不要早期大幅 staged prune；下一轮应测试更晚启动、更小步的 target 反馈，例如接近 i0.50 自然点数的 1.18M late target，或 staged prune 后立即加短恢复阶段。

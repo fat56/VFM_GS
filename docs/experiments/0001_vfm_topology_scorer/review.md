@@ -191,6 +191,7 @@ DB 的 DINO weighted 多档复验则给出相反信号。i0.50 平均为 30.3603
 - high-res flowers `top-k25 max` 复验完成。结果为 21.6394 / 0.6039 / 0.3386、1,273,570 个 Gaussians、训练 275.79s；相对 FastGS big 为 +0.0228 PSNR、+0.0021 SSIM、LPIPS -0.0017，同时多 133,310 个点，QCGI 为 -0.1595。它证明 flowers 存在 descriptor 质量上界，但容量收益比不足；后续应转向自适应容量或 Depth Anything，而不是继续扫描固定 weighted 权重。
 - high-res stump `weighted i0.35` 容量探针完成。结果为 26.7484 / 0.7768 / 0.2305、3,035,777 个 Gaussians、训练 385.31s；相对 FastGS big 为 -0.3826 PSNR、-0.0093 SSIM、LPIPS -0.0101，同时多 1,973,496 个点，QCGI 为 -8.1125。它说明固定降低 `vfm_importance_weight` 不会单调压低容量，反而可能改变训练轨迹并造成容量失控；后续容量控制需要显式点数反馈或自适应机制。
 - high-res stump `weighted i0.50 + soft budget 1.15M` 探针完成。结果为 26.6930 / 0.7743 / 0.2376、2,247,258 个 Gaussians、训练 341.23s；相对 FastGS big 为 -0.4379 PSNR、-0.0119 SSIM、LPIPS -0.0030，同时多 1,184,977 个点，QCGI 为 -5.1007。现有 `vfm_importance_budget_count` 只衰减 VFM 路径，无法约束 RGB/FastGS densification 轨迹；后续需要更硬的训练期点数反馈或阶段性 prune/recovery。
+- high-res stump `weighted i0.50 + staged target 1.15M` 探针完成。结果为 25.9591 / 0.7401 / 0.2799、1,150,000 个 Gaussians、训练 303.26s；相对 FastGS big 为 -1.1719 PSNR、-0.0460 SSIM、LPIPS +0.0393，同时多 87,719 个点，QCGI 为 -2.3764。它成功控制最终点数，但 iteration 9000 首次从 3.70M 直接裁到 1.17M，随后连续大批量 staged prune，质量被严重破坏。结论是“硬反馈有效控制容量，但不能早期大幅裁剪”；下一步应改为更晚启动、更接近自然点数的轻量 target，或 staged prune 后立即恢复。
 
 ## 下一版计划
 
