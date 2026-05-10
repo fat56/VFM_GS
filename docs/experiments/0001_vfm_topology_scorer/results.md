@@ -3491,3 +3491,39 @@ spatial candidate cap 1.45M 相对全局 candidate cap 1.45M：
 - 质量没有恢复：相对全局 cap 1.45M 还低 -0.0148 PSNR、-0.0009 SSIM、LPIPS 差 +0.0016；相对自然 i0.50 仍低 -0.7684 PSNR、-0.0324 SSIM、LPIPS 差 +0.0310。
 - 因此 3D 坐标网格配额不是 high-res stump 的有效容量解法。它只证明“分区域候选门控可运行且能控点”，但没有保住 descriptor densification 的有效候选分布。
 - 下一步不继续扫描 `spatial_xyz` 的 1.20M/1.35M 或 bins 相邻参数。容量控制应转向更贴近训练信号的配额，例如屏幕空间/视角覆盖配额、clone/split 分支分离配额，或引入 Depth Anything 几何边界 residual 来判断新增 GS 是否位于真实结构边界。
+
+## 2026-05-10 branch-type candidate cap 集成验证
+
+目标：在 3D 空间配额失败后，先验证更贴近 FastGS densification 结构的分支配额。新模式 `densify_budget_candidate_cap_mode=branch_type` 默认关闭；启用后先把候选分成 clone 和 split 两类，按两类候选数量比例分配剩余容量，再在各自分支内部按 `importance_score` 取 top-k。它用于诊断全局 cap 是否因为把 clone/split 混在一个池里截断而错杀某个有效分支。
+
+配套配置为 `configs/experiments/0001_vfm_topology_dinov2_descriptor_branch_candidate_cap.yaml`。该配置保持与 descriptor top-k25 weighted i0.50 相同的功能模块，只把 candidate cap mode 改为 `branch_type`，且不写死 `densify_budget_count`，每个场景仍通过 CLI 传入预算。
+
+命令：
+
+```bash
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_dinov2_descriptor_branch_candidate_cap.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images_8 \
+  -m output/0001/branch_candidatecap_integration_bicycle_620/vfm_descriptor_branchcap_55000_620_r8 \
+  --eval \
+  --iterations 620 \
+  --test_iterations 620 \
+  --save_iterations 620 \
+  --checkpoint_iterations 620 \
+  --vfm_cache_dir output/0001/vfm_cache/bicycle_dinov2_vits14 \
+  --densify_budget_count 55000 \
+  --densify_budget_start_ratio 0.90 \
+  --densify_budget_max_metric_thresh 12.0
+```
+
+验证结果：
+
+| 验证项 | 结果 |
+|---|---|
+| `python -m compileall src/vfm_gs` | 通过 |
+| 620-step scorer 与 cache preflight | 通过，日志记录 `Using Gaussian scorer: vfm_topology_scorer`，DINO descriptor cache preflight 通过 |
+| 620-step 紧预算候选截断 | 通过，最终 Gaussian 数量为 55,000，等于 `densify_budget_count=55000` |
+
+下一步：使用 high-res stump 跑 `branch_type + densify_budget_count=1450000`，直接与自然 i0.50、全局 cap 1.45M 和 `spatial_xyz` cap 1.45M 对照。如果仍低于 baseline 和自然 i0.50，则这条“候选硬截断”支线应整体收束，转向屏幕空间/视角覆盖配额或 Depth Anything 几何边界 residual。

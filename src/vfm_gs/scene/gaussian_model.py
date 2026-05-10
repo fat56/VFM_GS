@@ -535,6 +535,19 @@ class GaussianModel:
         cap_mode = str(getattr(args, "densify_budget_candidate_cap_mode", "global") or "global")
         candidate_indices = candidates.nonzero(as_tuple=False).squeeze(1)
         candidate_scores = importance_score[candidate_indices]
+        if cap_mode == "branch_type":
+            clone_indices = torch.logical_and(metric_mask, all_clones).nonzero(as_tuple=False).squeeze(1)
+            split_indices = torch.logical_and(metric_mask, all_splits).nonzero(as_tuple=False).squeeze(1)
+            keep_mask = self._cap_densify_candidates_branch_type(
+                metric_mask,
+                clone_indices,
+                importance_score[clone_indices],
+                split_indices,
+                importance_score[split_indices],
+                remaining,
+            )
+            return torch.logical_and(metric_mask, keep_mask)
+
         if cap_mode == "spatial_xyz":
             keep_mask = self._cap_densify_candidates_spatial_xyz(
                 args,
@@ -549,6 +562,58 @@ class GaussianModel:
         keep_mask = torch.zeros_like(metric_mask, dtype=torch.bool)
         keep_mask[candidate_indices[topk_indices]] = True
         return torch.logical_and(metric_mask, keep_mask)
+
+    def _cap_densify_candidates_branch_type(self, metric_mask, clone_indices, clone_scores, split_indices, split_scores, remaining):
+        keep_mask = torch.zeros_like(metric_mask, dtype=torch.bool)
+        clone_count = int(clone_indices.numel())
+        split_count = int(split_indices.numel())
+        total_count = clone_count + split_count
+        if total_count <= 0:
+            return keep_mask
+
+        clone_quota = int(float(remaining) * float(clone_count) / float(total_count))
+        split_quota = int(float(remaining) * float(split_count) / float(total_count))
+        allocated = clone_quota + split_quota
+
+        remainders = [
+            ("clone", float(remaining) * float(clone_count) / float(total_count) - float(clone_quota)),
+            ("split", float(remaining) * float(split_count) / float(total_count) - float(split_quota)),
+        ]
+        for branch, _ in sorted(remainders, key=lambda item: item[1], reverse=True):
+            if allocated >= remaining:
+                break
+            if branch == "clone" and clone_quota < clone_count:
+                clone_quota += 1
+                allocated += 1
+            elif branch == "split" and split_quota < split_count:
+                split_quota += 1
+                allocated += 1
+
+        if allocated < remaining:
+            if clone_count - clone_quota >= split_count - split_quota:
+                first, second = "clone", "split"
+            else:
+                first, second = "split", "clone"
+            for branch in (first, second):
+                if allocated >= remaining:
+                    break
+                if branch == "clone":
+                    add = min(remaining - allocated, clone_count - clone_quota)
+                    clone_quota += add
+                    allocated += add
+                else:
+                    add = min(remaining - allocated, split_count - split_quota)
+                    split_quota += add
+                    allocated += add
+
+        if clone_quota > 0:
+            selected = torch.topk(clone_scores, k=min(clone_quota, clone_count), largest=True, sorted=False).indices
+            keep_mask[clone_indices[selected]] = True
+        if split_quota > 0:
+            selected = torch.topk(split_scores, k=min(split_quota, split_count), largest=True, sorted=False).indices
+            keep_mask[split_indices[selected]] = True
+
+        return keep_mask
 
     def _cap_densify_candidates_spatial_xyz(self, args, metric_mask, candidate_indices, candidate_scores, remaining):
         keep_mask = torch.zeros_like(metric_mask, dtype=torch.bool)
