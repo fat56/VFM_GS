@@ -2187,3 +2187,52 @@ source .venv/bin/activate && uv run --active python -m vfm_gs.cli.train \
 - counter 是 high-res `weighted i0.50` 的第四个 MipNeRF360 质量正例，也是第三个 QCGI 为正的容量效率正例。
 - 新增 78,100 个 Gaussians，低于 0.1M 单场景关注阈值；质量收益足以覆盖当前 QCGI 的容量惩罚。
 - high-res MipNeRF360 已覆盖 bicycle/garden/stump/counter 四个场景，四场景三项质量均正向；其中 bicycle/garden/counter 通过 QCGI，stump 是质量正向但容量偏高的边界样本。下一步优先继续补 kitchen/room 这类室内高基线场景，或对 stump 做更强容量约束扫描。
+
+## 2026-05-10 DINO descriptor top-k25 + weighted i0.50 高分辨率 kitchen 复验
+
+目标：继续补 MipNeRF360 室内高基线场景，判断 high-res `top-k25 weighted i0.50` 在 already-strong baseline 上是否仍能提供正向质量收益。训练使用 `fastgs_big` recipe，并对齐 FastGS big 的 kitchen 场景超参：`--highfeature_lr 0.02 --grad_abs_thresh 0.0002`。输入为 `-i images -r -1`，cache 使用 `output/0001/vfm_cache/kitchen_dinov2_vits14`。
+
+命令：
+
+```bash
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0001_vfm_topology_dinov2_descriptor_densify_only_topk025_weighted_i050.yaml \
+  -s datasets/mipnerf360/kitchen \
+  -i images \
+  -m output/0001/descriptor_topk025_weighted_i050_big_kitchen/vfm_dinov2_descriptor_topk25_weighted_i050_big_30k_r_auto \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0001/vfm_cache/kitchen_dinov2_vits14 \
+  -r -1 \
+  --highfeature_lr 0.02 \
+  --grad_abs_thresh 0.0002
+```
+
+训练日志确认沿用 FastGS 原始大图规则：
+
+```text
+[ INFO ] Encountered quite large input images (>1.6K pixels width), rescaling to 1.6K.
+```
+
+对照使用已完成的 `output/0001/large_res_fastgs_big_baseline/mipnerf360/kitchen/fastgs_big_densify100_30k_r_auto`。
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| kitchen | FastGS big densify100 | 32.2700 | 0.9391 | 0.1044 | 1,178,795 | 335.11s |
+| kitchen | DINO descriptor top-k25 weighted i0.50 + FastGS big | 32.4350 | 0.9398 | 0.1036 | 1,286,004 | 383.90s |
+
+相对 FastGS big：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| +0.1650 | +0.0007 | -0.0008 | +107,209 | +48.79s | +0.0546 |
+
+解读：
+
+- kitchen 是 high-res `weighted i0.50` 的第五个 MipNeRF360 质量正例，也是在室内高基线场景上的正向样本。
+- 新增 107,209 个 Gaussians，略高于 0.1M 单场景关注阈值；但 PSNR 提升 +0.1650 足以让 QCGI 保持正值。
+- 该结果支持“少量超过 0.1M 的 GS 增长不应机械否决”：当质量收益足够明确时，新增点可视为有效容量。下一步仍需要补 `room` 或扫描 `stump i0.35`，区分高增点正向和低效增点。

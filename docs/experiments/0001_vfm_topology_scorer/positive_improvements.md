@@ -50,7 +50,7 @@
 
 这个结果和上面的 `VFM_GS-DINO-Weighted` 策略线作用不同：descriptor 线不是当前所有数据集的最高指标，但它避免了“效果不好回退 FastGS”的争议。MipNeRF360 是强证据，Tandt 是关键正例，因为此前 token-edge weighted 在 Tandt 低于 baseline；DB 只算弱正向，`playroom` 单场景仍回落。
 
-高分辨率同口径探针也给出质量正向信号。MipNeRF360 `bicycle` 使用 `fastgs_big` recipe、`-i images -r -1`，训练日志确认沿用 FastGS 的 1.6K 自动缩放规则。descriptor top-k25 max 相对 FastGS big 从 25.2532 / 0.7554 / 0.2446 提升到 25.3279 / 0.7646 / 0.2277，三项指标正向，但 ΔGS 为 +249,213，超过单场景 0.1M 关注阈值。随后 high-res `top-k25 weighted i0.50` 在 `bicycle` 取得 25.2937 / 0.7606 / 0.2361，仍三项正向，同时 ΔGS 降到 +46,111；在 `garden` 取得 27.6376 / 0.8648 / 0.1094，相对 FastGS big 为 +0.0239 PSNR、+0.0002 SSIM、LPIPS -0.0004，且少 53,503 个 Gaussians；在 `counter` 取得 29.5838 / 0.9194 / 0.1723，相对 FastGS big 为 +0.0570、+0.0014、-0.0041，新增 78,100 个 Gaussians 且 QCGI 为正。它比 max 更适合 high-res 容量受控复验。
+高分辨率同口径探针也给出质量正向信号。MipNeRF360 `bicycle` 使用 `fastgs_big` recipe、`-i images -r -1`，训练日志确认沿用 FastGS 的 1.6K 自动缩放规则。descriptor top-k25 max 相对 FastGS big 从 25.2532 / 0.7554 / 0.2446 提升到 25.3279 / 0.7646 / 0.2277，三项指标正向，但 ΔGS 为 +249,213，超过单场景 0.1M 关注阈值。随后 high-res `top-k25 weighted i0.50` 在 `bicycle` 取得 25.2937 / 0.7606 / 0.2361，仍三项正向，同时 ΔGS 降到 +46,111；在 `garden` 取得 27.6376 / 0.8648 / 0.1094，相对 FastGS big 为 +0.0239 PSNR、+0.0002 SSIM、LPIPS -0.0004，且少 53,503 个 Gaussians；在 `counter` 取得 29.5838 / 0.9194 / 0.1723，相对 FastGS big 为 +0.0570、+0.0014、-0.0041，新增 78,100 个 Gaussians 且 QCGI 为正；在 `kitchen` 取得 32.4350 / 0.9398 / 0.1036，相对 FastGS big 为 +0.1650、+0.0007、-0.0008，新增 107,209 个 Gaussians 且 QCGI 为正。它比 max 更适合 high-res 容量受控复验。
 
 ## 总览
 
@@ -69,6 +69,7 @@
 | 高分辨率容量受控候选 | DINO descriptor top-k25 weighted i0.50 + FastGS big | `dinov2_descriptor_cosine + top-k25 + weighted i0.50 + vfm_weight=0.0`，1.6K 自动缩放 | MipNeRF360 bicycle | 25.2937 | +0.0406 | 0.7606 | +0.0053 | 0.2361 | -0.0085 | 1,606,190 | +46,111 | 268.87s | 三项质量正向且 ΔGS < 0.1M |
 | 高分辨率容量受控候选 | DINO descriptor top-k25 weighted i0.50 + FastGS big | 同上，1.6K 自动缩放 | MipNeRF360 garden | 27.6376 | +0.0239 | 0.8648 | +0.0002 | 0.1094 | -0.0004 | 2,570,661 | -53,503 | 424.24s | 三项质量正向且点数少于 baseline |
 | 高分辨率容量受控候选 | DINO descriptor top-k25 weighted i0.50 + FastGS big | 同上，1.6K 自动缩放 | MipNeRF360 counter | 29.5838 | +0.0570 | 0.9194 | +0.0014 | 0.1723 | -0.0041 | 551,300 | +78,100 | 200.97s | 三项质量正向，ΔGS < 0.1M 且 QCGI 为正 |
+| 高分辨率容量受控候选 | DINO descriptor top-k25 weighted i0.50 + FastGS big | 同上，1.6K 自动缩放 | MipNeRF360 kitchen | 32.4350 | +0.1650 | 0.9398 | +0.0007 | 0.1036 | -0.0008 | 1,286,004 | +107,209 | 383.90s | 三项质量正向，ΔGS 略高于 0.1M 但 QCGI 为正 |
 | proxy 控制组 | cached edge v1 | `cached_edge_l1 + staged target ~= 1.42x baseline` | MipNeRF360 9 场景 | 28.7213 | +0.0686 | 0.8579 | +0.0028 | 0.1551 | -0.0068 | 215,869 | +42,528 | 139.33s | 确定性边缘代理，适合作为 v1 正向控制组 |
 | 质量候选 | DINO token-edge i0.50 | `dinov2_token_edge_l1 + top-k25 + importance_weight=0.50` | MipNeRF360 9 场景 | 28.8577 | +0.2051 | 0.8666 | +0.0115 | 0.1385 | -0.0234 | 263,572 | +90,231 | 140.47s | 当前全场景质量最强，但预算偏高 |
 | 预算效率候选 | weighted i0.50 | `top-k25 + importance_mode=weighted + importance_weight=0.50` | MipNeRF360 9 场景 | 28.8505 | +0.1978 | 0.8660 | +0.0109 | 0.1397 | -0.0223 | 254,736 | +81,395 | 137.60s | 相比普通 i0.50 少 8,836 点、少 2.87s，质量只小幅回落 |
@@ -227,6 +228,7 @@ QCGI = quality_gain - gs_penalty
 | MipNeRF360 dataset quality policy vs baseline | +0.2114 | +0.0116 | -0.0231 | +82,481 | `0.01M_to_0.10M` | +0.4767 | 数据集内质量正向，容量增长处于可接受区间 |
 | DB dataset fixed/quality policy vs baseline | +0.4894 | +0.0051 | -0.0038 | +8,320 | `sub_0.01M` | +0.6025 | 少量增点且质量正向，应鼓励 |
 | high-res MipNeRF360 `counter` descriptor weighted i0.50 vs FastGS big | +0.0570 | +0.0014 | -0.0041 | +78,100 | `0.01M_to_0.10M` | +0.0274 | 大分辨率室内场景三项正向，增点低于 0.1M |
+| high-res MipNeRF360 `kitchen` descriptor weighted i0.50 vs FastGS big | +0.1650 | +0.0007 | -0.0008 | +107,209 | `gte_0.10M` | +0.0546 | 大分辨率高基线室内场景 PSNR 收益明确，容量增长略超阈值但仍正向 |
 
 `scripts/summarize_0001_cross_dataset_selector.py` 已把 `quality_gain`、`quality_gain_per_10k_gs`、`gs_growth_band`、`gs_penalty` 和 `qcgi` 写入 comparison 表，并新增 `qcgi_pick_method`。展示时应优先使用按数据集拆分的 `scripts/summarize_0001_dataset_policies.py` 产物，尤其是 `dataset_averages.csv` 和 `dataset_comparisons.csv`。`scripts/summarize_0001_weighted_candidates.py` 也已把 QCGI 接入 MipNeRF360 weighted 档位选择；严格 `quality_pick` 均值为 28.8641 / 0.8665 / 0.1392、257,326 个 Gaussians，`QCGI pick` 均值为 28.8641 / 0.8667 / 0.1388、255,822 个 Gaussians。下一阶段可以先继续把 QCGI 作为离线选择准则；当更多数据集验证稳定后，再把 QCGI 或其分档信号接入 density/prune 强度的自适应控制。
 
