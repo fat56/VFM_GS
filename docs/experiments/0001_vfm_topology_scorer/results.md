@@ -1446,3 +1446,58 @@ Tandt 逐场景：
 - 质量收益明显弱于 top-k15/top-k25。平均 PSNR 只提升 +0.0080，且 `bicycle`、`stump` 的 PSNR 轻微负向；SSIM 和 LPIPS 四场景全部正向，但幅度小。
 - 该结果说明 `weighted i0.50 + top-k15` 过于保守，适合作为“接近 baseline 容量的低风险档”，但不能作为证明 VFM_GS 质量贡献的主结果。
 - 下一步应测试 `top-k25 + weighted i0.50`：保留 top-k25 更强 descriptor 覆盖率，同时用 weighted 融合控制 `bicycle`、`stump` 的高增点。
+
+## 2026-05-10 DINO descriptor top-k25 + weighted i0.50 容量受控档
+
+目标：组合上一轮两个方向：用 top-k25 保留更大的 descriptor residual 覆盖率，用 `weighted + importance_weight=0.50` 抑制 `max` importance 带来的高增点。本轮配置为 `configs/experiments/0001_vfm_topology_dinov2_descriptor_densify_only_topk025_weighted_i050.yaml`：`dinov2_descriptor_cosine`、top-k 25%、token smoothing 3、`vfm_weight=0.0`、`vfm_importance_mode=weighted`、`vfm_importance_weight=0.50`。对照继续复用 matched FastGS densify100。原始产物在 `output/0001/descriptor_topk025_weighted_i050_probe/summary.csv`、`comparisons.csv` 和 `averages.json`。
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| bicycle | FastGS densify100 | 26.9221 | 0.8237 | 0.1970 | 413,084 | 129.72s |
+| bicycle | DINO descriptor top-k25 weighted i0.50 | 26.9644 | 0.8301 | 0.1843 | 440,867 | 152.20s |
+| garden | FastGS densify100 | 28.8736 | 0.8961 | 0.1003 | 248,094 | 136.19s |
+| garden | DINO descriptor top-k25 weighted i0.50 | 28.9969 | 0.8989 | 0.0961 | 267,569 | 146.43s |
+| stump | FastGS densify100 | 27.5457 | 0.8106 | 0.2042 | 295,290 | 134.25s |
+| stump | DINO descriptor top-k25 weighted i0.50 | 27.5631 | 0.8165 | 0.1941 | 367,363 | 149.01s |
+| bonsai | FastGS densify100 | 32.4327 | 0.9625 | 0.0545 | 127,978 | 125.08s |
+| bonsai | DINO descriptor top-k25 weighted i0.50 | 32.4357 | 0.9635 | 0.0501 | 134,051 | 149.39s |
+| **平均** | **FastGS densify100** | **28.9435** | **0.8732** | **0.1390** | **271,112** | **131.31s** |
+| **平均** | **DINO descriptor top-k25 weighted i0.50** | **28.9901** | **0.8773** | **0.1312** | **302,463** | **149.26s** |
+
+相对 FastGS densify100：
+
+| 场景 | ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 |
+|---|---:|---:|---:|---:|---:|
+| bicycle | +0.0424 | +0.0064 | -0.0126 | +27,783 | +22.48s |
+| garden | +0.1233 | +0.0028 | -0.0041 | +19,475 | +10.24s |
+| stump | +0.0175 | +0.0058 | -0.0101 | +72,073 | +14.77s |
+| bonsai | +0.0030 | +0.0010 | -0.0044 | +6,073 | +24.31s |
+| **平均** | **+0.0465** | **+0.0040** | **-0.0078** | **+31,351** | **+17.95s** |
+
+相对 top-k25 `max` 质量优先档：
+
+| 场景 | ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian |
+|---|---:|---:|---:|---:|
+| bicycle | -0.0968 | -0.0054 | +0.0103 | -77,981 |
+| garden | -0.0964 | -0.0029 | +0.0049 | -27,707 |
+| stump | -0.1707 | -0.0057 | +0.0088 | -72,665 |
+| bonsai | -0.1640 | -0.0012 | +0.0012 | -8,816 |
+| **平均** | **-0.1320** | **-0.0038** | **+0.0063** | **-46,792** |
+
+相对 top-k15 `weighted i0.50`：
+
+| 场景 | ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian |
+|---|---:|---:|---:|---:|
+| bicycle | +0.0627 | +0.0045 | -0.0088 | +41,071 |
+| garden | +0.0599 | +0.0025 | -0.0041 | +16,473 |
+| stump | +0.0288 | +0.0040 | -0.0077 | +46,809 |
+| bonsai | +0.0027 | +0.0000 | -0.0007 | +4,782 |
+| **平均** | **+0.0385** | **+0.0028** | **-0.0053** | **+27,284** |
+
+解读：
+
+- `top-k25 + weighted i0.50` 四个场景相对 FastGS densify100 都是三项指标正向，说明扩大 descriptor 覆盖后，即使采用加权 importance 抑制容量增长，复制先验仍然有效。
+- 它把 top-k25 `max` 的平均 Gaussian 增量从 +78,143 压到 +31,351；`bicycle` 从 +105,764 降到 +27,783，`stump` 从 +144,738 降到 +72,073。容量控制目标达成。
+- 代价是质量明显低于 top-k25 `max`：平均 PSNR 少 0.1320、SSIM 少 0.0038、LPIPS 差 0.0063。因此它不是新的质量优先档，而是“容量受控正向档”。
+- 相比 top-k15 `weighted i0.50`，本轮平均多 27,284 个点，但换来 +0.0385 PSNR、+0.0028 SSIM、LPIPS 改善 -0.0053，且修复了 top-k15 weighted 中 `bicycle/stump` 的 PSNR 轻微负向。
+- 下一步应尝试中间权重，例如 `top-k25 + weighted i0.65` 或 i0.70。目标不是回退 FastGS，而是在不超过约 0.1M 平均增点的前提下，尽量靠近 top-k25 `max` 的质量收益。
