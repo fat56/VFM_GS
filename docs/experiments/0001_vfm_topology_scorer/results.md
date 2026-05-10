@@ -2089,3 +2089,52 @@ source .venv/bin/activate && uv run --active python -m vfm_gs.cli.train \
 - garden 是 high-res `weighted i0.50` 的第二个 MipNeRF360 正例：PSNR、SSIM、LPIPS 均小幅优于 FastGS big。
 - 与 bicycle 不同，garden 没有带来 Gaussian 增长，反而少 53,503 个点；这说明 high-res descriptor weighted 档并不一定依赖增点换质量。
 - 当前 high-res 结论应分开看：MipNeRF360 内的 bicycle/garden 为正向，Tandt truck 为边界负例。下一步更适合继续补 MipNeRF360 场景以判断数据集平均，而不是因为 truck 单场景负例立即停止 high-res descriptor 线。
+
+## 2026-05-10 DINO descriptor top-k25 + weighted i0.50 高分辨率 stump 复验
+
+目标：继续补 MipNeRF360 high-res 场景，检查 `top-k25 weighted i0.50` 在大收益但易增点的 `stump` 上是否仍能提升质量。训练使用 `fastgs_big` recipe，并对齐 FastGS big 的 stump 场景超参：`--dense 0.004 --grad_abs_thresh 0.001`。输入为 `-i images -r -1`，cache 使用 `output/0001/vfm_cache/stump_dinov2_vits14`。
+
+命令：
+
+```bash
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0001_vfm_topology_dinov2_descriptor_densify_only_topk025_weighted_i050.yaml \
+  -s datasets/mipnerf360/stump \
+  -i images \
+  -m output/0001/descriptor_topk025_weighted_i050_big_stump/vfm_dinov2_descriptor_topk25_weighted_i050_big_30k_r_auto \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0001/vfm_cache/stump_dinov2_vits14 \
+  -r -1 \
+  --dense 0.004 \
+  --grad_abs_thresh 0.001
+```
+
+训练日志确认沿用 FastGS 原始大图规则：
+
+```text
+[ INFO ] Encountered quite large input images (>1.6K pixels width), rescaling to 1.6K.
+```
+
+对照使用已完成的 `output/0001/large_res_fastgs_big_baseline/mipnerf360/stump/fastgs_big_densify100_30k_r_auto`。
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| stump | FastGS big densify100 | 27.1310 | 0.7862 | 0.2406 | 1,062,281 | 189.72s |
+| stump | DINO descriptor top-k25 weighted i0.50 + FastGS big | 27.2233 | 0.7903 | 0.2317 | 1,196,350 | 283.46s |
+
+相对 FastGS big：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| +0.0923 | +0.0042 | -0.0089 | +134,069 | +93.74s | -0.0162 |
+
+解读：
+
+- stump 是 high-res `weighted i0.50` 的第三个 MipNeRF360 质量正例：PSNR、SSIM、LPIPS 三项均优于 FastGS big。
+- 但该场景新增 134,069 个 Gaussians，超过 0.1M 单场景关注阈值；按当前 QCGI 规则，质量收益没有完全抵消容量惩罚。
+- 这说明 high-res MipNeRF360 内部不是简单的“越多点越好”：bicycle 是小幅增点正向，garden 是少点正向，stump 是明显增点换质量。下一步应继续补一个中等/室内场景，估计 MipNeRF360 high-res 的数据集均值，同时扫描 `i0.35` 或更强容量约束来处理 stump 这类高增点场景。
