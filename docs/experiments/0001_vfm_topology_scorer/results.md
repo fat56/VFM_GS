@@ -1670,3 +1670,45 @@ Tandt 逐场景：
 - `active=false` 时 scorer 耗时几乎等于 FastGS 原始 multi-view score，说明窗口确实绕过了在线 DINO descriptor 和 VFM raster 计数。
 - 窗口机制不改变默认行为；旧配置未设置窗口时仍全程启用 VFM。
 - 下一步应跑 bicycle 30k `warm8000`，直接比较三组：FastGS densify100、原 i0.70/profile i0.70、warm8000 i0.70。若 PSNR/SSIM/LPIPS 基本保留且训练时间明显下降，再扩展到 garden/stump/bonsai 四场景。
+
+### 30k bicycle warm8000 结果
+
+配置：`configs/experiments/0001_vfm_topology_dinov2_descriptor_densify_only_topk025_weighted_i070_warm8000.yaml`，输出目录 `output/0001/descriptor_warm8000_i070_bicycle_30k_r8`。测试仍为 bicycle `-r 8`、30,000 iterations、`--eval`，与 i0.70/profile i0.70、i0.50 和 FastGS densify100 保持同一 matched 口径。
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| bicycle | FastGS densify100 | 26.9221 | 0.8237 | 0.1970 | 413,084 | 129.72s |
+| bicycle | DINO descriptor top-k25 weighted i0.50 | 26.9644 | 0.8301 | 0.1843 | 440,867 | 152.20s |
+| bicycle | DINO descriptor top-k25 weighted i0.70 profile | 26.9835 | 0.8314 | 0.1831 | 445,245 | 184.47s |
+| bicycle | DINO descriptor top-k25 weighted i0.70 warm8000 | 26.9633 | 0.8285 | 0.1874 | 432,336 | 177.80s |
+
+相对 FastGS densify100：
+
+| 方法 | ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 |
+|---|---:|---:|---:|---:|---:|
+| i0.50 | +0.0423 | +0.0064 | -0.0127 | +27,783 | +22.48s |
+| i0.70 profile | +0.0614 | +0.0077 | -0.0139 | +32,161 | +54.75s |
+| i0.70 warm8000 | +0.0412 | +0.0048 | -0.0097 | +19,252 | +48.08s |
+
+相对 i0.70 profile：
+
+| 指标 | warm8000 - i0.70 profile |
+|---|---:|
+| PSNR | -0.0202 |
+| SSIM | -0.0029 |
+| LPIPS | +0.0043 |
+| Gaussian 数量 | -12,909 |
+| 训练时间 | -6.67s |
+
+30k profile 采样：
+
+| 调用 | active | 当前 GS | 总耗时 | RGB score | DINO descriptor error | 说明 |
+|---:|---|---:|---:|---:|---:|---|
+| 50 | true | 418,533 | 199.50ms | 78.95ms | 51.82ms | 8000 iteration 前仍使用 DINO descriptor |
+| 100 | false | 477,175 | 80.28ms | 80.26ms | - | 8000 iteration 后回到 FastGS score |
+
+解读：
+
+- warm8000 机制有效，但质量-效率折中不优。它相对 FastGS 仍三项指标正向，且比 i0.70 少 12,909 个点；但 PSNR/SSIM/LPIPS 都低于 i0.70，也低于 i0.50。
+- 训练时间只比 i0.70 profile 少 6.67s，远小于预期。原因是 8000 iteration 之前已经覆盖了主要 densification 增长阶段，且 15k 后 pruning 仍需要 FastGS 原始 score；仅截断后半段 DINO descriptor 不能充分降低总训练耗时。
+- 结论：`warm8000` 记录为机制可行但实验负例，不扩展四场景。下一轮不继续缩短窗口做细扫；更应把资源放回已经正向的 descriptor top-k25 `max` 或 weighted i0.70 多场景/全场景验证，判断数据集平均收益，而不是用单场景窗口优化追求小幅省时。
