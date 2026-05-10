@@ -4282,3 +4282,63 @@ source .venv/bin/activate && uv run --active python -m vfm_gs.cli.metrics \
 - `compileall`、cache build、cache validate、train/render/metrics 均通过，说明 COLMAP depth-edge proxy 已接入现有 VFM scorer 链路。
 - 620-step 指标只验证链路健康，不判断质量优劣。正式比较仍需要 30,000 iteration，并与 matched FastGS densify100、DINO descriptor top-k25 weighted i0.50 对照。
 - 下一步先在 `bicycle -r 8` 跑 30k。若几何 proxy 相对 baseline 或 DINO descriptor 互补正向，再考虑把同一接口替换成 Depth Anything 相对深度/边界残差。
+
+## 2026-05-10 COLMAP depth-edge proxy bicycle `-r 8` 30k 正式验证
+
+目标：验证上一节 `colmap_depth_edge_l1` 链路在正式 30,000 iteration 下是否能提供有效几何先验。该版本的具体形式是：用 SH0/albedo 渲染图的 luma edge 与 COLMAP 稀疏 inverse-depth edge cache 做 L1 残差，然后用 top-k25 + weighted i0.50 参与 densification；`vfm_weight=0.0`，不改变 pruning score。
+
+训练命令：
+
+```bash
+source .venv/bin/activate && uv run --active python -m compileall src/vfm_gs && \
+uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_colmap_depth_edge_densify_only_topk025_weighted_i050.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images_8 \
+  -m output/0001/colmap_depth_edge_bicycle_30k_r8/vfm_colmap_depth_edge_topk25_weighted_i050_30k_r8 \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0001/vfm_cache/bicycle_colmap_depth_edge_images8
+```
+
+渲染与指标命令：
+
+```bash
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.render \
+  -m output/0001/colmap_depth_edge_bicycle_30k_r8/vfm_colmap_depth_edge_topk25_weighted_i050_30k_r8 \
+  --skip_train
+
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.metrics \
+  -m output/0001/colmap_depth_edge_bicycle_30k_r8/vfm_colmap_depth_edge_topk25_weighted_i050_30k_r8
+```
+
+正式结果：
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| bicycle `-r 8` | FastGS densify100 | 26.9221 | 0.8237 | 0.1970 | 413,084 | 129.72s |
+| bicycle `-r 8` | DINO descriptor top-k25 weighted i0.50 | 26.9644 | 0.8301 | 0.1843 | 440,867 | 152.20s |
+| bicycle `-r 8` | COLMAP depth-edge L1 top-k25 weighted i0.50 | 26.4718 | 0.8164 | 0.1925 | 458,239 | 145.17s |
+
+相对 FastGS densify100：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| -0.4503 | -0.0073 | -0.0045 | +45,155 | +15.45s | -0.6195 |
+
+相对 DINO descriptor top-k25 weighted i0.50：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| -0.4926 | -0.0137 | +0.0082 | +17,372 | -7.03s | -0.8255 |
+
+解读：
+
+- 该 run 相对 FastGS 的 LPIPS 有改善，但 PSNR/SSIM 明显下降，且 Gaussian 数量增加 45,155；综合 QCGI 为负。
+- 相对已验证正向的 DINO descriptor weighted i0.50，三项质量全部更差，说明当前 `rendered luma edge vs sparse depth edge` 的 L1 残差形式不适合作为主线。
+- 可能原因是信号错配：渲染亮度边缘包含纹理、曝光和颜色变化，而 COLMAP 稀疏 depth-edge 只覆盖部分几何/遮挡边界，直接做 L1 会把很多不对应区域推成误差。
+- 下一步不继续扩展该 L1 残差到其他场景。更合理的几何 proxy 是让 COLMAP depth-edge 本身作为 densification prior，即直接增强真实稀疏几何边界附近的复制，而不是要求渲染亮度边缘与稀疏深度边缘逐像素一致。
