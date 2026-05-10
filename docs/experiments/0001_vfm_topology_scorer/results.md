@@ -2285,3 +2285,52 @@ source .venv/bin/activate && uv run --active python -m vfm_gs.cli.train \
 - room 是 high-res `weighted i0.50` 的第六个 MipNeRF360 质量正例，且 QCGI 明确为正。
 - 新增 45,129 个 Gaussians，低于 0.1M 单场景关注阈值；SSIM 和 LPIPS 的收益比 PSNR 更突出。
 - 目前 high-res MipNeRF360 已覆盖 6 个场景，6/6 三项质量正向，其中 5/6 QCGI 为正；唯一 QCGI 负例是 stump。下一步可以补剩余 flowers/bonsai/treehill，或先对 stump 做 `i0.35` 容量约束复验。
+
+## 2026-05-10 DINO descriptor top-k25 + weighted i0.50 高分辨率 bonsai 复验
+
+目标：继续补 MipNeRF360 室内/小物体高基线场景，检查 high-res `top-k25 weighted i0.50` 在 bonsai 这类容易增点的场景上是否仍具备质量收益。训练使用 `fastgs_big` recipe，并对齐 FastGS big 的 bonsai 场景超参：`--highfeature_lr 0.02 --grad_abs_thresh 0.0002`。输入为 `-i images -r -1`，cache 使用 `output/0001/vfm_cache/bonsai_dinov2_vits14`。
+
+命令：
+
+```bash
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0001_vfm_topology_dinov2_descriptor_densify_only_topk025_weighted_i050.yaml \
+  -s datasets/mipnerf360/bonsai \
+  -i images \
+  -m output/0001/descriptor_topk025_weighted_i050_big_bonsai/vfm_dinov2_descriptor_topk25_weighted_i050_big_30k_r_auto \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0001/vfm_cache/bonsai_dinov2_vits14 \
+  -r -1 \
+  --highfeature_lr 0.02 \
+  --grad_abs_thresh 0.0002
+```
+
+训练日志确认沿用 FastGS 原始大图规则：
+
+```text
+[ INFO ] Encountered quite large input images (>1.6K pixels width), rescaling to 1.6K.
+```
+
+对照使用已完成的 `output/0001/large_res_fastgs_big_baseline/mipnerf360/bonsai/fastgs_big_densify100_30k_r_auto`。
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| bonsai | FastGS big densify100 | 32.9863 | 0.9512 | 0.1600 | 842,636 | 212.97s |
+| bonsai | DINO descriptor top-k25 weighted i0.50 + FastGS big | 33.1160 | 0.9549 | 0.1560 | 1,094,114 | 265.81s |
+
+相对 FastGS big：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| +0.1297 | +0.0037 | -0.0040 | +251,478 | +52.84s | -0.4824 |
+
+解读：
+
+- bonsai 是 high-res `weighted i0.50` 的第七个 MipNeRF360 三项质量正例，说明 descriptor residual 在该场景上仍能提升测试集渲染质量。
+- 但新增 251,478 个 Gaussians，远高于 0.1M 单场景关注阈值；按当前 QCGI 计算，容量惩罚明显超过质量收益。
+- 因此 bonsai 应记录为“质量正向但容量过强”的边界样本，不放入正向效率主表。后续更适合对 bonsai/stump 扫描 `i0.35` 或加入自适应容量约束，而不是直接扩大同一档位。
