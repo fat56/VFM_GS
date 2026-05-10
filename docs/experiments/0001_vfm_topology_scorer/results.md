@@ -2038,4 +2038,54 @@ source .venv/bin/activate && uv run --active python -m vfm_gs.cli.train \
 
 - truck 是 high-res `weighted i0.50` 的边界负例：LPIPS 小幅改善 -0.0019，但 PSNR 和 SSIM 分别回落 -0.0835、-0.0008。
 - Gaussian 数量增加 104,534，略高于 0.1M 单场景关注阈值；训练时间增加 54.34s。该容量增长没有换来足够的三项质量收益。
-- 因此 high-res `weighted i0.50` 不能直接扩展到三个公开数据集全量评估。当前更稳妥的下一步是增加第三个 MipNeRF360 场景，例如 `garden`，判断负例是否集中在 Tandt truck；若 garden 也不稳定，应改为扫描 high-res i0.35/i0.70 或引入场景自适应 importance，而不是继续固定 i0.50。
+- 因此 high-res `weighted i0.50` 不能直接扩展到三个公开数据集全量评估。当前更稳妥的下一步是增加第三个 MipNeRF360 场景，判断负例是否集中在 Tandt truck；若 MipNeRF360 继续稳定，再考虑先扩 MipNeRF360，而不是直接扩三个公开数据集。
+
+## 2026-05-10 DINO descriptor top-k25 + weighted i0.50 高分辨率 garden 复验
+
+目标：补一个 MipNeRF360 内部的大场景，判断 high-res `top-k25 weighted i0.50` 的正向结果是否只发生在 `bicycle`。训练使用 `fastgs_big` recipe，并对齐 FastGS big 的 garden 场景超参：`--highfeature_lr 0.02 --loss_thresh 0.06 --grad_abs_thresh 0.0003`。输入仍为 `-i images -r -1`，cache 使用 `output/0001/vfm_cache/garden_dinov2_vits14`。
+
+命令：
+
+```bash
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0001_vfm_topology_dinov2_descriptor_densify_only_topk025_weighted_i050.yaml \
+  -s datasets/mipnerf360/garden \
+  -i images \
+  -m output/0001/descriptor_topk025_weighted_i050_big_garden/vfm_dinov2_descriptor_topk25_weighted_i050_big_30k_r_auto \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0001/vfm_cache/garden_dinov2_vits14 \
+  -r -1 \
+  --highfeature_lr 0.02 \
+  --loss_thresh 0.06 \
+  --grad_abs_thresh 0.0003
+```
+
+训练日志确认沿用 FastGS 原始大图规则：
+
+```text
+[ INFO ] Encountered quite large input images (>1.6K pixels width), rescaling to 1.6K.
+```
+
+对照使用已完成的 `output/0001/large_res_fastgs_big_baseline/mipnerf360/garden/fastgs_big_densify100_30k_r_auto`。
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| garden | FastGS big densify100 | 27.6137 | 0.8645 | 0.1098 | 2,624,164 | 411.34s |
+| garden | DINO descriptor top-k25 weighted i0.50 + FastGS big | 27.6376 | 0.8648 | 0.1094 | 2,570,661 | 424.24s |
+
+相对 FastGS big：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| +0.0239 | +0.0002 | -0.0004 | -53,503 | +12.90s | +0.0307 |
+
+解读：
+
+- garden 是 high-res `weighted i0.50` 的第二个 MipNeRF360 正例：PSNR、SSIM、LPIPS 均小幅优于 FastGS big。
+- 与 bicycle 不同，garden 没有带来 Gaussian 增长，反而少 53,503 个点；这说明 high-res descriptor weighted 档并不一定依赖增点换质量。
+- 当前 high-res 结论应分开看：MipNeRF360 内的 bicycle/garden 为正向，Tandt truck 为边界负例。下一步更适合继续补 MipNeRF360 场景以判断数据集平均，而不是因为 truck 单场景负例立即停止 high-res descriptor 线。
