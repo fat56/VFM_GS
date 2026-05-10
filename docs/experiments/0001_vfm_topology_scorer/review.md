@@ -185,6 +185,7 @@ DB 的 DINO weighted 多档复验则给出相反信号。i0.50 平均为 30.3603
 - DINO descriptor top-k25 `weighted i0.50` high-res flowers 复验完成。该场景对齐 FastGS big 的 flowers 超参，结果为 21.6293 / 0.6022 / 0.3412、1,091,531 个 Gaussians、训练 278.68s；相对 FastGS big 为 +0.0127 PSNR、+0.0004 SSIM、LPIPS +0.0008，同时少 48,729 个 Gaussians、训练多 70.92s。它是 high-res i0.50 的混合样本：省点且 PSNR/SSIM 微升，但 LPIPS 未过线，不应放入三项质量正例。
 - DINO descriptor top-k25 `weighted i0.50` high-res treehill 复验完成。该场景对齐 FastGS big 的 treehill 超参，结果为 22.8069 / 0.6317 / 0.3774、945,930 个 Gaussians、训练 240.89s；相对 FastGS big 为 -0.0270 PSNR、-0.0001 SSIM、LPIPS +0.0004，同时少 53,053 个 Gaussians、训练多 51.29s。它是 high-res i0.50 的明确质量负例。
 - high-res MipNeRF360 9 场景汇总完成。`top-k25 weighted i0.50 + FastGS big` 平均为 27.9908 / 0.8218 / 0.2122、1,217,554 个 Gaussians、训练 282.73s；FastGS big 平均为 27.9293 / 0.8198 / 0.2157、1,161,242 个 Gaussians、训练 236.23s。数据集均值相对 FastGS big 为 +0.0615 PSNR、+0.0020 SSIM、LPIPS -0.0035，平均多 56,312 个点、训练多 46.50s，QCGI 为 +0.0633。结论是 high-res MipNeRF360 数据集均值正向，但 treehill/flowers/bonsai/stump 暴露出场景差异和容量/感知边界。
+- high-res treehill `top-k25 max` 复验完成。相对 FastGS big，结果从 `weighted i0.50` 的 22.8069 / 0.6317 / 0.3774 恢复到 22.8700 / 0.6367 / 0.3665，三项质量指标全部正向；Gaussian 数量从 945,930 增至 1,129,614，相对 baseline 多 130,631 个点，QCGI 为 -0.0360。该结果说明 treehill 更像 descriptor 强度不足，而不是 descriptor residual 无效；但 `max` 容量代价偏高，下一步应扫 high-res `i0.70` 或自适应容量约束。
 
 ## 下一版计划
 

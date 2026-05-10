@@ -2456,3 +2456,59 @@ MipNeRF360 high-res 9 场景汇总：
 - 数据集均值是正向的：PSNR +0.0615、SSIM +0.0020、LPIPS 改善 -0.0035，说明同一 VFM descriptor densify-only 模块在 MipNeRF360 high-res 口径下具备整体质量收益。
 - 场景分布不是全胜：bicycle/garden/counter/kitchen/room/bonsai/stump 三项或主要质量指标正向，flowers 是混合样本，treehill 是明确负例。
 - 平均多 56,312 个 Gaussians，处于 `0.01M_to_0.10M` 可接受增长区间；但训练时间平均多 46.50s，且 bonsai/stump 出现容量边界问题。下一步应针对 bonsai/stump 做更强容量约束，针对 flowers/treehill 做更高 descriptor 强度或几何先验，而不是把 i0.50 直接视为最终收束。
+
+## 2026-05-10 DINO descriptor top-k25 max 高分辨率 treehill 复验
+
+目标：复查 high-res `weighted i0.50` 在 treehill 上的质量负例是否来自 descriptor 强度不足。该实验改用 `top-k25 max` 质量优先档，仍保持 `vfm_weight=0.0`，只让 DINO descriptor residual 参与 densification，不改变 FastGS pruning score。训练使用 `fastgs_big` recipe，并对齐 FastGS big 的 treehill 场景超参：`--dense 0.01 --grad_abs_thresh 0.0018`。输入为 `-i images -r -1`，cache 使用 `output/0001/vfm_cache/treehill_dinov2_vits14`。
+
+命令：
+
+```bash
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0001_vfm_topology_dinov2_descriptor_densify_only_topk025.yaml \
+  -s datasets/mipnerf360/treehill \
+  -i images \
+  -m output/0001/descriptor_topk025_max_big_treehill/vfm_dinov2_descriptor_topk25_max_big_30k_r_auto \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0001/vfm_cache/treehill_dinov2_vits14 \
+  -r -1 \
+  --dense 0.01 \
+  --grad_abs_thresh 0.0018
+```
+
+训练日志确认沿用 FastGS 原始大图规则：
+
+```text
+[ INFO ] Encountered quite large input images (>1.6K pixels width), rescaling to 1.6K.
+```
+
+treehill 单场景结果：
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| treehill | FastGS big densify100 | 22.8339 | 0.6318 | 0.3770 | 998,983 | 189.59s |
+| treehill | DINO descriptor top-k25 weighted i0.50 + FastGS big | 22.8069 | 0.6317 | 0.3774 | 945,930 | 240.89s |
+| treehill | DINO descriptor top-k25 max + FastGS big | 22.8700 | 0.6367 | 0.3665 | 1,129,614 | 219.73s |
+
+`max` 相对 FastGS big：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| +0.0362 | +0.0049 | -0.0105 | +130,631 | +30.14s | -0.0360 |
+
+`max` 相对 `weighted i0.50`：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 |
+|---:|---:|---:|---:|---:|
+| +0.0632 | +0.0050 | -0.0109 | +183,684 | -21.15s |
+
+解读：
+
+- treehill 的负例可以被更强 descriptor 强度修复：`max` 相对 FastGS big 三项质量指标全部正向，也明显优于 `weighted i0.50`。
+- 该修复依赖额外 130,631 个 Gaussians，超过 0.1M 容量关注阈值；按当前 QCGI 计算仍为负。因此它是“质量修复但容量代价偏高”的证据，不放入正向效率主表。
+- 结论上，treehill 更像 descriptor 强度不足问题，而不是 descriptor residual 完全无效。下一步如果继续处理 treehill，应优先尝试介于 `weighted i0.50` 和 `max` 之间的 high-res `i0.70`，或者引入容量自适应权重，而不是直接固定使用 `max`。
