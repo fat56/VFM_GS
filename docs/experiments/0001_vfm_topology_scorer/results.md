@@ -1891,3 +1891,51 @@ Tandt 逐场景差值：
 - DB 均值虽然正向，但强依赖 `drjohnson`，`playroom` 单场景三项回落。因此 DB 上 descriptor top-k25 max 只能算弱正向，不应替代 DB 目前更强的 DINO weighted i0.90 或 cached-edge 正例。
 - Gaussian 增长整体可接受：DB 平均只多 9,189 个点，Tandt 平均只多 2,081 个点；MipNeRF360 平均多 50,131 个点，但 `bicycle` 和 `stump` 已超过 0.1M 单场景关注阈值。
 - 下一步应把 descriptor top-k25 max 作为“强制 VFM、无回退”的第一版核心证据之一。若继续推进质量，应优先在高分辨率同口径上做小范围 bicycle/garden/truck 试验；若推进效率，应研究 descriptor 调用频率和近似缓存，而不是继续调相邻 top-k 比例。
+
+## 2026-05-10 DINO descriptor top-k25 max 高分辨率 bicycle 探针
+
+目标：检查低分辨率 `-r 8` 中已经正向的 descriptor top-k25 max，在原图输入并沿用 FastGS 1.6K 自动缩放规则时是否仍能提升质量。该实验只跑 MipNeRF360 `bicycle`，训练使用 `fastgs_big` recipe，配置仍为 `dinov2_descriptor_cosine + top-k25 + vfm_weight=0.0`。VFM cache 复用 `output/0001/vfm_cache/bicycle_dinov2_vits14`，即 DINO-S/14、`max_width=224`、`npy_float16`；这次不改变 DINO 尺寸，先隔离“分辨率/recipe 迁移”变量。
+
+命令：
+
+```bash
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0001_vfm_topology_dinov2_descriptor_densify_only_topk025.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0001/descriptor_topk025_big_bicycle/vfm_dinov2_descriptor_topk25_max_big_30k_r_auto \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0001/vfm_cache/bicycle_dinov2_vits14 \
+  -r -1
+```
+
+训练日志确认沿用 FastGS 原始大图规则：
+
+```text
+[ INFO ] Encountered quite large input images (>1.6K pixels width), rescaling to 1.6K.
+```
+
+对照使用已完成的 `output/0001/large_res_fastgs_big_baseline/mipnerf360/bicycle/fastgs_big_densify100_30k_r_auto`。
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| bicycle | FastGS big densify100 | 25.2532 | 0.7554 | 0.2446 | 1,560,079 | 234.94s |
+| bicycle | DINO descriptor top-k25 max + FastGS big | 25.3279 | 0.7646 | 0.2277 | 1,809,292 | 291.88s |
+
+相对 FastGS big：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 |
+|---:|---:|---:|---:|---:|
+| +0.0748 | +0.0093 | -0.0169 | +249,213 | +56.94s |
+
+解读：
+
+- high-res bicycle 同口径下 descriptor top-k25 max 仍三项质量正向，说明该语义 residual 不是只在 `-r 8` 缩图上有效。
+- 显存没有形成阻塞：训练阶段观测约 9.5GB，低于 24GB 上限；DINO-S/224 descriptor 路径可在 1.6K 自动缩放口径下运行。
+- 但 Gaussian 增长达到 +249,213，明显超过 0.1M 的单场景关注阈值；训练时间也多 56.94s。因此这不是可直接扩全场景的默认方案，而是“质量可迁移、容量待控制”的探针。
+- 下一步不应立即扩大到全 MipNeRF360；应先在 bicycle 跑更保守的 high-res descriptor weighted 或预算/频率控制版本，目标是在保持 PSNR/SSIM/LPIPS 正向的同时把 ΔGS 压回 0.1M 以内。
