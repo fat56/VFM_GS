@@ -4387,3 +4387,62 @@ source .venv/bin/activate && uv run --active python -m vfm_gs.cli.metrics \
 
 - `compileall`、cache preflight、train/render/metrics 均通过，说明 prior backend 可以复用 `colmap_depth_edge_l1` cache。
 - 620-step 只验证链路健康，不判断正式质量。下一步直接跑 bicycle `-r 8` 30k，与 FastGS densify100、DINO descriptor top-k25 weighted i0.50、COLMAP depth-edge L1 三者对照。
+
+## 2026-05-10 COLMAP depth-edge prior bicycle `-r 8` 30k 正式验证
+
+目标：验证上一节 `colmap_depth_edge_prior` 在正式 30,000 iteration 下是否优于 `colmap_depth_edge_l1`。该版本不再做渲染边缘与稀疏深度边缘的 L1 残差，而是直接把稀疏 depth-edge cache 当作几何边界复制先验。
+
+训练命令：
+
+```bash
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0001_vfm_topology_colmap_depth_edge_prior_densify_only_topk025_weighted_i050.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images_8 \
+  -m output/0001/colmap_depth_edge_prior_bicycle_30k_r8/vfm_colmap_depth_edge_prior_topk25_weighted_i050_30k_r8 \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0001/vfm_cache/bicycle_colmap_depth_edge_images8
+```
+
+渲染与指标命令：
+
+```bash
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.render \
+  -m output/0001/colmap_depth_edge_prior_bicycle_30k_r8/vfm_colmap_depth_edge_prior_topk25_weighted_i050_30k_r8 \
+  --skip_train
+
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.metrics \
+  -m output/0001/colmap_depth_edge_prior_bicycle_30k_r8/vfm_colmap_depth_edge_prior_topk25_weighted_i050_30k_r8
+```
+
+正式结果：
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| bicycle `-r 8` | FastGS densify100 | 26.9221 | 0.8237 | 0.1970 | 413,084 | 129.72s |
+| bicycle `-r 8` | DINO descriptor top-k25 weighted i0.50 | 26.9644 | 0.8301 | 0.1843 | 440,867 | 152.20s |
+| bicycle `-r 8` | COLMAP depth-edge L1 top-k25 weighted i0.50 | 26.4718 | 0.8164 | 0.1925 | 458,239 | 145.17s |
+| bicycle `-r 8` | COLMAP depth-edge prior top-k25 weighted i0.50 | 26.3488 | 0.8085 | 0.2047 | 355,994 | 138.61s |
+
+相对 FastGS densify100：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| -0.5733 | -0.0152 | +0.0077 | -57,090 | +8.89s | -0.9166 |
+
+相对 COLMAP depth-edge L1：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 |
+|---:|---:|---:|---:|---:|
+| -0.1230 | -0.0079 | +0.0123 | -102,245 | -6.56s |
+
+解读：
+
+- prior 版本确实把 Gaussian 数量压低到 355,994，比 FastGS 少 57,090，也比 L1 版少 102,245；但三项质量全部低于 FastGS，PSNR/SSIM/LPIPS 也全部低于 L1 版。
+- 这说明 COLMAP 稀疏 depth-edge 作为单独复制先验覆盖太稀且偏置明显：它能强行改变 densification 分布，但不能稳定保住重建质量。
+- 该支线收束为负结果：`colmap_depth_edge_l1` 和 `colmap_depth_edge_prior` 都不继续扩展到其他场景。后续如果继续几何先验，应使用 dense depth prior，例如 Depth Anything 的相对深度 residual 或 depth-edge protect；否则应回到已经有跨数据集正向证据的 DINO descriptor densify-only 主线。
