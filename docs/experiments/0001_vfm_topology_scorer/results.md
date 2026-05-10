@@ -3716,3 +3716,74 @@ screen-support candidate cap 1.45M 相对 `branch_type` cap 1.45M：
 - 质量没有恢复，且低于三种已测 cap：相对 `branch_type` 为 -0.0668 PSNR、-0.0057 SSIM、LPIPS 差 +0.0086；相对自然 i0.50 仍低 -0.7940 PSNR、-0.0348 SSIM、LPIPS 差 +0.0361。
 - 结论：按屏幕覆盖分桶也没有保住 high-res stump 的有效新增点分布。全局 top-k、3D 空间配额、clone/split 分支配额、screen-support 配额四种硬候选截断都能控点，但都会把质量压到 FastGS big 以下。
 - 该支线收束：后续不再扫描 candidate cap 的相邻预算或 bins 参数。下一步转向更有方法贡献的连续控制或新先验：Depth Anything 几何/边界 residual，或在 descriptor 分支里用训练过程信号自适应调节 densification 强度，而不是在候选集合末端做硬截断。
+
+## 2026-05-10 DINO descriptor top-k25 weighted i0.50 + densify metric 6.0 高分辨率 stump 诊断
+
+目标：在四种 candidate cap 都证明“候选集合末端硬截断会破坏质量”后，回到更连续的训练期前置门槛。该实验保持 high-res stump、FastGS big 场景超参、FastGS 原始 1.6K 自动缩放规则和 DINO descriptor top-k25 weighted i0.50，只把 FastGS densification 的 `densify_metric_thresh` 从默认 5.0 提高到 6.0。目的不是把点数硬压到某个 target，而是轻微提高进入 densification 的重要性门槛，观察能否保留主要质量收益并减少低效 Gaussian 增长。
+
+命令：
+
+```bash
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0001_vfm_topology_dinov2_descriptor_densify_only_topk025_weighted_i050.yaml \
+  -s datasets/mipnerf360/stump \
+  -i images \
+  -m output/0001/descriptor_topk025_weighted_i050_metric6_big_stump/vfm_dinov2_descriptor_topk25_weighted_i050_metric6_big_30k_r_auto \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0001/vfm_cache/stump_dinov2_vits14 \
+  -r -1 \
+  --dense 0.004 \
+  --grad_abs_thresh 0.001 \
+  --densify_metric_thresh 6.0
+```
+
+训练和渲染日志均确认沿用 FastGS 原始大图规则：
+
+```text
+[ INFO ] Encountered quite large input images (>1.6K pixels width), rescaling to 1.6K.
+```
+
+渲染与指标命令：
+
+```bash
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.render \
+  -m output/0001/descriptor_topk025_weighted_i050_metric6_big_stump/vfm_dinov2_descriptor_topk25_weighted_i050_metric6_big_30k_r_auto \
+  --skip_train
+
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.metrics \
+  -m output/0001/descriptor_topk025_weighted_i050_metric6_big_stump/vfm_dinov2_descriptor_topk25_weighted_i050_metric6_big_30k_r_auto
+```
+
+stump 对照：
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| stump | FastGS big densify100 | 27.1310 | 0.7862 | 0.2406 | 1,062,281 | 189.72s |
+| stump | DINO descriptor top-k25 weighted i0.50 + FastGS big | 27.2233 | 0.7903 | 0.2317 | 1,196,350 | 283.46s |
+| stump | DINO descriptor top-k25 weighted i0.50 + densify metric 6.0 | 27.1803 | 0.7887 | 0.2340 | 1,144,519 | 221.76s |
+| stump | DINO descriptor top-k25 weighted i0.50 + branch-type candidate cap 1.45M | 26.4961 | 0.7613 | 0.2591 | 1,284,312 | 227.32s |
+| stump | DINO descriptor top-k25 weighted i0.50 + screen-support candidate cap 1.45M | 26.4293 | 0.7555 | 0.2678 | 1,279,272 | 229.04s |
+
+densify metric 6.0 相对 FastGS big：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| +0.0493 | +0.0026 | -0.0066 | +82,238 | +32.04s | +0.0513 |
+
+densify metric 6.0 相对自然 `weighted i0.50`：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| -0.0430 | -0.0016 | +0.0023 | -51,831 | -61.69s | -0.0865 |
+
+解读：
+
+- 相对 FastGS big，`densify_metric_thresh=6.0` 三项质量同步正向：+0.0493 PSNR、+0.0026 SSIM、LPIPS 改善 -0.0066。
+- 相对自然 i0.50，它牺牲了少量质量，但少 51,831 个 Gaussians，训练少 61.69s；相对 baseline 的新增点数从自然 i0.50 的 +134,069 降到 +82,238，回到当前 QCGI 可接受区间。
+- 该结果与 candidate cap 形成清晰对比：末端硬截断虽然能控点，但会把质量压到 baseline 以下；前置连续门槛没有达到自然 i0.50 的最高质量，但保住了相对 baseline 的正向收益。
+- 下一步先做相邻 `densify_metric_thresh=5.5` 诊断，判断能否在仍低于 0.10M 增点的前提下恢复更多自然 i0.50 质量。如果 5.5 失控或收益不足，则不继续做长网格扫描，转向 Depth Anything 几何/边界 residual 或更细粒度的连续 densification 强度控制。

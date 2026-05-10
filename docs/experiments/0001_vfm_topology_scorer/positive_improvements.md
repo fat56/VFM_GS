@@ -71,6 +71,7 @@
 | 高分辨率容量受控候选 | DINO descriptor top-k25 weighted i0.50 + FastGS big | 同上，1.6K 自动缩放 | MipNeRF360 counter | 29.5838 | +0.0570 | 0.9194 | +0.0014 | 0.1723 | -0.0041 | 551,300 | +78,100 | 200.97s | 三项质量正向，ΔGS < 0.1M 且 QCGI 为正 |
 | 高分辨率容量受控候选 | DINO descriptor top-k25 weighted i0.50 + FastGS big | 同上，1.6K 自动缩放 | MipNeRF360 kitchen | 32.4350 | +0.1650 | 0.9398 | +0.0007 | 0.1036 | -0.0008 | 1,286,004 | +107,209 | 383.90s | 三项质量正向，ΔGS 略高于 0.1M 但 QCGI 为正 |
 | 高分辨率容量受控候选 | DINO descriptor top-k25 weighted i0.50 + FastGS big | 同上，1.6K 自动缩放 | MipNeRF360 room | 32.1919 | +0.0596 | 0.9324 | +0.0025 | 0.1822 | -0.0059 | 615,908 | +45,129 | 197.77s | 三项质量正向，ΔGS < 0.1M 且 QCGI 为正 |
+| 高分辨率连续门槛候选 | DINO descriptor top-k25 weighted i0.50 + densify metric 6.0 | 同上，1.6K 自动缩放，`densify_metric_thresh=6.0` | MipNeRF360 stump | 27.1803 | +0.0493 | 0.7887 | +0.0026 | 0.2340 | -0.0066 | 1,144,519 | +82,238 | 221.76s | 三项质量正向，ΔGS < 0.1M 且 QCGI 为正；优于候选硬截断 |
 | proxy 控制组 | cached edge v1 | `cached_edge_l1 + staged target ~= 1.42x baseline` | MipNeRF360 9 场景 | 28.7213 | +0.0686 | 0.8579 | +0.0028 | 0.1551 | -0.0068 | 215,869 | +42,528 | 139.33s | 确定性边缘代理，适合作为 v1 正向控制组 |
 | 质量候选 | DINO token-edge i0.50 | `dinov2_token_edge_l1 + top-k25 + importance_weight=0.50` | MipNeRF360 9 场景 | 28.8577 | +0.2051 | 0.8666 | +0.0115 | 0.1385 | -0.0234 | 263,572 | +90,231 | 140.47s | 当前全场景质量最强，但预算偏高 |
 | 预算效率候选 | weighted i0.50 | `top-k25 + importance_mode=weighted + importance_weight=0.50` | MipNeRF360 9 场景 | 28.8505 | +0.1978 | 0.8660 | +0.0109 | 0.1397 | -0.0223 | 254,736 | +81,395 | 137.60s | 相比普通 i0.50 少 8,836 点、少 2.87s，质量只小幅回落 |
@@ -232,6 +233,7 @@ QCGI = quality_gain - gs_penalty
 | high-res MipNeRF360 `kitchen` descriptor weighted i0.50 vs FastGS big | +0.1650 | +0.0007 | -0.0008 | +107,209 | `gte_0.10M` | +0.0546 | 大分辨率高基线室内场景 PSNR 收益明确，容量增长略超阈值但仍正向 |
 | high-res MipNeRF360 `room` descriptor weighted i0.50 vs FastGS big | +0.0596 | +0.0025 | -0.0059 | +45,129 | `0.01M_to_0.10M` | +0.0958 | 大分辨率室内场景 SSIM/LPIPS 收益明确，增点低于 0.1M |
 | high-res MipNeRF360 平均 descriptor weighted i0.50 vs FastGS big | +0.0615 | +0.0020 | -0.0035 | +56,312 | `0.01M_to_0.10M` | +0.0633 | 9 场景数据集均值正向，证明 1.6K 自动缩放口径下 VFM descriptor residual 仍有效 |
+| high-res MipNeRF360 `stump` descriptor weighted i0.50 + densify metric 6.0 vs FastGS big | +0.0493 | +0.0026 | -0.0066 | +82,238 | `0.01M_to_0.10M` | +0.0513 | 连续前置门槛保留三项质量收益，同时把自然 i0.50 的增点从 +134,069 降到 +82,238 |
 
 `scripts/summarize_0001_cross_dataset_selector.py` 已把 `quality_gain`、`quality_gain_per_10k_gs`、`gs_growth_band`、`gs_penalty` 和 `qcgi` 写入 comparison 表，并新增 `qcgi_pick_method`。展示时应优先使用按数据集拆分的 `scripts/summarize_0001_dataset_policies.py` 产物，尤其是 `dataset_averages.csv` 和 `dataset_comparisons.csv`。`scripts/summarize_0001_weighted_candidates.py` 也已把 QCGI 接入 MipNeRF360 weighted 档位选择；严格 `quality_pick` 均值为 28.8641 / 0.8665 / 0.1392、257,326 个 Gaussians，`QCGI pick` 均值为 28.8641 / 0.8667 / 0.1388、255,822 个 Gaussians。下一阶段可以先继续把 QCGI 作为离线选择准则；当更多数据集验证稳定后，再把 QCGI 或其分档信号接入 density/prune 强度的自适应控制。
 
