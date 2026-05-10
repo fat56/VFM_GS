@@ -4067,3 +4067,81 @@ adaptive metric 1.15M sqrt 相对自然 `weighted i0.50`：
 - 相对固定 `densify_metric_thresh=6.0`，该方案多 19,186 个 Gaussians，但 PSNR/SSIM/LPIPS 全部改善，训练时间还少 4.33s。说明曲线门槛比固定绝对门槛在 stump 上更合理。
 - 相对自然 `weighted i0.50`，质量几乎持平但略低，少 32,645 个 Gaussians、训练少 66.02s。它没有达到自然 i0.50 的最高质量，但给出了更好的质量-容量折中。
 - 需要注意，ΔGaussian 相对 FastGS big 为 +101,424，刚刚超过 0.10M 重惩罚线；该结果可记录为正向容量收益点，但不应直接作为跨场景默认。下一步应在 bonsai 上用同机制做 matched 复验，优先尝试 `quadratic` 或更高目标容量，避免重演固定 metric6 对 PSNR 的强损伤。
+
+## 2026-05-10 DINO descriptor top-k25 weighted i0.50 + adaptive metric 1.08M quadratic 高分辨率 bonsai 诊断
+
+目标：复验自适应前置门槛能否修复固定 `densify_metric_thresh=6.0` 在 bonsai 上的 PSNR 损伤。该 run 使用 bonsai matched high-res FastGS big 场景超参，设置 `densify_budget_count=1080000`、`densify_budget_curve=quadratic`、`densify_budget_start_ratio=0.90`、`densify_budget_max_metric_thresh=6.0`。`quadratic` 的目的，是让门槛比 stump 的 `sqrt` 更晚抬高，减少早期有效复制被压制的风险。
+
+训练命令：
+
+```bash
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0001_vfm_topology_dinov2_descriptor_adaptive_metric_budget.yaml \
+  -s datasets/mipnerf360/bonsai \
+  -i images \
+  -m output/0001/descriptor_topk025_weighted_i050_adaptive_metric1080k_quadratic_big_bonsai/vfm_dinov2_descriptor_topk25_weighted_i050_adaptive_metric1080k_quadratic_big_30k_r_auto \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0001/vfm_cache/bonsai_dinov2_vits14 \
+  -r -1 \
+  --dense 0.001 \
+  --grad_abs_thresh 0.0002 \
+  --densify_budget_count 1080000 \
+  --densify_budget_curve quadratic \
+  --densify_budget_start_ratio 0.90 \
+  --densify_budget_max_metric_thresh 6.0
+```
+
+渲染与指标命令：
+
+```bash
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.render \
+  -m output/0001/descriptor_topk025_weighted_i050_adaptive_metric1080k_quadratic_big_bonsai/vfm_dinov2_descriptor_topk25_weighted_i050_adaptive_metric1080k_quadratic_big_30k_r_auto \
+  --skip_train
+
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.metrics \
+  -m output/0001/descriptor_topk025_weighted_i050_adaptive_metric1080k_quadratic_big_bonsai/vfm_dinov2_descriptor_topk25_weighted_i050_adaptive_metric1080k_quadratic_big_30k_r_auto
+```
+
+训练与渲染均确认沿用 FastGS 原始大图规则：
+
+```text
+[ INFO ] Encountered quite large input images (>1.6K pixels width), rescaling to 1.6K.
+```
+
+bonsai 对照：
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| bonsai | FastGS big densify100 | 32.9863 | 0.9512 | 0.1600 | 842,636 | 212.97s |
+| bonsai | DINO descriptor top-k25 weighted i0.50 + FastGS big | 33.1160 | 0.9549 | 0.1560 | 1,094,114 | 265.81s |
+| bonsai | DINO descriptor top-k25 weighted i0.50 + densify metric 6.0 | 32.5709 | 0.9525 | 0.1587 | 1,012,191 | 245.90s |
+| bonsai | DINO descriptor top-k25 weighted i0.50 + adaptive metric 1.08M quadratic | 32.5754 | 0.9529 | 0.1578 | 1,014,694 | 249.06s |
+
+adaptive metric 1.08M quadratic 相对 FastGS big：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| -0.4109 | +0.0017 | -0.0022 | +172,058 | +36.10s | -0.7553 |
+
+adaptive metric 1.08M quadratic 相对固定 `densify_metric_thresh=6.0`：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| +0.0045 | +0.0003 | -0.0008 | +2,503 | +3.17s | +0.0124 |
+
+adaptive metric 1.08M quadratic 相对自然 `weighted i0.50`：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| -0.5406 | -0.0020 | +0.0019 | -79,420 | -16.74s | -0.5905 |
+
+解读：
+
+- 该 run 相对固定 metric 6.0 有轻微改善，但没有修复 bonsai 的主要问题：PSNR 仍比 FastGS big 低 0.4109，比自然 `weighted i0.50` 低 0.5406。
+- 最终 Gaussian 数量为 1,014,694，几乎贴近固定 metric 6.0 的 1,012,191，而没有接近 1.08M 目标。这说明当前 `max_metric_thresh=6.0` 对 bonsai 仍然过强，曲线变晚不足以恢复自然 `weighted i0.50` 的有效复制分布。
+- 结论：bonsai 不应继续沿用 `max_metric_thresh=6.0`；下一轮应把最大门槛降到 5.5 或更接近原始 5.0，并保持目标容量接近自然 `weighted i0.50`，判断是否能在少量控点的同时保住 PSNR。
