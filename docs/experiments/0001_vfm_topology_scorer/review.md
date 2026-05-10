@@ -197,6 +197,7 @@ DB 的 DINO weighted 多档复验则给出相反信号。i0.50 平均为 30.3603
 - high-res stump `weighted i0.50 + staged target 1.45M` 诊断完成。结果为 26.5426 / 0.7636 / 0.2562、1,262,974 个 Gaussians、训练 288.31s；相对 FastGS big 为 -0.5884 PSNR、-0.0226 SSIM、LPIPS +0.0156。该 run 把 target 放宽并前移到 9k/12k/15k，但首次仍从 3.70M 裁到 1.479M，后续两次也删除 1.5M 级点。它比 1.18M 稍好，但仍低于 baseline。结论是 prune-to-target 系列在 high-res stump 上收束为负结果；后续应转向生成侧容量控制，例如动态提高 densification 门槛、降低 `dense` 或按容量关闭/降权 descriptor densification。
 - high-res stump `weighted i0.50 + warm8000` 诊断完成。结果为 26.8154 / 0.7780 / 0.2307、2,737,333 个 Gaussians、训练 362.21s；相对 FastGS big 为 -0.3156 PSNR、-0.0082 SSIM、LPIPS -0.0099。它保住并略改善 LPIPS，但 PSNR/SSIM 低且点数爆到 2.74M，QCGI 为 -6.8294。结论是仅靠 active window 不能解决生成侧容量问题；8k 前的早期轨迹已经让后续 RGB/FastGS densification/pruning 进入高容量状态。
 - high-res stump `weighted i0.50 + densify budget 1.20M` 诊断完成。结果为 26.6899 / 0.7738 / 0.2371、2,378,891 个 Gaussians、训练 315.61s；相对 FastGS big 为 -0.4411 PSNR、-0.0124 SSIM、LPIPS -0.0035。新增 `densify_budget_count` 阈值门控生效但力度不足：点数低于 warm8000 的 2.74M，却仍远高于 1.20M 预算和自然 i0.50 的 1.20M 结果。结论是 metric 阈值从 5 提到 12 不能可靠约束 high-res stump 的候选规模，下一步改为按剩余容量直接限制 clone/split 候选数。
+- high-res stump `weighted i0.50 + candidate cap 1.20M` 诊断完成。结果为 26.3268 / 0.7522 / 0.2712、1,076,427 个 Gaussians、训练 212.35s；相对 FastGS big 为 -0.8042 PSNR、-0.0340 SSIM、LPIPS +0.0306，只多 14,146 个点。它证明候选数量硬门控可以把 high-res stump 控回 baseline 附近容量，但 1.20M 预算过紧，直接压掉有效 descriptor densification。下一步不再争论是否能控点，而是扫描 1.35M/1.45M，寻找质量接近自然 i0.50、容量增长仍可接受的拐点。
 
 ## 下一版计划
 

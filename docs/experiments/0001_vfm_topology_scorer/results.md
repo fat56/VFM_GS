@@ -3204,3 +3204,63 @@ densify budget 1.20M 相对 `weighted i0.50`：
 - 生成侧阈值门控比 warm8000 的 2.74M 点有所降低，但最终仍有 2.38M 点，远高于 1.20M 预算和自然 i0.50 的 1.20M 结果。
 - 质量低于 FastGS big 和自然 i0.50；LPIPS 仍略优于 baseline，但没有保住 i0.50 的感知质量。
 - 结论：只把 metric 阈值从 5 提到 12 不能有效限制 high-res stump 的候选规模。下一步应采用更直接的候选数量门控，按剩余容量限制 clone/split 候选数；单纯继续调小 active window 或事后删除都不是主线。
+
+## 2026-05-10 DINO descriptor top-k25 weighted i0.50 + candidate cap 1.20M 高分辨率 stump 诊断
+
+目标：验证默认关闭的 `densify_budget_candidate_cap` 是否能在生成阶段直接按剩余容量限制 clone/split 候选数。与上一轮只抬高 metric 阈值不同，本轮在当前点数接近 1.20M 预算后直接截断候选集合，避免继续产生 2M 级冗余点。
+
+命令：
+
+```bash
+source .venv/bin/activate && uv run --active python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0001_vfm_topology_dinov2_descriptor_densify_only_topk025_weighted_i050.yaml \
+  -s datasets/mipnerf360/stump \
+  -i images \
+  -m output/0001/descriptor_topk025_weighted_i050_candidatecap1200k_big_stump/vfm_dinov2_descriptor_topk25_weighted_i050_candidatecap1200k_big_30k_r_auto \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0001/vfm_cache/stump_dinov2_vits14 \
+  -r -1 \
+  --dense 0.01 \
+  --grad_abs_thresh 0.00015 \
+  --densify_budget_count 1200000 \
+  --densify_budget_start_ratio 0.90 \
+  --densify_budget_max_metric_thresh 12.0 \
+  --densify_budget_candidate_cap
+```
+
+训练和渲染日志均确认沿用 FastGS 原始大图规则：
+
+```text
+[ INFO ] Encountered quite large input images (>1.6K pixels width), rescaling to 1.6K.
+```
+
+stump 对照：
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| stump | FastGS big densify100 | 27.1310 | 0.7862 | 0.2406 | 1,062,281 | 189.72s |
+| stump | DINO descriptor top-k25 weighted i0.50 + FastGS big | 27.2233 | 0.7903 | 0.2317 | 1,196,350 | 283.46s |
+| stump | DINO descriptor top-k25 weighted i0.50 + candidate cap 1.20M | 26.3268 | 0.7522 | 0.2712 | 1,076,427 | 212.35s |
+
+candidate cap 1.20M 相对 FastGS big：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| -0.8042 | -0.0340 | +0.0306 | +14,146 | +22.63s | -1.6513 |
+
+candidate cap 1.20M 相对自然 `weighted i0.50`：
+
+| ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 | QCGI |
+|---:|---:|---:|---:|---:|---:|
+| -0.8965 | -0.0381 | +0.0395 | -119,923 | -71.11s | -1.8572 |
+
+解读：
+
+- 候选数量门控已经有效控制容量：最终 1.076M Gaussians，接近 FastGS big 的 1.062M，也明显低于自然 i0.50 的 1.196M。
+- 质量明显低于 FastGS big 和自然 i0.50，说明 1.20M 预算触发过早或过强，直接截断候选会压掉有效的 descriptor densification。
+- 该结果是重要负例：问题不再是“控不住点数”，而是“控点太强时质量坍缩”。下一步应扫描更宽松的 `densify_budget_count=1.35M/1.45M`，寻找接近自然 i0.50 质量且仍低于 0.1M 级额外增长的拐点。
