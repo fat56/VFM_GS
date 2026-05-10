@@ -1712,3 +1712,80 @@ Tandt 逐场景：
 - warm8000 机制有效，但质量-效率折中不优。它相对 FastGS 仍三项指标正向，且比 i0.70 少 12,909 个点；但 PSNR/SSIM/LPIPS 都低于 i0.70，也低于 i0.50。
 - 训练时间只比 i0.70 profile 少 6.67s，远小于预期。原因是 8000 iteration 之前已经覆盖了主要 densification 增长阶段，且 15k 后 pruning 仍需要 FastGS 原始 score；仅截断后半段 DINO descriptor 不能充分降低总训练耗时。
 - 结论：`warm8000` 记录为机制可行但实验负例，不扩展四场景。下一轮不继续缩短窗口做细扫；更应把资源放回已经正向的 descriptor top-k25 `max` 或 weighted i0.70 多场景/全场景验证，判断数据集平均收益，而不是用单场景窗口优化追求小幅省时。
+
+## 2026-05-10 DINO descriptor top-k25 max MipNeRF360 全场景扩展
+
+目标：验证质量优先档 `dinov2_descriptor_topk25_max` 是否只是在最初四个场景上有效，还是能在 MipNeRF360 全 9 场景平均上稳定提升。该方案保持 `vfm_weight=0.0`，只让 DINO descriptor residual 参与 densification importance，不改变 pruning score，因此是当前最干净的“VFM 指导复制提升质量”证据。
+
+新增 5 场景使用命令：
+
+```bash
+source .venv/bin/activate && uv run --active python scripts/run_0001_descriptor_quality_probe.py \
+  --dataset-name mipnerf360 \
+  --dataset-root datasets/mipnerf360 \
+  --output-root output/0001/descriptor_topk025_mipnerf360_full \
+  --scenes counter flowers kitchen room treehill \
+  --config configs/experiments/0001_vfm_topology_dinov2_descriptor_densify_only_topk025.yaml \
+  --descriptor-method dinov2_descriptor_topk25_max \
+  --descriptor-run-name vfm_dinov2_descriptor_topk25_max_30k_r8 \
+  --baseline-run-name fastgs_densify100_30k_r8 \
+  --cache-root output/0001/vfm_cache \
+  --cache-max-width 224 \
+  --cache-storage npy_float16 \
+  --dino-backend dinov2_vits14 \
+  --dinov2-repo output/0001/external/dinov2 \
+  --resolution 8 \
+  --iterations 30000 \
+  --densification-interval 100
+```
+
+合并结果输出在 `output/0001/descriptor_topk025_mipnerf360_full_merged/summary.csv`、`comparisons.csv`、`averages.json` 和 `dataset_comparison.json`。旧四场景来自 `output/0001/descriptor_densify_only_topk025_probe/summary.csv`，新五场景来自 `output/0001/descriptor_topk025_mipnerf360_full/summary.csv`。
+
+全 9 场景结果：
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数量 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| bicycle | FastGS densify100 | 26.9221 | 0.8237 | 0.1970 | 413,084 | 129.72s |
+| bicycle | DINO descriptor top-k25 max | 27.0613 | 0.8355 | 0.1741 | 518,848 | 154.23s |
+| bonsai | FastGS densify100 | 32.4327 | 0.9625 | 0.0545 | 127,978 | 125.08s |
+| bonsai | DINO descriptor top-k25 max | 32.5997 | 0.9648 | 0.0489 | 142,867 | 154.30s |
+| counter | FastGS densify100 | 29.6104 | 0.9316 | 0.0795 | 110,956 | 128.98s |
+| counter | DINO descriptor top-k25 max | 29.7090 | 0.9342 | 0.0737 | 123,800 | 150.09s |
+| flowers | FastGS densify100 | 22.9911 | 0.6933 | 0.2772 | 321,358 | 143.28s |
+| flowers | DINO descriptor top-k25 max | 23.0339 | 0.6982 | 0.2724 | 363,631 | 154.08s |
+| garden | FastGS densify100 | 28.8736 | 0.8961 | 0.1003 | 248,094 | 136.19s |
+| garden | DINO descriptor top-k25 max | 29.0934 | 0.9018 | 0.0912 | 295,276 | 151.27s |
+| kitchen | FastGS densify100 | 33.3742 | 0.9692 | 0.0350 | 158,819 | 147.13s |
+| kitchen | DINO descriptor top-k25 max | 33.3927 | 0.9699 | 0.0337 | 169,214 | 157.19s |
+| room | FastGS densify100 | 33.0262 | 0.9619 | 0.0584 | 99,304 | 124.06s |
+| room | DINO descriptor top-k25 max | 33.0628 | 0.9621 | 0.0572 | 105,528 | 165.00s |
+| stump | FastGS densify100 | 27.5457 | 0.8106 | 0.2042 | 295,290 | 134.25s |
+| stump | DINO descriptor top-k25 max | 27.7338 | 0.8222 | 0.1852 | 440,028 | 152.83s |
+| treehill | FastGS densify100 | 24.3962 | 0.7246 | 0.2900 | 408,149 | 144.20s |
+| treehill | DINO descriptor top-k25 max | 24.4452 | 0.7298 | 0.2757 | 475,021 | 182.65s |
+| **平均** | **FastGS densify100** | **28.7969** | **0.8637** | **0.1440** | **242,559** | **134.77s** |
+| **平均** | **DINO descriptor top-k25 max** | **28.9035** | **0.8687** | **0.1347** | **292,690** | **157.96s** |
+
+逐场景差值：
+
+| 场景 | ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussian | Δ训练时间 |
+|---|---:|---:|---:|---:|---:|
+| bicycle | +0.1392 | +0.0118 | -0.0229 | +105,764 | +24.51s |
+| bonsai | +0.1670 | +0.0022 | -0.0056 | +14,889 | +29.22s |
+| counter | +0.0986 | +0.0026 | -0.0058 | +12,844 | +21.11s |
+| flowers | +0.0428 | +0.0049 | -0.0047 | +42,273 | +10.80s |
+| garden | +0.2197 | +0.0057 | -0.0091 | +47,182 | +15.08s |
+| kitchen | +0.0185 | +0.0006 | -0.0013 | +10,395 | +10.06s |
+| room | +0.0366 | +0.0002 | -0.0012 | +6,224 | +40.94s |
+| stump | +0.1881 | +0.0116 | -0.0190 | +144,738 | +18.58s |
+| treehill | +0.0489 | +0.0052 | -0.0143 | +66,872 | +38.45s |
+| **平均** | **+0.1066** | **+0.0050** | **-0.0093** | **+50,131** | **+23.20s** |
+
+解读：
+
+- 这是目前 descriptor densify-only 分支最强的全场景证据：MipNeRF360 9/9 场景 PSNR、SSIM、LPIPS 全部正向，数据集平均 PSNR +0.1066、SSIM +0.0050、LPIPS 改善 -0.0093。
+- 由于 `vfm_weight=0.0`，该实验不改变 pruning score；收益来自 DINO descriptor residual 对新增 Gaussian 位置/区域的引导，而不是剪枝回退或测试集选择。
+- 平均 Gaussian 数量增加 50,131，低于 0.1M 的平均关注阈值，说明整体容量增长仍可接受；但 `bicycle` 和 `stump` 单场景分别增加 105,764 和 144,738，后续需要容量收益门槛或自适应 importance 控制。
+- 新补的 `counter/flowers/kitchen/room/treehill` 五场景全部正向，尤其 `treehill` 在过去多个分支中经常是压力场景，本轮仍获得 +0.0489 PSNR、+0.0052 SSIM、LPIPS -0.0143，说明 descriptor top-k25 max 的鲁棒性强于 warm-window 和若干 weighted 边界档。
+- 代价主要是训练时间：平均 +23.20s。该成本来自在线 DINO descriptor 对渲染图与 GT cache 的比较，后续不应再用 warm8000 这类质量损失较大的窗口截断，而应优先研究更轻量的 descriptor 近似、cache/投影复用或自适应调用频率。
+- 下一轮建议把 top-k25 max 作为 MipNeRF360 `-r 8` 的质量优先证据保留，同时在 DB/Tandt 做同一功能模块的跨数据集验证；若 DB/Tandt 也正向，再进入高分辨率或 Depth Anything 几何先验分支。
