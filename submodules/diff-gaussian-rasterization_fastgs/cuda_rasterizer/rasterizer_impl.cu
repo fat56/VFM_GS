@@ -152,7 +152,7 @@ __global__ void duplicateWithKeys(
 // the full sorted list. If yes, write start/end of this tile. 
 // Run once per instanced (duplicated) Gaussian ID.
 // This is built upon Speedy-Splat — many thanks for their excellent work.
-__global__ void identifyTileRanges(int L, uint64_t* point_list_keys, uint2* ranges)
+__global__ void identifyTileRanges(int L, uint64_t* point_list_keys, uint2* ranges, int num_tiles)
 {
 	auto idx = cg::this_grid().thread_rank();
 	if (idx >= L)
@@ -161,18 +161,23 @@ __global__ void identifyTileRanges(int L, uint64_t* point_list_keys, uint2* rang
 	// Read tile ID from key. Update start/end of tile range if at limit.
 	uint64_t key = point_list_keys[idx];
 	uint32_t currtile = key >> 32;
-	bool valid_tile = currtile != (uint32_t) -1;
+	bool valid_tile = currtile < (uint32_t)num_tiles;
 
 	if (idx == 0)
-		ranges[currtile].x = 0;
+	{
+		if (valid_tile)
+			ranges[currtile].x = 0;
+	}
 	else
 	{
 		uint32_t prevtile = point_list_keys[idx - 1] >> 32;
+		bool valid_prevtile = prevtile < (uint32_t)num_tiles;
 		if (currtile != prevtile)
 		{
-			ranges[prevtile].y = idx;
+			if (valid_prevtile)
+				ranges[prevtile].y = idx;
 			if (valid_tile) 
-			ranges[currtile].x = idx;
+				ranges[currtile].x = idx;
 		}
 	}
 	if (idx == L - 1 && valid_tile)
@@ -385,6 +390,8 @@ std::tuple<int,int> CudaRasterizer::Rasterizer::forward(
 	size_t binning_chunk_size = required<BinningState>(num_rendered);
 	char* binning_chunkptr = binningBuffer(binning_chunk_size);
 	BinningState binningState = BinningState::fromChunk(binning_chunkptr, num_rendered);
+	CHECK_CUDA(cudaMemset(binningState.point_list_keys_unsorted, 0xFF, num_rendered * sizeof(uint64_t)), debug);
+	CHECK_CUDA(cudaMemset(binningState.point_list_unsorted, 0xFF, num_rendered * sizeof(uint32_t)), debug);
 
 	// For each instance to be rendered, produce adequate [ tile | depth ] key 
 	// and corresponding dublicated Gaussian indices to be sorted
@@ -414,15 +421,16 @@ std::tuple<int,int> CudaRasterizer::Rasterizer::forward(
 	CHECK_CUDA(cudaMemset(imgState.ranges, 0, tile_grid.x * tile_grid.y * sizeof(uint2)), debug);
 
 	// Identify start and end of per-tile workloads in sorted list
+	int num_tiles = tile_grid.x * tile_grid.y;
 	if (num_rendered > 0)
 		identifyTileRanges << <(num_rendered + 255) / 256, 256 >> > (
 			num_rendered,
 			binningState.point_list_keys,
-			imgState.ranges);
+			imgState.ranges,
+			num_tiles);
 	CHECK_CUDA(, debug)
 
  	// bucket count
-	int num_tiles = tile_grid.x * tile_grid.y;
 	perTileBucketCount<<<(num_tiles + 255) / 256, 256>>>(num_tiles, imgState.ranges, imgState.bucket_count);
 	CHECK_CUDA(cub::DeviceScan::InclusiveSum(imgState.bucket_count_scanning_space, imgState.bucket_count_scan_size, imgState.bucket_count, imgState.bucket_offsets, num_tiles), debug)
 	unsigned int bucket_sum;

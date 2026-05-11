@@ -1,0 +1,120 @@
+# 0002 实验结果
+
+## 当前状态
+
+Phase 0 已开始。首次双卡 high-res FastGS big baseline 在 MipNeRF360 首个场景上均提前失败，失败发生在 Depth Anything 接入前，因此该阶段首先修复 5090 / CUDA 12.8 / Blackwell 下的 FastGS rasterizer 稳定性，而不是评价 dense depth prior。
+
+已完成第一轮 rasterizer 修补、5000-step debug 验证、MipNeRF360 `bicycle` 单场景 30k 验收，以及 MipNeRF360/DB/Tandt 三个公开数据集全 13 场景 high-res FastGS big train/render/metrics。三数据集结果与 0001/4090D 同口径 high-res FastGS big baseline 基本贴合。当前结论：5090 环境 Phase 0 通过，可以进入 Depth Anything dense prior 的 backend/cache 与 high-res smoke。
+
+## Phase 0：5090 FastGS Big Baseline 复核
+
+| 日期 | 数据集 | 场景数 | 输出路径 | PSNR/SSIM/LPIPS 是否对齐 4090D | 结论 |
+|---|---|---:|---|---|---|
+| 2026-05-11 | MipNeRF360 | 9 | `output/0002/phase0_5090_fastgs_big_baseline_fix1/mipnerf360_combined` | 是；相对 0001 high-res baseline 为 +0.0297 PSNR / +0.0005 SSIM / LPIPS 约持平 / +544 GS | 通过；继续 DB/Tandt |
+| 2026-05-11 | DB | 2 | `output/0002/phase0_5090_fastgs_big_baseline_fix1/db` | 是；相对 0001 high-res baseline 为 +0.0258 PSNR / -0.0001 SSIM / LPIPS -0.0005 / -3,595 GS | 通过 |
+| 2026-05-11 | Tandt | 2 | `output/0002/phase0_5090_fastgs_big_baseline_fix1/tandt` | 是；相对 0001 high-res baseline 为 +0.1398 PSNR / +0.0006 SSIM / LPIPS -0.0009 / -459 GS | 通过 |
+
+### 2026-05-11 首次 high-res baseline 启动
+
+| 数据集 | 场景 | GPU | 输出路径 | 进度 | 失败位置 | 错误 | 结论 |
+|---|---|---:|---|---:|---|---|---|
+| MipNeRF360 | bicycle | 0 | `output/0002/phase0_5090_fastgs_big_baseline/mipnerf360_gpu0/bicycle/logs/fastgs_big_densify100_30k_r_auto/train.log` | 7190/30000 | `src/vfm_gs/cli/train.py:362`，`loss.item()` | `torch.AcceleratorError: CUDA error: an illegal memory access was encountered` | 无指标产出；暂停全数据集 baseline |
+| MipNeRF360 | room | 1 | `output/0002/phase0_5090_fastgs_big_baseline/mipnerf360_gpu1/room/logs/fastgs_big_densify100_30k_r_auto/train.log` | 2200/30000 | `src/vfm_gs/gaussian_renderer/__init__.py:108`，`(radii > 0).nonzero()` | `torch.AcceleratorError: CUDA error: an illegal memory access was encountered` | 无指标产出；暂停全数据集 baseline |
+
+两份日志都确认输入使用 FastGS 原始高分辨率口径：遇到宽度大于 1.6K 的原图后自动缩放到 1.6K。两张 5090 在不同场景、不同调用点都出现 illegal memory access，优先怀疑 CUDA 异步报错掩盖了更早的 kernel 问题，或本地 CUDA extension 尚未针对当前 PyTorch/CUDA/Blackwell 环境稳定编译。
+
+后续环境检查：
+
+| 日期 | 检查 | 结果 | 结论 |
+|---|---|---|---|
+| 2026-05-11 | PyTorch / GPU | PyTorch `2.10.0+cu128`，CUDA runtime `12.8`，两张 RTX 5090 capability `(12, 0)` | Python 环境识别 Blackwell 正常 |
+| 2026-05-11 | 本地 CUDA extension | `diff_gaussian_rasterization_fastgs` / `simple_knn` / `fused_ssim` 均加载自 `.venv`；rasterizer `.so` 字符串包含 `Cuda compilation tools, release 12.8` 与 `-arch sm_120` | 扩展不是旧 Ada/Ampere binary，但仍可能存在异步 kernel 稳定性问题 |
+| 2026-05-11 | 同步 CUDA 短复现 | `CUDA_LAUNCH_BLOCKING=1`，MipNeRF360 `room`，2500 step high-res FastGS big，输出 `output/0002/debug_5090_illegal_room_2500_r_auto_blocking` | 完成训练并保存点云，未复现 illegal memory access；下一步用 blocking 口径复跑 Phase 0 |
+| 2026-05-11 | blocking Phase 0 复跑 | `CUDA_LAUNCH_BLOCKING=1`，MipNeRF360 `bicycle` / `room`，输出 `output/0002/phase0_5090_fastgs_big_baseline_blocking/` | 仍失败；`bicycle` 在 9300/30000、`room` 在 11450/30000，于 `render_fastgs` 读取 `radii` 时触发 CUDA illegal memory access；无 render/metrics |
+| 2026-05-11 | rasterizer debug 复现 | `CUDA_LAUNCH_BLOCKING=1 --debug_from 9000`，MipNeRF360 `bicycle` 9500 step，输出 `output/0002/debug_5090_illegal_bicycle_9500_debug_r_auto` | 在 3680/9500 提前失败，仍停在 `render_fastgs` 的 `radii` 访问；`debug_from=9000` 未生效，无 `snapshot_fw.dump` |
+| 2026-05-11 | rasterizer debug wrapper 检查 | `CUDA_LAUNCH_BLOCKING=1 --debug_from 0`，MipNeRF360 `bicycle` 5000 step，输出 `output/0002/debug_5090_illegal_bicycle_5000_debug0_r_auto` | 第一步即触发 Python wrapper 错误：debug 分支按 7 项解包，但当前 `_C.rasterize_gaussians` 返回 9 项；已修补源码和当前 `.venv` 安装副本，并将旧 snapshot 移到 `output/0002/debug_artifacts/snapshot_fw_debug_wrapper_mismatch_20260511.dump` |
+| 2026-05-11 | rasterizer debug kernel 定位 | 修补 wrapper 后重跑 `CUDA_LAUNCH_BLOCKING=1 --debug_from 0`，MipNeRF360 `bicycle` 5000 step，输出 `output/0002/debug_5090_illegal_bicycle_5000_debug0_fixed_wrapper_r_auto` | 在 1220/5000 失败；`submodules/diff-gaussian-rasterization_fastgs/cuda_rasterizer/rasterizer_impl.cu:422` 报 `operation not supported on global/shared address space`，位置紧跟 `identifyTileRanges` kernel；snapshot 已归档到 `output/0002/debug_artifacts/snapshot_fw_identify_tile_ranges_global_shared_20260511.dump` |
+| 2026-05-11 | rasterizer fix1 + debug 验证 | 修补无效/越界 tile key 保护、低透明度/NaN 椭圆保护、`<cstdint>` 编译兼容，并用 CUDA 12.8 / `sm_120` 重编译安装；`CUDA_LAUNCH_BLOCKING=1 --debug_from 0`，MipNeRF360 `bicycle` 5000 step，输出 `output/0002/debug_5090_fix1_bicycle_5000_debug0_r_auto` | 完成 5000/5000，保存 1,340,808 个 Gaussians，训练时间 1350.99s；未再触发 `identifyTileRanges` / CUDA illegal memory access；下一步跑正常 30k baseline 验收 |
+| 2026-05-11 | rasterizer fix1 + 30k 单场景验收 | 修补后正常模式，MipNeRF360 `bicycle` high-res FastGS big，输出 `output/0002/phase0_5090_fastgs_big_baseline_fix1/mipnerf360_single_gpu0` | train/render/metrics 完成；25.2569 PSNR / 0.7553 SSIM / 0.2450 LPIPS，1,560,209 Gaussians，训练 159.11s；相对 0001 记录的 25.2532 / 0.7554 / 0.2446、1,560,079 点基本贴合 | 单场景 smoke 通过；恢复双卡全场景 Phase 0 |
+| 2026-05-11 | rasterizer fix1 + MipNeRF360 全场景验收 | `setsid/nohup` detached 方式补跑，输出 `output/0002/phase0_5090_fastgs_big_baseline_fix1/mipnerf360_{single_gpu0,gpu0,gpu1,combined}` | 9/9 场景完成 train/render/metrics；均值 27.9590 / 0.8203 / 0.2157，1,161,786 Gaussians，训练 159.70s；与 0001 同口径 27.9293 / 0.8198 / 0.2157、1,161,242 点基本一致 | MipNeRF360 Phase 0 通过；继续 DB/Tandt baseline |
+| 2026-05-11 | rasterizer fix1 + DB/Tandt 全场景验收 | `setsid/nohup` detached 方式双卡并行，输出 `output/0002/phase0_5090_fastgs_big_baseline_fix1/{db,tandt}` | DB 2/2 完成，均值 30.2331 / 0.9111 / 0.2397，646,600 Gaussians；Tandt 2/2 完成，均值 24.4955 / 0.8579 / 0.1736，540,119 Gaussians；无 CUDA/PLY 错误 | Phase 0 全部通过；可启动 Depth Anything |
+
+### 2026-05-11 MipNeRF360 fix1 全场景结果
+
+统一汇总路径：`output/0002/phase0_5090_fastgs_big_baseline_fix1/mipnerf360_combined/summary.csv`。
+
+| 场景 | PSNR | SSIM | LPIPS | Gaussian 数 | 训练时间 |
+|---|---:|---:|---:|---:|---:|
+| bicycle | 25.2569 | 0.7553 | 0.2450 | 1,560,209 | 159.11s |
+| flowers | 21.6284 | 0.6023 | 0.3404 | 1,122,815 | 145.69s |
+| garden | 27.6346 | 0.8644 | 0.1096 | 2,634,816 | 273.13s |
+| stump | 27.1784 | 0.7868 | 0.2393 | 1,064,860 | 131.01s |
+| treehill | 22.8275 | 0.6323 | 0.3770 | 1,009,110 | 127.40s |
+| room | 32.2136 | 0.9304 | 0.1882 | 571,607 | 113.52s |
+| counter | 29.5259 | 0.9180 | 0.1766 | 470,577 | 122.00s |
+| kitchen | 32.2810 | 0.9390 | 0.1051 | 1,177,988 | 219.85s |
+| bonsai | 33.0846 | 0.9538 | 0.1598 | 844,093 | 145.59s |
+| **平均** | **27.9590** | **0.8203** | **0.2157** | **1,161,786** | **159.70s** |
+
+对照 0001 high-res FastGS big baseline 平均 27.9293 / 0.8198 / 0.2157、1,161,242 Gaussians。5090 fix1 的质量和容量均无系统性漂移；训练时间下降属于硬件差异，不作为质量结论。
+
+注意：第一次非 detached 补跑期间，`treehill` 产出的 PLY 在 render 时触发 `early end-of-file`，`bonsai` 也停在半程训练目录。为保留证据，两个不完整目录已移动到 `output/0002/debug_artifacts/interrupted_mipnerf360_20260511_200949/`，随后用 `setsid/nohup` 重新补跑通过。后续长实验统一使用 detached 方式，避免 SSH 断开导致产物截断。
+
+### 2026-05-11 DB/Tandt fix1 全场景结果
+
+汇总路径：
+
+- DB：`output/0002/phase0_5090_fastgs_big_baseline_fix1/db/summary.csv`
+- Tandt：`output/0002/phase0_5090_fastgs_big_baseline_fix1/tandt/summary.csv`
+- 全 13 场景：`output/0002/phase0_5090_fastgs_big_baseline_fix1/all_combined/summary.csv`
+
+| 数据集 | 场景 | PSNR | SSIM | LPIPS | Gaussian 数 | 训练时间 |
+|---|---|---:|---:|---:|---:|---:|
+| DB | drjohnson | 29.7481 | 0.9074 | 0.2437 | 703,946 | 100.99s |
+| DB | playroom | 30.7181 | 0.9148 | 0.2357 | 589,253 | 96.09s |
+| DB | **平均** | **30.2331** | **0.9111** | **0.2397** | **646,600** | **98.54s** |
+| Tandt | train | 22.8911 | 0.8263 | 0.2087 | 454,435 | 102.01s |
+| Tandt | truck | 26.0998 | 0.8896 | 0.1385 | 625,803 | 108.74s |
+| Tandt | **平均** | **24.4955** | **0.8579** | **0.1736** | **540,119** | **105.37s** |
+
+对照 0001 high-res FastGS big baseline：DB 为 30.2073 / 0.9112 / 0.2402、650,194 Gaussians；Tandt 为 24.3557 / 0.8573 / 0.1745、540,578 Gaussians。两组都无系统性质量或容量漂移。
+
+## Depth Anything High-Res Pilot
+
+| 日期 | 数据集 | 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数 | 训练时间 | 输出路径 | 结论 |
+|---|---|---|---|---:|---:|---:|---:|---:|---|---|
+| TBD | MipNeRF360 | bicycle | Depth Anything dense prior | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| TBD | MipNeRF360 | stump | Depth Anything dense prior | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| TBD | MipNeRF360 | bonsai | Depth Anything dense prior | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| TBD | DB | playroom | Depth Anything dense prior | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| TBD | Tandt | truck | Depth Anything dense prior | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+
+## 结果表
+
+| 日期 | 数据集 | 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数 | 训练时间 | 输出路径 | 结论 |
+|---|---|---|---|---:|---:|---:|---:|---:|---|---|
+| TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+
+## 对照表
+
+0002 的正式结果必须至少与以下 0001/基线结果比较：
+
+| 对照 | 用途 |
+|---|---|
+| Phase 0 FastGS big baseline | 判断 high-res depth prior 是否超过同环境 baseline |
+| High-res DINO descriptor top-k25 weighted i0.50 | 0001 容量受控 VFM_GS 初步验证 |
+| High-res DINO descriptor top-k25 weighted i0.70 | 0001 质量-容量折中档 |
+| DINO descriptor top-k25 `max` | 无回退 VFM 质量上界 |
+
+## 失败记录
+
+| 日期 | 阶段 | 范围 | 失败 | 后续处理 |
+|---|---|---|---|---|
+| 2026-05-11 | Phase 0 | MipNeRF360 `bicycle` / `room` high-res FastGS big baseline | 双卡均出现 CUDA illegal memory access，训练未完成，未产生 render/metrics | 用 `CUDA_LAUNCH_BLOCKING=1` 做单场景复现；检查并必要时重编译 `diff-gaussian-rasterization_fastgs`、`simple-knn`、`fused-ssim` 等本地 CUDA extension |
+| 2026-05-11 | Phase 0 blocking 复跑 | MipNeRF360 `bicycle` / `room` high-res FastGS big baseline | blocking 口径仍失败，且都定位到 rasterizer 前向后 `radii` 访问 | 下一步用 `--debug_from` 打开 rasterizer debug 检查，优先定位 `diff_gaussian_rasterization_fastgs` 的具体 forward kernel |
+| 2026-05-11 | rasterizer debug 复现 | MipNeRF360 `bicycle` high-res FastGS big | `--debug_from 9000` 之前已经在 3680 失败，说明触发点随随机视角/训练轨迹变化 | 改用 `--debug_from 0` 从第一步开始启用 rasterizer 内部 CUDA 检查 |
+| 2026-05-11 | rasterizer debug wrapper 修补 | `diff_gaussian_rasterization_fastgs` Python wrapper | debug 分支未同步 FastGS 扩展的 9 项返回值，导致无法进入真实 CUDA debug | 已修补 debug 分支；重新运行 `--debug_from 0` |
+| 2026-05-11 | rasterizer debug kernel 定位 | MipNeRF360 `bicycle` high-res FastGS big | 修补 wrapper 后，在 `rasterizer_impl.cu:422` 捕获 `operation not supported on global/shared address space`；对应 `identifyTileRanges` 后的 CUDA 检查 | 暂停 baseline 与 Depth Anything；优先排查 FastGS rasterizer 在 Blackwell / CUDA 12.8 / sm120 下的 `identifyTileRanges`、前置 sort/buffer 状态或编译兼容性 |
+| 2026-05-11 | rasterizer fix1 debug 验证 | MipNeRF360 `bicycle` high-res FastGS big | 原失败点已通过 5000-step debug 验证；未产出 render/metrics | 继续正常 30k baseline；若通过再恢复双卡/全数据集 baseline |
+| 2026-05-11 | rasterizer fix1 30k 单场景验收 | MipNeRF360 `bicycle` high-res FastGS big | 训练、渲染、指标全部完成，且与 0001 high-res bicycle baseline 基本一致 | 恢复 MipNeRF360 双卡全场景 baseline；Depth Anything 仍等待全场景 Phase 0 |
+| 2026-05-11 | 非 detached 补跑中断 | MipNeRF360 `treehill` / `bonsai` | `treehill` 训练目录存在但 PLY 截断，render 报 `early end-of-file`；`bonsai` 训练停在半程，无 30000 checkpoint | 将不完整目录归档到 `output/0002/debug_artifacts/interrupted_mipnerf360_20260511_200949/`，改用 `setsid/nohup` detached 补跑并通过 |

@@ -189,7 +189,8 @@ __device__ inline float2 computeEllipseIntersection(
     float coeff = isY ? con_o.x : con_o.z;
 
     float h = coord - p_u;  // h = y - p.y for y, x - p.x for x
-    float sqrt_term = sqrt(disc * h * h + t * coeff);
+    float sqrt_arg = disc * h * h + t * coeff;
+    float sqrt_term = sqrt(max(0.0f, sqrt_arg));
 
     return {
       (-con_o.y * h - sqrt_term) / coeff + p_v,
@@ -333,13 +334,28 @@ __device__ inline uint32_t duplicateToTilesTouched(
         return 0;
     }
 
+    // Threshold: opacity * Gaussian = 1 / 255. Gaussians below this
+    // opacity cannot contribute visible pixels and would make t <= 0.
+    if (con_o.w <= 1.0f / 255.0f) {
+        return 0;
+    }
+
     // Threshold: opacity * Gaussian = 1 / 255
     float t = 2.0f * log(con_o.w * 255.0f);
     t = mult * t; // beta in Compact Box
+    if (!(t > 0.0f)) {
+        return 0;
+    }
 
-    float x_term = sqrt(-(con_o.y * con_o.y * t) / (disc * con_o.x));
+    float x_arg = -(con_o.y * con_o.y * t) / (disc * con_o.x);
+    float y_arg = -(con_o.y * con_o.y * t) / (disc * con_o.z);
+    if (!(x_arg >= 0.0f) || !(y_arg >= 0.0f)) {
+        return 0;
+    }
+
+    float x_term = sqrt(x_arg);
     x_term = (con_o.y < 0) ? x_term : -x_term;
-    float y_term = sqrt(-(con_o.y * con_o.y * t) / (disc * con_o.z));
+    float y_term = sqrt(y_arg);
     y_term = (con_o.y < 0) ? y_term : -y_term;
 
     float2 bbox_argmin = { p.y - y_term, p.x - x_term };
@@ -353,6 +369,9 @@ __device__ inline uint32_t duplicateToTilesTouched(
       computeEllipseIntersection(con_o, disc, t, p, true, bbox_argmax.x).y,
       computeEllipseIntersection(con_o, disc, t, p, false, bbox_argmax.y).y
     };
+    if (!(bbox_min.x <= bbox_max.x) || !(bbox_min.y <= bbox_max.y)) {
+        return 0;
+    }
 
     // Rectangular tile extent of ellipse
     int2 rect_min = {
