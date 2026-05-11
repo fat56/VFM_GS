@@ -28,12 +28,14 @@ from vfm_gs.scene.colmap_loader import (
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".JPG", ".JPEG", ".PNG"}
 COLMAP_DEPTH_BACKENDS = ("colmap_depth_edge_l1",)
 DINO_BACKENDS = ("dinov2_vits14", "dinov2_vitb14", "dinov2_vitl14")
+DEPTH_ANYTHING_BACKENDS = ("depth_anything", "depth_anything_v2")
 DINO_DIMS = {
     "dinov2_vits14": 384,
     "dinov2_vitb14": 768,
     "dinov2_vitl14": 1024,
 }
 PATCH_SIZE = 14
+DEFAULT_DEPTH_ANYTHING_MODEL = "depth-anything/Depth-Anything-V2-Small-hf"
 
 
 def _iter_images(images_dir):
@@ -405,6 +407,65 @@ def _dinov2_token_edge_map_torch(token_map):
     return _normalize_torch01(torch.sqrt(dx.square() + dy.square() + 1e-12))
 
 
+def _smooth_depth_map_torch(value_map, kernel_size):
+    import torch.nn.functional as torch_f
+
+    kernel_size = int(kernel_size)
+    if kernel_size <= 1:
+        return value_map
+    if kernel_size % 2 == 0:
+        raise ValueError("--depth_edge_smooth_kernel must be odd when greater than 1, got {}".format(kernel_size))
+    value = value_map.reshape(1, 1, *value_map.shape[-2:])
+    value = torch_f.pad(value, (kernel_size // 2,) * 4, mode="replicate")
+    return torch_f.avg_pool2d(value, kernel_size=kernel_size, stride=1).view(*value_map.shape[-2:])
+
+
+def _depth_edge_map_torch(depth_map, smooth_kernel=1):
+    import torch
+
+    depth_map = _smooth_depth_map_torch(depth_map.to(torch.float32), smooth_kernel)
+    dx = torch.zeros_like(depth_map)
+    dy = torch.zeros_like(depth_map)
+    dx[:, 1:] = depth_map[:, 1:] - depth_map[:, :-1]
+    dy[1:, :] = depth_map[1:, :] - depth_map[:-1, :]
+    return _normalize_torch01(torch.sqrt(dx.square() + dy.square() + 1e-12))
+
+
+def _load_depth_anything_model(model_id, device):
+    import torch
+
+    try:
+        from transformers import AutoImageProcessor, AutoModelForDepthEstimation
+    except ImportError as exc:
+        raise RuntimeError(
+            "Depth Anything cache building requires the optional Transformers dependency. "
+            "Install it with `uv pip install transformers huggingface-hub safetensors`, "
+            "then rerun this command."
+        ) from exc
+
+    processor = AutoImageProcessor.from_pretrained(model_id)
+    model = AutoModelForDepthEstimation.from_pretrained(model_id)
+    return processor, model.eval().to(device)
+
+
+def _predict_depth_anything_map(image, processor, model, device):
+    import torch
+    import torch.nn.functional as torch_f
+
+    inputs = processor(images=image, return_tensors="pt")
+    inputs = {key: value.to(device) for key, value in inputs.items()}
+    with torch.no_grad():
+        outputs = model(**inputs)
+        predicted_depth = outputs.predicted_depth
+        prediction = torch_f.interpolate(
+            predicted_depth.unsqueeze(1),
+            size=image.size[::-1],
+            mode="bicubic",
+            align_corners=False,
+        ).squeeze(0).squeeze(0)
+    return _normalize_torch01(prediction)
+
+
 def _load_dinov2_model(backend, dinov2_repo, device, pretrained=True):
     import torch
 
@@ -512,12 +573,92 @@ def build_dinov2_cache(
     return manifest
 
 
+def build_depth_anything_cache(
+    source_path,
+    images,
+    output_dir,
+    backend,
+    max_width=None,
+    storage="npz_uint8",
+    model_id=DEFAULT_DEPTH_ANYTHING_MODEL,
+    device="cuda",
+    limit=None,
+    feature_type="depth_edge",
+    depth_edge_smooth_kernel=1,
+):
+    source_path = Path(source_path)
+    images_dir = source_path / images
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    image_paths = list(_iter_images(images_dir))
+    if limit is not None:
+        image_paths = image_paths[:limit]
+    if not image_paths:
+        raise FileNotFoundError("No images found in {}".format(images_dir))
+
+    if feature_type not in ("depth", "depth_edge"):
+        raise ValueError("Unsupported Depth Anything feature {!r}. Available: depth, depth_edge.".format(feature_type))
+
+    processor, model = _load_depth_anything_model(model_id, device)
+    entries = {}
+    feature_name = "depth_anything_relative_depth" if feature_type == "depth" else "depth_anything_depth_edge"
+
+    for image_path in image_paths:
+        image_name = image_path.stem
+        with Image.open(image_path) as image:
+            source_width, source_height = image.size
+            image = _resize_for_cache(image.convert("RGB"), max_width)
+            cache_width, cache_height = image.size
+            depth_map = _predict_depth_anything_map(image, processor, model, device)
+            if feature_type == "depth_edge":
+                feature_map = _depth_edge_map_torch(depth_map, depth_edge_smooth_kernel)
+            else:
+                feature_map = depth_map
+            feature_map = feature_map.detach().cpu().numpy().astype(np.float32)
+
+        cache_file = "{}{}".format(safe_cache_stem(image_name), cache_extension(storage))
+        cache_path = output_dir / cache_file
+        save_feature(cache_path, feature_map, storage, normalize=True)
+        entries[image_name] = {
+            "cache_file": cache_file,
+            "checksum_sha256": sha256_file(cache_path),
+            "image_file": image_path.name,
+            "source_shape": [source_height, source_width],
+            "shape": [cache_height, cache_width],
+            "dtype": "float32" if storage == "npy_float32" else ("float16" if storage == "npy_float16" else "uint8"),
+            "normalization": "minmax_0_1",
+            "storage": storage,
+        }
+
+    manifest = {
+        "schema_version": 1,
+        "backend": backend,
+        "source_path": str(source_path.resolve()),
+        "images": images,
+        "entry_key": "image_name",
+        "feature": feature_name,
+        "max_width": max_width,
+        "storage": storage,
+        "model_id": model_id,
+        "depth_anything_feature": feature_type,
+        "depth_edge_smooth_kernel": int(depth_edge_smooth_kernel),
+        "entries": entries,
+    }
+    write_manifest(output_dir, manifest)
+    return manifest
+
+
 def main(argv=None):
     parser = ArgumentParser(description="Build cached VFM-style GT features.")
     parser.add_argument("--source_path", "-s", required=True, type=str)
     parser.add_argument("--images", "-i", default="images", type=str)
     parser.add_argument("--output_dir", "-o", required=True, type=str)
-    parser.add_argument("--backend", default="cached_edge_l1", choices=["cached_edge_l1", *COLMAP_DEPTH_BACKENDS, *DINO_BACKENDS])
+    parser.add_argument(
+        "--backend",
+        default="cached_edge_l1",
+        choices=["cached_edge_l1", *COLMAP_DEPTH_BACKENDS, *DINO_BACKENDS, *DEPTH_ANYTHING_BACKENDS],
+    )
     parser.add_argument("--max_width", default=None, type=int)
     parser.add_argument(
         "--storage",
@@ -531,6 +672,9 @@ def main(argv=None):
     parser.add_argument("--no_pretrained", action="store_true")
     parser.add_argument("--depth_splat_radius", default=2, type=int)
     parser.add_argument("--depth_blur_radius", default=2, type=int)
+    parser.add_argument("--depth_anything_model", default=DEFAULT_DEPTH_ANYTHING_MODEL, type=str)
+    parser.add_argument("--depth_anything_feature", default="depth_edge", choices=["depth", "depth_edge"])
+    parser.add_argument("--depth_edge_smooth_kernel", default=1, type=int)
     parser.add_argument(
         "--project_token_edge",
         action="store_true",
@@ -552,6 +696,21 @@ def main(argv=None):
             storage,
             splat_radius=args.depth_splat_radius,
             blur_radius=args.depth_blur_radius,
+        )
+    elif args.backend in DEPTH_ANYTHING_BACKENDS:
+        storage = args.storage or "npz_uint8"
+        manifest = build_depth_anything_cache(
+            args.source_path,
+            args.images,
+            args.output_dir,
+            args.backend,
+            max_width=args.max_width,
+            storage=storage,
+            model_id=args.depth_anything_model,
+            device=args.device,
+            limit=args.limit,
+            feature_type=args.depth_anything_feature,
+            depth_edge_smooth_kernel=args.depth_edge_smooth_kernel,
         )
     else:
         storage = args.storage or "npy_float16"

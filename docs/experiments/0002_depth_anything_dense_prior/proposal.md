@@ -30,9 +30,9 @@ Depth Anything 这类 dense monocular depth prior 能提供比 COLMAP sparse edg
 - 变体：`fastgs_baseline`
 - 打分器：`vfm_topology_scorer`
 - 新后端候选：
-  - `depth_anything_depth_residual`
-  - `depth_anything_depth_edge_prior`
-  - `depth_anything_depth_edge_residual`
+  - `depth_anything_depth_edge_prior`：已实现并通过 high-res `bicycle` 620-step smoke。
+  - `depth_anything_depth_prior`：已实现配置入口，尚未跑正式 smoke。
+  - `depth_anything_depth_residual` / `depth_anything_depth_edge_residual`：保留为在线 residual 后续方向，尚未实现。
 - 0001 对照：
   - `dinov2_descriptor_cosine + top-k25 + weighted i0.50 + vfm_weight=0.0`
   - `dinov2_descriptor_cosine + top-k25 + weighted i0.70 + vfm_weight=0.0`
@@ -42,12 +42,12 @@ Depth Anything 这类 dense monocular depth prior 能提供比 COLMAP sparse edg
   - 输出统一为 `pixel_error_map`。
   - 仍通过 top-k metric map 和 `render_fastgs(..., get_flag=True)` 映射到 Gaussian counts。
 
-计划新增配置：
+已新增配置：
 
-- `configs/experiments/0002_depth_anything_depth_residual_densify_only_topk025_weighted_i050.yaml`
 - `configs/experiments/0002_depth_anything_depth_edge_prior_densify_only_topk025_weighted_i050.yaml`
+- `configs/experiments/0002_depth_anything_depth_prior_densify_only_topk025_weighted_i050.yaml`
 
-实际命名可在实现后按后端接口调整。
+当前优先验证 depth-edge prior，因为它能离线缓存并直接复用现有 prior-style scorer，变量少于在线 depth residual。
 
 ## Phase 0：5090 FastGS Big Baseline 复核
 
@@ -108,30 +108,33 @@ QCGI = quality_gain - gs_penalty
 
 ## 运行命令草案
 
-Depth Anything 后端实现前，下面命令仅作为目标入口。实际训练使用原图 1.6K 口径，不再加 `-r 8`。
+Depth Anything depth-edge prior 已落地。实际训练使用原图 1.6K 口径，不再加 `-r 8`。
 
 ```bash
 source .venv/bin/activate
 
-python -m vfm_gs.cli.build_vfm_cache \
+HF_HUB_DISABLE_XET=1 python -m vfm_gs.cli.build_vfm_cache \
   -s datasets/mipnerf360/bicycle \
   -i images \
-  -o output/0002/vfm_cache/bicycle_depth_anything \
-  --backend depth_anything \
-  --max_width 1600
+  -o output/0002/vfm_cache/bicycle_depth_anything_v2s_edge \
+  --backend depth_anything_v2 \
+  --max_width 1600 \
+  --device cuda \
+  --depth_anything_feature depth_edge \
+  --storage npz_uint8
 
 python -m vfm_gs.cli.validate_vfm_cache \
-  -c output/0002/vfm_cache/bicycle_depth_anything \
+  -c output/0002/vfm_cache/bicycle_depth_anything_v2s_edge \
   -s datasets/mipnerf360/bicycle \
   -i images \
-  --backend depth_anything
+  --backend depth_anything_v2
 
 python -m vfm_gs.cli.train \
   --variant fastgs_baseline \
-  --config configs/experiments/0002_depth_anything_depth_residual_densify_only_topk025_weighted_i050.yaml \
+  --config configs/experiments/0002_depth_anything_depth_edge_prior_densify_only_topk025_weighted_i050.yaml \
   -s datasets/mipnerf360/bicycle \
   -i images \
-  -m output/0002/depth_anything_depth_residual_bicycle_620_r_auto \
+  -m output/0002/depth_anything_edge_prior_bicycle_620_r_auto \
   --eval \
   --iterations 620 \
   --densify_from_iter 500 \
@@ -140,17 +143,17 @@ python -m vfm_gs.cli.train \
   --test_iterations 620 \
   --save_iterations 620 \
   --checkpoint_iterations 620 \
-  --vfm_cache_dir output/0002/vfm_cache/bicycle_depth_anything \
+  --vfm_cache_dir output/0002/vfm_cache/bicycle_depth_anything_v2s_edge \
   -r -1
 
 python -m vfm_gs.cli.render \
-  -m output/0002/depth_anything_depth_residual_bicycle_620_r_auto \
+  -m output/0002/depth_anything_edge_prior_bicycle_620_r_auto \
   --iteration -1 \
   --skip_train \
   --quiet
 
 python -m vfm_gs.cli.metrics \
-  -m output/0002/depth_anything_depth_residual_bicycle_620_r_auto
+  -m output/0002/depth_anything_edge_prior_bicycle_620_r_auto
 ```
 
 ## 成功标准
@@ -183,10 +186,10 @@ Depth Anything 第一阶段成功标准：
 
 ## 决策
 
-待实验后填写。
+2026-05-11：`depth_anything_depth_edge_prior` 作为 0002 第一条落地路径，high-res `bicycle` 620-step smoke 已通过 cache/build/preflight/train/render/metrics。620-step matched baseline 略优，因此该结果只证明链路健康，不作为质量正例。
 
 初始决策：0002 只推进 dense depth prior，不再扩展 COLMAP sparse depth-edge proxy。
 
 ## 下一步
 
-确认 Depth Anything cache backend 的依赖、缓存格式和配置命名；随后先跑 high-res bicycle 620-step smoke，再推进 `bicycle/stump/bonsai/playroom/truck` pilot。长任务继续使用 detached 方式运行。
+推进 high-res `bicycle` 30k pilot；若 30k 不正向，再比较 `depth_anything_depth_prior` 与 depth-edge prior，或转向在线 depth residual。长任务继续使用 detached 方式运行；每轮完成后更新文档、commit 并 push。

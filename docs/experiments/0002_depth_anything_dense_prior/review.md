@@ -39,6 +39,18 @@ DB/Tandt baseline 也已完成。DB 均值为 30.2331 / 0.9111 / 0.2397、646,60
 
 执行层面补充一条运行约束：当前环境未安装 `screen`，长实验改用 `setsid/nohup` detached 方式保活。一次非 detached 补跑中 `treehill` 出现截断 PLY，render 报 `early end-of-file`，`bonsai` 停在半程训练目录；两个不完整目录已归档到 `output/0002/debug_artifacts/interrupted_mipnerf360_20260511_200949/`，后续 detached 补跑通过。接下来 DB/Tandt 也应沿用 detached 方式，避免 SSH 断联导致训练产物损坏。
 
+## 2026-05-11 Depth Anything V2-S smoke
+
+已完成 dense depth prior 的最小工程接入。当前选择 `depth_anything_depth_edge_prior` 作为第一条可运行路径，而不是一开始做在线 depth residual：先离线用 Depth Anything V2-S 从 GT RGB 生成 dense depth-edge cache，再把该 2D prior 直接送入既有 `top-k metric_map -> accum_metric_counts -> densification importance` 链路。这样能先验证 cache、preflight、scorer 和训练调用栈，减少在线推理域差异和速度变量。
+
+依赖状态：`.venv` 已安装 `transformers==5.8.0`、`huggingface-hub==1.14.0`、`safetensors==0.7.0`。首次模型下载被 HuggingFace Xet 通道的 `RemoteProtocolError` 打断；设置 `HF_HUB_DISABLE_XET=1` 后 `depth-anything/Depth-Anything-V2-Small-hf` 能正常加载。该环境变量应写入后续 cache build 命令。
+
+`bicycle` high-res cache 已构建并校验通过：`output/0002/vfm_cache/bicycle_depth_anything_v2s_edge`，194 entries，48MB，`max_width=1600`，feature 为 `depth_anything_depth_edge`。训练 preflight 在 camera loading 前通过，说明 backend/feature 校验已经接入。
+
+620-step smoke 完成 train/render/metrics：Depth Anything V2-S depth-edge prior 为 19.4402 / 0.4039 / 0.6270、61,277 个 Gaussians、训练 1.90s；matched high-res FastGS 620 baseline 为 19.4930 / 0.4046 / 0.6268、61,278 个 Gaussians、训练 1.81s。短程指标略低于 matched baseline，但差异很小，且 620-step 只用于链路健康，不作为方法质量负例。
+
+下一步可以进入 high-res `bicycle` 30k pilot。若 30k 仍不正向，应优先比较两个变体：直接 relative depth prior 与 depth-edge prior；再决定是否引入在线 render depth residual 或局部 depth-edge 区域指标。
+
 ## 继承自 0001 的边界
 
 - DINO descriptor densify-only top-k25 weighted i0.50/i0.70 是 0001 对 VFM_GS 的初步验证主线。
@@ -55,4 +67,4 @@ DB/Tandt baseline 也已完成。DB 均值为 30.2331 / 0.9111 / 0.2397、646,60
 
 ## 下一步
 
-进入 Depth Anything dense prior 的实际准备：确认依赖、cache 格式和 backend 命名，先完成 high-res `bicycle` 620-step smoke。后续 pilot 仍按 proposal 中的 `bicycle/stump/bonsai/playroom/truck` 顺序推进，并继续用 detached 方式运行长任务。
+进入 Depth Anything dense prior 的 high-res `bicycle` 30k pilot。后续 pilot 仍按 proposal 中的 `bicycle/stump/bonsai/playroom/truck` 顺序推进，并继续用 detached 方式运行长任务。每轮实验完成后更新文档、commit 并 push；当前只有本服务器改动，按用户要求不再强制先 `git pull`。

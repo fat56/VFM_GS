@@ -17,6 +17,8 @@ DINOV2_VARIANTS = {
 
 OPTIONAL_PACKAGES = {
     "transformers": "transformers",
+    "huggingface-hub": "huggingface_hub",
+    "safetensors": "safetensors",
     "timm": "timm",
     "xformers": "xformers",
     "opencv-python": "cv2",

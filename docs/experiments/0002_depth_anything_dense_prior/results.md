@@ -4,7 +4,9 @@
 
 Phase 0 已开始。首次双卡 high-res FastGS big baseline 在 MipNeRF360 首个场景上均提前失败，失败发生在 Depth Anything 接入前，因此该阶段首先修复 5090 / CUDA 12.8 / Blackwell 下的 FastGS rasterizer 稳定性，而不是评价 dense depth prior。
 
-已完成第一轮 rasterizer 修补、5000-step debug 验证、MipNeRF360 `bicycle` 单场景 30k 验收，以及 MipNeRF360/DB/Tandt 三个公开数据集全 13 场景 high-res FastGS big train/render/metrics。三数据集结果与 0001/4090D 同口径 high-res FastGS big baseline 基本贴合。当前结论：5090 环境 Phase 0 通过，可以进入 Depth Anything dense prior 的 backend/cache 与 high-res smoke。
+已完成第一轮 rasterizer 修补、5000-step debug 验证、MipNeRF360 `bicycle` 单场景 30k 验收，以及 MipNeRF360/DB/Tandt 三个公开数据集全 13 场景 high-res FastGS big train/render/metrics。三数据集结果与 0001/4090D 同口径 high-res FastGS big baseline 基本贴合。当前结论：5090 环境 Phase 0 通过。
+
+Depth Anything V2-S dense depth-edge cache/backend 已完成最小接入，并通过 high-res `bicycle` 620-step smoke。该 smoke 只证明 cache/build/preflight/train/render/metrics 链路可用，不作为 30k 质量结论。matched 620-step FastGS baseline 与 Depth Anything edge-prior 几乎同点数，Depth Anything edge-prior 的 PSNR/SSIM 略低、LPIPS 微差；下一步若推进，应直接进入 high-res 30k pilot，而不是继续用 620-step 指标判断方法有效性。
 
 ## Phase 0：5090 FastGS Big Baseline 复核
 
@@ -81,9 +83,36 @@ Phase 0 已开始。首次双卡 high-res FastGS big baseline 在 MipNeRF360 首
 
 ## Depth Anything High-Res Pilot
 
+### 2026-05-11 Depth Anything V2-S depth-edge cache/backend smoke
+
+实现与环境：
+
+- `src/vfm_gs/cli/build_vfm_cache.py` 新增 `depth_anything` / `depth_anything_v2` cache builder，默认模型为 `depth-anything/Depth-Anything-V2-Small-hf`。
+- `src/vfm_gs/scorers/vfm_topology.py` 新增 `depth_anything_depth_edge_prior` 和 `depth_anything_depth_prior` backend；本轮只验证 depth-edge prior。
+- 新增配置：`configs/experiments/0002_depth_anything_depth_edge_prior_densify_only_topk025_weighted_i050.yaml`。
+- 安装 optional 依赖：`transformers==5.8.0`、`huggingface-hub==1.14.0`、`safetensors==0.7.0`。
+- HuggingFace 默认 Xet 下载在本机出现 `RemoteProtocolError: Server disconnected without sending a response`；设置 `HF_HUB_DISABLE_XET=1` 后模型下载和加载成功。
+- 全量 cache：`output/0002/vfm_cache/bicycle_depth_anything_v2s_edge`，194 entries，48MB，`max_width=1600`，feature 为 `depth_anything_depth_edge`，validate 通过。
+
+Smoke 与 matched baseline：
+
+| 方法 | 配置 | PSNR | SSIM | LPIPS | Gaussian 数 | 训练时间 | 输出路径 | 结论 |
+|---|---|---:|---:|---:|---:|---:|---|---|
+| FastGS matched 620 | `fastgs_baseline` + high-res + densify100 | 19.4930 | 0.4046 | 0.6268 | 61,278 | 1.81s | `output/0002/fastgs_baseline_bicycle_620_r_auto` | 620-step 参照线 |
+| Depth Anything V2-S depth-edge prior 620 | top-k25 weighted i0.50, `vfm_weight=0.0` | 19.4402 | 0.4039 | 0.6270 | 61,277 | 1.90s | `output/0002/depth_anything_edge_prior_bicycle_620_r_auto` | 链路通过；短程指标略低于 matched baseline |
+
+日志：
+
+- cache build：`output/0002/debug_logs/depth_anything_bicycle_cache_build.log`
+- train：`output/0002/debug_logs/depth_anything_edge_prior_bicycle_620_train.log`
+- render：`output/0002/debug_logs/depth_anything_edge_prior_bicycle_620_render.log`
+- metrics：`output/0002/debug_logs/depth_anything_edge_prior_bicycle_620_metrics.log`
+
+判断：`depth_anything_depth_edge_prior` 能复用现有 `pixel prior -> top-k metric_map -> accum_metric_counts -> densification importance` 主链路，cache preflight 也能在训练前校验 backend/feature。620-step 指标本身不支持质量结论；下一步可以跑 high-res `bicycle` 30k pilot，并与 Phase 0 FastGS big baseline、0001 high-res DINO descriptor weighted i0.50/i0.70 对照。
+
 | 日期 | 数据集 | 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数 | 训练时间 | 输出路径 | 结论 |
 |---|---|---|---|---:|---:|---:|---:|---:|---|---|
-| TBD | MipNeRF360 | bicycle | Depth Anything dense prior | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| 2026-05-11 | MipNeRF360 | bicycle | Depth Anything V2-S depth-edge prior 620 smoke | 19.4402 | 0.4039 | 0.6270 | 61,277 | 1.90s | `output/0002/depth_anything_edge_prior_bicycle_620_r_auto` | 链路通过；短程略低于 matched 620 baseline，不作为质量负例 |
 | TBD | MipNeRF360 | stump | Depth Anything dense prior | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 | TBD | MipNeRF360 | bonsai | Depth Anything dense prior | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 | TBD | DB | playroom | Depth Anything dense prior | TBD | TBD | TBD | TBD | TBD | TBD | TBD |

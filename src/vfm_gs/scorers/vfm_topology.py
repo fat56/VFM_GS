@@ -14,10 +14,13 @@ from .registry import register_scorer
 _CACHE_READERS = {}
 _DINO_MODELS = {}
 _DINO_CACHE_BACKENDS = ("dinov2_vits14", "dinov2_vitb14", "dinov2_vitl14")
+_DEPTH_ANYTHING_CACHE_BACKENDS = ("depth_anything", "depth_anything_v2")
 _CACHED_BACKEND_MANIFESTS = {
     "cached_edge_l1": ("cached_edge_l1",),
     "colmap_depth_edge_l1": ("colmap_depth_edge_l1",),
     "colmap_depth_edge_prior": ("colmap_depth_edge_l1",),
+    "depth_anything_depth_prior": _DEPTH_ANYTHING_CACHE_BACKENDS,
+    "depth_anything_depth_edge_prior": _DEPTH_ANYTHING_CACHE_BACKENDS,
     "dinov2_token_edge_l1": _DINO_CACHE_BACKENDS,
     "dinov2_descriptor_cosine": _DINO_CACHE_BACKENDS,
     "dinov2_descriptor_cosine_l1": _DINO_CACHE_BACKENDS,
@@ -238,6 +241,14 @@ def _colmap_depth_edge_prior_error(rendered_image, viewpoint_cam, cache_dir):
     )
 
 
+def _depth_anything_prior_error(rendered_image, viewpoint_cam, cache_dir):
+    return _get_cache(cache_dir).get_edge_map(
+        viewpoint_cam.image_name,
+        rendered_image.device,
+        rendered_image.shape[-2:],
+    )
+
+
 def _dinov2_token_edge_l1_error(rendered_image, viewpoint_cam, cache_dir):
     gt_token_edges = _get_cache(cache_dir).get_dinov2_token_edge_map(viewpoint_cam.image_name, rendered_image.device)
     rendered_edges = normalize01(_gradient_magnitude(_luma(rendered_image)))
@@ -317,6 +328,8 @@ def _compute_pixel_error_map(
         return _colmap_depth_edge_l1_error(rendered_image, viewpoint_cam, cache_dir)
     if backend == "colmap_depth_edge_prior":
         return _colmap_depth_edge_prior_error(rendered_image, viewpoint_cam, cache_dir)
+    if backend in ("depth_anything_depth_prior", "depth_anything_depth_edge_prior"):
+        return _depth_anything_prior_error(rendered_image, viewpoint_cam, cache_dir)
     if backend == "dinov2_token_edge_l1":
         return _dinov2_token_edge_l1_error(rendered_image, viewpoint_cam, cache_dir)
     if backend in ("dinov2_descriptor_cosine", "dinov2_descriptor_cosine_l1"):
@@ -330,7 +343,8 @@ def _compute_pixel_error_map(
         )
     raise ValueError(
         "Unsupported vfm_backend {!r}. Available backends: mock_l1, mock_edge_l1, cached_edge_l1, "
-        "colmap_depth_edge_l1, colmap_depth_edge_prior, dinov2_token_edge_l1, "
+        "colmap_depth_edge_l1, colmap_depth_edge_prior, depth_anything_depth_prior, "
+        "depth_anything_depth_edge_prior, dinov2_token_edge_l1, "
         "dinov2_descriptor_cosine.".format(backend)
     )
 
@@ -754,6 +768,10 @@ def preflight_vfm_topology_scorer(dataset, args):
         )
     if backend in ("dinov2_descriptor_cosine", "dinov2_descriptor_cosine_l1") and manifest.get("feature") != "dinov2_patchtokens":
         errors.append("feature mismatch: manifest={!r}, expected 'dinov2_patchtokens'".format(manifest.get("feature")))
+    if backend == "depth_anything_depth_prior" and manifest.get("feature") != "depth_anything_relative_depth":
+        errors.append("feature mismatch: manifest={!r}, expected 'depth_anything_relative_depth'".format(manifest.get("feature")))
+    if backend == "depth_anything_depth_edge_prior" and manifest.get("feature") != "depth_anything_depth_edge":
+        errors.append("feature mismatch: manifest={!r}, expected 'depth_anything_depth_edge'".format(manifest.get("feature")))
     for warning in warnings:
         print("[VFM cache preflight warning] {}".format(warning))
     if errors:

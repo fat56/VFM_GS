@@ -8,7 +8,17 @@
 source .venv/bin/activate
 ```
 
-若 Depth Anything 依赖尚未安装，先不要直接修改训练命令；应先用单独探测脚本或 CLI 检查模型加载、显存和缓存体积。
+Depth Anything V2-S cache builder 依赖 Transformers / HuggingFace Hub。当前服务器已安装并验证：
+
+```bash
+uv pip install transformers huggingface-hub safetensors
+```
+
+如需重建环境，先用下面命令确认依赖和 GPU 状态：
+
+```bash
+python -m vfm_gs.cli.vfm_backend_probe --width 1600 --height 1066 --num_images 194
+```
 
 ## Phase 0：双卡 5090 Baseline 复核
 
@@ -233,6 +243,63 @@ counts -> densification importance
 Phase 0 通过且 Depth Anything backend 落地后，先跑 high-res bicycle 620-step。0002 不再使用 `-r 8` 低分辨率 smoke，保持原图输入和 FastGS 1.6K 自动缩放口径。
 
 ```bash
+source .venv/bin/activate
+
+HF_HUB_DISABLE_XET=1 python -m vfm_gs.cli.build_vfm_cache \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -o output/0002/vfm_cache/bicycle_depth_anything_v2s_edge \
+  --backend depth_anything_v2 \
+  --max_width 1600 \
+  --device cuda \
+  --depth_anything_feature depth_edge \
+  --storage npz_uint8
+
+python -m vfm_gs.cli.validate_vfm_cache \
+  -c output/0002/vfm_cache/bicycle_depth_anything_v2s_edge \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  --backend depth_anything_v2
+
+python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0002_depth_anything_depth_edge_prior_densify_only_topk025_weighted_i050.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0002/depth_anything_edge_prior_bicycle_620_r_auto \
+  --eval \
+  --iterations 620 \
+  --densify_from_iter 500 \
+  --densify_until_iter 620 \
+  --densification_interval 100 \
+  --test_iterations 620 \
+  --save_iterations 620 \
+  --checkpoint_iterations 620 \
+  --vfm_cache_dir output/0002/vfm_cache/bicycle_depth_anything_v2s_edge \
+  -r -1
+
+python -m vfm_gs.cli.render \
+  -m output/0002/depth_anything_edge_prior_bicycle_620_r_auto \
+  --iteration -1 \
+  --skip_train \
+  --quiet
+
+python -m vfm_gs.cli.metrics \
+  -m output/0002/depth_anything_edge_prior_bicycle_620_r_auto
+```
+
+`HF_HUB_DISABLE_XET=1` 是当前服务器的必要绕过：首次默认 HuggingFace Xet 下载在模型权重阶段出现 `RemoteProtocolError`，禁用 Xet 后 `depth-anything/Depth-Anything-V2-Small-hf` 可正常加载。
+
+2026-05-11 smoke 结果：
+
+- cache：`output/0002/vfm_cache/bicycle_depth_anything_v2s_edge`，194 entries，48MB，validate 通过。
+- Depth Anything V2-S depth-edge prior：19.4402 / 0.4039 / 0.6270，61,277 个 Gaussians，训练 1.90s。
+- matched FastGS 620 baseline：19.4930 / 0.4046 / 0.6268，61,278 个 Gaussians，训练 1.81s。
+- 结论：链路健康，但 620-step 短程指标略低于 matched baseline；质量判断必须看 high-res 30k pilot。
+
+下面是早期 depth residual 草案，保留作后续变体参考；当前优先级低于已跑通的 depth-edge prior。
+
+```bash
 python -m vfm_gs.cli.build_vfm_cache \
   -s datasets/mipnerf360/bicycle \
   -i images \
@@ -312,10 +379,12 @@ python -m vfm_gs.cli.metrics \
 每一批实验完成后：
 
 ```bash
-git pull
+git add <changed-files>
+git commit -m "..."
+git push origin main
 ```
 
-若 `git pull` 出现 SSH 权限或冲突问题，先停止后续训练调度并记录具体错误。
+当前只有本服务器修改，按用户要求不再强制每轮先 `git pull`。若后续出现多人协作，再恢复 pull/rebase 检查。
 
 ## 结果回写
 
@@ -330,3 +399,4 @@ git pull
 - `docs/experiments/0002_depth_anything_dense_prior/results.md`
 - `docs/experiments/0002_depth_anything_dense_prior/review.md`
 - `docs/roadmap.md`
+- `docs/experiments/index.md`，如果实验状态发生阶段变化
