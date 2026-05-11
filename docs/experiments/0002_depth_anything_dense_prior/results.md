@@ -6,7 +6,7 @@ Phase 0 已开始。首次双卡 high-res FastGS big baseline 在 MipNeRF360 首
 
 已完成第一轮 rasterizer 修补、5000-step debug 验证、MipNeRF360 `bicycle` 单场景 30k 验收，以及 MipNeRF360/DB/Tandt 三个公开数据集全 13 场景 high-res FastGS big train/render/metrics。三数据集结果与 0001/4090D 同口径 high-res FastGS big baseline 基本贴合。当前结论：5090 环境 Phase 0 通过。
 
-Depth Anything V2-S dense depth-edge cache/backend 已完成最小接入，并通过 high-res `bicycle` 620-step smoke 和 30k pilot。30k matched `fastgs_baseline + densify100` 对照下，Depth Anything edge-prior 的 PSNR 基本持平但略低、SSIM/LPIPS 小幅正向，Gaussian 数多 39,399；相对 Phase 0 `fastgs_big` bicycle 则仍明显落后。当前结论：depth-edge prior 是弱混合信号，不足以直接扩全数据集；下一步先比较 direct relative depth prior。
+Depth Anything V2-S dense depth cache/backend 已完成最小接入，并通过 high-res `bicycle` 620-step smoke、depth-edge 30k pilot 和 direct relative depth 30k pilot。30k matched `fastgs_baseline + densify100` 对照下，depth-edge prior 是弱混合信号；direct relative depth prior 则三项质量正向且 Gaussian 数更少。当前结论：0002 暂以 `depth_anything_depth_prior` 作为主线，下一步扩展到 `stump/bonsai/playroom/truck` pilot。
 
 ## Phase 0：5090 FastGS Big Baseline 复核
 
@@ -135,11 +135,73 @@ Smoke 与 matched baseline：
 
 判断：暂不扩展 depth-edge prior 到全数据集。下一轮优先跑 `depth_anything_depth_prior`，检验直接 relative depth map 是否比 edge map 更适合作为 densification prior；若 direct depth 仍只有弱混合信号，再考虑 `fastgs_big` recipe 下的 matched 接入或在线 render-depth residual。
 
+### 2026-05-11 Depth Anything V2-S direct depth 30k bicycle pilot
+
+本轮构建 direct relative depth cache：`output/0002/vfm_cache/bicycle_depth_anything_v2s_depth`，194 entries，46.21MB，feature 为 `depth_anything_relative_depth`，validate 通过。训练 recipe 与 depth-edge pilot 和 matched baseline 保持一致：`fastgs_baseline + densification_interval=100`，high-res `-r -1` / 1.6K 自动缩放，`vfm_weight=0.0`，top-k25 weighted i0.50，只影响 densification。
+
+| 方法 | Recipe | PSNR | SSIM | LPIPS | Gaussian 数 | 训练时间 | 输出路径 |
+|---|---|---:|---:|---:|---:|---:|---|
+| FastGS matched 30k | `fastgs_baseline + densify100` | 25.0787 | 0.7370 | 0.2779 | 1,023,912 | 124.78s | `output/0002/fastgs_baseline_bicycle_30k_densify100_r_auto` |
+| Depth Anything V2-S depth-edge prior 30k | top-k25 weighted i0.50, `vfm_weight=0.0` | 25.0764 | 0.7387 | 0.2744 | 1,063,311 | 131.21s | `output/0002/depth_anything_edge_prior_bicycle_30k_r_auto` |
+| Depth Anything V2-S direct depth prior 30k | top-k25 weighted i0.50, `vfm_weight=0.0` | 25.1415 | 0.7434 | 0.2689 | 1,005,953 | 128.82s | `output/0002/depth_anything_depth_prior_bicycle_30k_r_auto` |
+
+相对 matched baseline：direct depth prior 为 +0.0628 PSNR、+0.0063 SSIM、LPIPS -0.0090，Gaussian 数 -17,959，QCGI 约 +0.2345。它比 depth-edge prior 更干净：质量三项全正向，同时没有增加点数。
+
+相对 Phase 0 FastGS big bicycle：direct depth prior 仍为 -0.1154 PSNR、-0.0119 SSIM、LPIPS +0.0239，Gaussian 数 -554,256。该差距仍受 recipe 差异影响；当前不能把它解释为 direct depth prior 相对 FastGS big 的最终结论。下一步 pilot 仍采用 matched `fastgs_baseline + densify100` 对照推进，多场景成立后再补 `fastgs_big` recipe 接入。
+
+日志：
+
+- cache build：`output/0002/debug_logs/depth_anything_bicycle_depth_cache_build.log`
+- cache validate：`output/0002/debug_logs/depth_anything_bicycle_depth_cache_validate.log`
+- train：`output/0002/debug_logs/depth_anything_depth_prior_bicycle_30k_train.log`
+- render：`output/0002/debug_logs/depth_anything_depth_prior_bicycle_30k_render.log`
+- metrics：`output/0002/debug_logs/depth_anything_depth_prior_bicycle_30k_metrics.log`
+
+判断：`depth_anything_depth_prior` 成为 0002 当前主线。下一步扩到 `stump/bonsai/playroom/truck` 四个 pilot 场景，先验证 direct depth 是否跨场景成立；如果至少多数场景相对 matched baseline 正向，再进入三个公开数据集全场景训练验证。
+
+### 2026-05-12 Prior/RGB 瓶颈重叠诊断
+
+为避免继续盲目扩展 prior，新增 `scripts/diagnose_prior_overlap.py`，直接读取已有 render/gt、`cameras.json` 和 VFM cache，检查 prior top-k 区域是否也是 baseline RGB 高误差区域，并统计候选方法的 L1 改善是否集中在 prior 区域。该脚本不依赖 CUDA，可作为每个新 prior 的轻量体检。
+
+诊断对象为 high-res `bicycle` matched baseline：
+
+- baseline：`output/0002/fastgs_baseline_bicycle_30k_densify100_r_auto`
+- direct depth candidate：`output/0002/depth_anything_depth_prior_bicycle_30k_r_auto`
+- depth-edge candidate：`output/0002/depth_anything_edge_prior_bicycle_30k_r_auto`
+- direct depth cache：`output/0002/vfm_cache/bicycle_depth_anything_v2s_depth`
+- depth-edge cache：`output/0002/vfm_cache/bicycle_depth_anything_v2s_edge`
+- DINO token-edge cache：`output/0001/vfm_cache_large/bicycle_dinov2_vitl14_token_edge_w1600`
+
+Top-k 25% 结果：
+
+| Prior | Candidate | baseline L1 | prior top-k L1 | non-prior L1 | prior/RGB top-k IoU | prior/RGB recall | candidate ΔL1 | prior top-k ΔL1 | non-prior ΔL1 | 输出 |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| Depth Anything relative depth | direct depth prior | 0.039367 | 0.050134 | 0.035778 | 0.2264 | 0.3675 | -0.000422 | -0.000656 | -0.000344 | `output/0002/diagnostics/bicycle_depth_prior_overlap` |
+| Depth Anything depth edge | depth-edge prior | 0.039367 | 0.046330 | 0.037047 | 0.1749 | 0.2967 | -0.000023 | +0.000072 | -0.000055 | `output/0002/diagnostics/bicycle_depth_edge_prior_overlap` |
+| DINO ViT-L token edge | none | 0.039367 | 0.041098 | 0.038791 | 0.1493 | 0.2593 | n/a | n/a | n/a | `output/0002/diagnostics/bicycle_dino_token_edge_baseline_overlap` |
+
+Top-k 10% 结果：
+
+| Prior | Candidate | prior top-k L1 | non-prior L1 | prior/RGB top-k IoU | prior/RGB recall | candidate ΔL1 | prior top-k ΔL1 | non-prior ΔL1 | 输出 |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---|
+| Depth Anything relative depth | direct depth prior | 0.056710 | 0.037440 | 0.1239 | 0.2188 | -0.000422 | -0.000770 | -0.000383 | `output/0002/diagnostics/bicycle_depth_prior_overlap_topk10` |
+| Depth Anything depth edge | depth-edge prior | 0.053768 | 0.037767 | 0.1033 | 0.1864 | -0.000023 | +0.000098 | -0.000037 | `output/0002/diagnostics/bicycle_depth_edge_prior_overlap_topk10` |
+| DINO ViT-L token edge | none | 0.042608 | 0.039007 | 0.0680 | 0.1269 | n/a | n/a | n/a | `output/0002/diagnostics/bicycle_dino_token_edge_baseline_overlap_topk10` |
+
+判断：
+
+- Direct relative depth prior 命中的 top-k 区域确实比非 prior 区域更难：top-25% L1 为 0.0501 vs 0.0358，top-10% L1 为 0.0567 vs 0.0374。candidate 的 L1 改善在 prior 区域也更大，说明 `depth_anything_depth_prior` 的 bicycle 正向不是纯随机波动。
+- 但 direct depth 与 RGB 高误差 top-k 的重叠仍有限：top-25% IoU 只有 0.226，top-10% IoU 只有 0.124。这解释了为什么即使命中区域有效，全图 PSNR/SSIM 也只有小幅上涨。
+- Depth-edge prior 的 top-k 区域也是较难区域，但 candidate 在这些区域反而微弱变差，改善主要来自非 prior 区域；这支持“不扩展 depth-edge prior”的决定。
+- DINO token-edge 与 RGB 高误差 top-k 的重叠更低，top-10% recall 只有 0.127。它更像结构重要性信号，而不是当前全图 RGB 指标的主要误差瓶颈。
+- 后续 pilot 必须同时报告全图指标和 prior-overlap 诊断；如果某 prior 的 top-k 区域不覆盖 RGB 高误差区域，不能期待全图指标明显提升，只能转向局部结构指标或训练策略贡献。
+
 | 日期 | 数据集 | 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数 | 训练时间 | 输出路径 | 结论 |
 |---|---|---|---|---:|---:|---:|---:|---:|---|---|
 | 2026-05-11 | MipNeRF360 | bicycle | Depth Anything V2-S depth-edge prior 620 smoke | 19.4402 | 0.4039 | 0.6270 | 61,277 | 1.90s | `output/0002/depth_anything_edge_prior_bicycle_620_r_auto` | 链路通过；短程略低于 matched 620 baseline，不作为质量负例 |
 | 2026-05-11 | MipNeRF360 | bicycle | FastGS matched 30k, `fastgs_baseline + densify100` | 25.0787 | 0.7370 | 0.2779 | 1,023,912 | 124.78s | `output/0002/fastgs_baseline_bicycle_30k_densify100_r_auto` | Depth Anything edge-prior 的公平对照 |
 | 2026-05-11 | MipNeRF360 | bicycle | Depth Anything V2-S depth-edge prior 30k | 25.0764 | 0.7387 | 0.2744 | 1,063,311 | 131.21s | `output/0002/depth_anything_edge_prior_bicycle_30k_r_auto` | 弱混合信号：SSIM/LPIPS 小幅正向，PSNR 微负，点数 +39,399 |
+| 2026-05-11 | MipNeRF360 | bicycle | Depth Anything V2-S direct depth prior 30k | 25.1415 | 0.7434 | 0.2689 | 1,005,953 | 128.82s | `output/0002/depth_anything_depth_prior_bicycle_30k_r_auto` | 当前主线：三项质量正向，且点数少于 matched baseline |
 | TBD | MipNeRF360 | stump | Depth Anything dense prior | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 | TBD | MipNeRF360 | bonsai | Depth Anything dense prior | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 | TBD | DB | playroom | Depth Anything dense prior | TBD | TBD | TBD | TBD | TBD | TBD | TBD |

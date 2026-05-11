@@ -238,6 +238,49 @@ counts -> densification importance
 
 第一阶段保持 `vfm_weight=0.0`，只影响 densification。
 
+## Prior/RGB 瓶颈诊断
+
+每个新 prior 完成 train/render/metrics 后，先跑轻量重叠诊断，再决定是否扩场景。脚本会读取 render/gt、`cameras.json` 和 VFM cache，输出 `per_view.csv` 与 `summary.json`：
+
+```bash
+.venv/bin/python scripts/diagnose_prior_overlap.py \
+  --baseline-model output/0002/fastgs_baseline_bicycle_30k_densify100_r_auto \
+  --candidate-model output/0002/depth_anything_depth_prior_bicycle_30k_r_auto \
+  --prior-cache output/0002/vfm_cache/bicycle_depth_anything_v2s_depth \
+  --output-dir output/0002/diagnostics/bicycle_depth_prior_overlap \
+  --topk 0.25 \
+  --rgb-topk 0.25
+```
+
+建议同时跑 top-k 10% 敏感性检查：
+
+```bash
+.venv/bin/python scripts/diagnose_prior_overlap.py \
+  --baseline-model output/0002/fastgs_baseline_bicycle_30k_densify100_r_auto \
+  --candidate-model output/0002/depth_anything_depth_prior_bicycle_30k_r_auto \
+  --prior-cache output/0002/vfm_cache/bicycle_depth_anything_v2s_depth \
+  --output-dir output/0002/diagnostics/bicycle_depth_prior_overlap_topk10 \
+  --topk 0.10 \
+  --rgb-topk 0.10
+```
+
+没有 candidate 时也可以只诊断 prior 是否覆盖 baseline RGB 高误差区域：
+
+```bash
+.venv/bin/python scripts/diagnose_prior_overlap.py \
+  --baseline-model output/0002/fastgs_baseline_bicycle_30k_densify100_r_auto \
+  --prior-cache output/0001/vfm_cache_large/bicycle_dinov2_vitl14_token_edge_w1600 \
+  --output-dir output/0002/diagnostics/bicycle_dino_token_edge_baseline_overlap \
+  --topk 0.25 \
+  --rgb-topk 0.25
+```
+
+重点看这些字段：
+
+- `prior_rgb_topk_iou` / `prior_rgb_topk_recall`：prior 关心的区域是否覆盖 RGB 高误差区域。
+- `baseline_l1_prior_topk` vs `baseline_l1_non_prior`：prior 区域是否确实更难。
+- `delta_l1_prior_topk` vs `delta_l1_non_prior`：candidate 的改善是否真的落在 prior 区域。
+
 ## Depth Anything Smoke
 
 Phase 0 通过且 Depth Anything backend 落地后，先跑 high-res bicycle 620-step。0002 不再使用 `-r 8` 低分辨率 smoke，保持原图输入和 FastGS 1.6K 自动缩放口径。
@@ -438,6 +481,42 @@ python -m vfm_gs.cli.render \
 
 python -m vfm_gs.cli.metrics \
   -m output/0002/depth_anything_depth_prior_bicycle_30k_r_auto
+```
+
+2026-05-11 direct relative depth prior `bicycle` 30k 结果：25.1415 / 0.7434 / 0.2689、1,005,953 个 Gaussians、训练 128.82s；相对 matched baseline 为 +0.0628 PSNR、+0.0063 SSIM、LPIPS -0.0090，Gaussian 数 -17,959。该变体成为 0002 当前主线。
+
+后续 pilot 场景按同一模板替换 dataset/output/cache 路径：
+
+```bash
+HF_HUB_DISABLE_XET=1 python -m vfm_gs.cli.build_vfm_cache \
+  -s datasets/mipnerf360/stump \
+  -i images \
+  -o output/0002/vfm_cache/stump_depth_anything_v2s_depth \
+  --backend depth_anything_v2 \
+  --max_width 1600 \
+  --device cuda \
+  --depth_anything_feature depth \
+  --storage npz_uint8
+
+python -m vfm_gs.cli.validate_vfm_cache \
+  -c output/0002/vfm_cache/stump_depth_anything_v2s_depth \
+  -s datasets/mipnerf360/stump \
+  -i images \
+  --backend depth_anything_v2
+
+setsid bash -lc 'cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && CUDA_VISIBLE_DEVICES=0 python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0002_depth_anything_depth_prior_densify_only_topk025_weighted_i050.yaml \
+  -s datasets/mipnerf360/stump \
+  -i images \
+  -m output/0002/depth_anything_depth_prior_stump_30k_r_auto \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0002/vfm_cache/stump_depth_anything_v2s_depth \
+  -r -1' > output/0002/debug_logs/depth_anything_depth_prior_stump_30k_train.log 2>&1 < /dev/null &
 ```
 
 必须对照：

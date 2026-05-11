@@ -53,7 +53,22 @@ DB/Tandt baseline 也已完成。DB 均值为 30.2331 / 0.9111 / 0.2397、646,60
 
 这是一条弱混合信号：SSIM/LPIPS 指向几何边界 prior 可能有用，但 PSNR 没有转正，且需要更多点。相对 Phase 0 `fastgs_big` bicycle 的 25.2569 / 0.7553 / 0.2450 仍明显落后，不过该比较混入了 `fastgs_baseline` 与 `fastgs_big` recipe 差异，只能作为环境上限参考，不能当作 depth-edge prior 的公平负例。
 
-当前决策：不直接把 `depth_anything_depth_edge_prior` 扩到全数据集。下一步优先跑 `depth_anything_depth_prior` 的 high-res `bicycle` 30k pilot，判断 direct relative depth map 是否比 edge map 更适合作为 densification prior；若 direct depth 仍只有弱混合信号，再考虑 `fastgs_big` recipe 下的 matched 接入或在线 render-depth residual。
+direct relative depth cache 与 30k pilot 也已完成。cache 为 `output/0002/vfm_cache/bicycle_depth_anything_v2s_depth`，194 entries，46.21MB，feature 为 `depth_anything_relative_depth`，validate 通过。Depth Anything V2-S direct depth prior 30k 为 25.1415 / 0.7434 / 0.2689、1,005,953 个 Gaussians、训练 128.82s。相对同 recipe matched baseline，这是 +0.0628 PSNR、+0.0063 SSIM、LPIPS -0.0090，Gaussian 数 -17,959，QCGI 约 +0.2345。
+
+当前决策：`depth_anything_depth_prior` 明显优于 depth-edge prior，成为 0002 当前主线。它已经在 `bicycle` 上给出三项质量正向且更少点数的信号；下一步扩到 `stump/bonsai/playroom/truck` 四个 pilot 场景。只有 direct depth 在多数 pilot 场景继续正向后，才进入全数据集训练验证；否则再回头考虑 `fastgs_big` recipe matched 接入、在线 render-depth residual 或局部 depth 区域指标。
+
+## 2026-05-12 指标瓶颈诊断
+
+为回应“DINO descriptor 改善很薄，瓶颈到底在哪里”的问题，新增 `scripts/diagnose_prior_overlap.py` 并先在 high-res `bicycle` 上补充验证。该诊断不重新训练，只读取已有 baseline/candidate render、GT、`cameras.json` 和 VFM cache，比较 prior top-k 与 RGB 高误差 top-k 的重叠，并看候选方法的 L1 改善是否真的落在 prior 区域。
+
+关键结论是：当前 prior 并没有很好覆盖全图 RGB 指标的主要误差区域。Depth Anything relative depth 比 depth-edge 和 DINO token-edge 更接近 RGB 瓶颈，但重叠仍有限。
+
+- Direct depth prior top-25% 区域的 baseline L1 为 0.0501，高于非 prior 区域 0.0358；candidate 在该区域 L1 改善 -0.000656，也大于非 prior 区域 -0.000344。这说明 `depth_anything_depth_prior` 的 bicycle 正向是有区域对应关系的。
+- Direct depth prior 与 RGB 高误差 top-25% 的 IoU 只有 0.226，top-10% 只有 0.124。也就是说，它命中的是“相对更难”的区域，但不是 RGB loss 最大的那一小撮区域。
+- Depth-edge prior top-25% 区域 baseline L1 为 0.0463，高于非 prior 区域 0.0370，但 candidate 在 prior 区域 L1 反而 +0.000072，改善主要来自非 prior 区域。这解释了 depth-edge 30k 只有弱混合信号。
+- DINO ViT-L token-edge 与 RGB 高误差区域重叠最低：top-25% IoU 0.149，top-10% IoU 0.068。它更像结构重要性信号，不是全图 RGB 指标瓶颈的直接代理。
+
+这条诊断改变后续优先级：不再把“换一个结构 prior”默认视为提高全图 PSNR/SSIM 的主路径。后续每个 pilot 都应先回答两个问题：prior top-k 是否覆盖 RGB 高误差区域；candidate 改善是否确实落在 prior 区域。如果答案是否定的，应该转向局部结构指标、validation selector 或更直接的优化入口，而不是继续扩大同类 prior 扫描。
 
 ## 继承自 0001 的边界
 
@@ -71,4 +86,4 @@ DB/Tandt baseline 也已完成。DB 均值为 30.2331 / 0.9111 / 0.2397、646,60
 
 ## 下一步
 
-构建 `bicycle` 的 Depth Anything V2-S direct relative depth cache，并跑 high-res `depth_anything_depth_prior` 30k matched pilot。后续是否推进 `stump/bonsai/playroom/truck` 取决于 direct depth 与 depth-edge 两条 `bicycle` 信号是否至少有一条形成明确正向。长任务继续用 detached 方式运行；每轮实验完成后更新文档、commit 并 push；当前只有本服务器改动，按用户要求不再强制先 `git pull`。
+扩展 direct relative depth prior 到 `stump/bonsai/playroom/truck` 四个 high-res 30k pilot 场景，但每个场景必须同步跑 `diagnose_prior_overlap.py`。如果 direct depth 在某场景全图指标正向，同时 prior top-k 区域更难且改善集中在 prior 区域，再进入下一轮；如果全图正向但 prior 区域不对应，先把它记录为训练轨迹偶然收益，不急着扩全数据集。长任务继续用 detached 方式运行；每轮实验完成后更新文档、commit 并 push；当前只有本服务器改动，按用户要求不再强制先 `git pull`。
