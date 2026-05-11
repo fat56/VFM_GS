@@ -30,8 +30,8 @@ Depth Anything 这类 dense monocular depth prior 能提供比 COLMAP sparse edg
 - 变体：`fastgs_baseline`
 - 打分器：`vfm_topology_scorer`
 - 新后端候选：
-  - `depth_anything_depth_edge_prior`：已实现并通过 high-res `bicycle` 620-step smoke。
-  - `depth_anything_depth_prior`：已实现配置入口，尚未跑正式 smoke。
+  - `depth_anything_depth_edge_prior`：已实现并通过 high-res `bicycle` 620-step smoke 与 30k pilot；30k matched 对照为弱混合信号。
+  - `depth_anything_depth_prior`：已实现配置入口，下一轮优先跑 high-res `bicycle` 30k。
   - `depth_anything_depth_residual` / `depth_anything_depth_edge_residual`：保留为在线 residual 后续方向，尚未实现。
 - 0001 对照：
   - `dinov2_descriptor_cosine + top-k25 + weighted i0.50 + vfm_weight=0.0`
@@ -188,8 +188,10 @@ Depth Anything 第一阶段成功标准：
 
 2026-05-11：`depth_anything_depth_edge_prior` 作为 0002 第一条落地路径，high-res `bicycle` 620-step smoke 已通过 cache/build/preflight/train/render/metrics。620-step matched baseline 略优，因此该结果只证明链路健康，不作为质量正例。
 
+2026-05-11：`depth_anything_depth_edge_prior` high-res `bicycle` 30k pilot 完成。相对 matched `fastgs_baseline + densify100` baseline，结果为 -0.0023 PSNR、+0.0017 SSIM、LPIPS -0.0035，Gaussian 数 +39,399；这是弱混合信号，不足以直接扩到全数据集。
+
 初始决策：0002 只推进 dense depth prior，不再扩展 COLMAP sparse depth-edge proxy。
 
 ## 下一步
 
-推进 high-res `bicycle` 30k pilot；若 30k 不正向，再比较 `depth_anything_depth_prior` 与 depth-edge prior，或转向在线 depth residual。长任务继续使用 detached 方式运行；每轮完成后更新文档、commit 并 push。
+推进 `depth_anything_depth_prior` high-res `bicycle` 30k pilot，比较 direct relative depth map 与 depth-edge prior。若 direct depth 仍只有弱混合信号，再考虑 `fastgs_big` recipe 下的 matched 接入或在线 depth residual。长任务继续使用 detached 方式运行；每轮完成后更新文档、commit 并 push。

@@ -6,7 +6,7 @@ Phase 0 已开始。首次双卡 high-res FastGS big baseline 在 MipNeRF360 首
 
 已完成第一轮 rasterizer 修补、5000-step debug 验证、MipNeRF360 `bicycle` 单场景 30k 验收，以及 MipNeRF360/DB/Tandt 三个公开数据集全 13 场景 high-res FastGS big train/render/metrics。三数据集结果与 0001/4090D 同口径 high-res FastGS big baseline 基本贴合。当前结论：5090 环境 Phase 0 通过。
 
-Depth Anything V2-S dense depth-edge cache/backend 已完成最小接入，并通过 high-res `bicycle` 620-step smoke。该 smoke 只证明 cache/build/preflight/train/render/metrics 链路可用，不作为 30k 质量结论。matched 620-step FastGS baseline 与 Depth Anything edge-prior 几乎同点数，Depth Anything edge-prior 的 PSNR/SSIM 略低、LPIPS 微差；下一步若推进，应直接进入 high-res 30k pilot，而不是继续用 620-step 指标判断方法有效性。
+Depth Anything V2-S dense depth-edge cache/backend 已完成最小接入，并通过 high-res `bicycle` 620-step smoke 和 30k pilot。30k matched `fastgs_baseline + densify100` 对照下，Depth Anything edge-prior 的 PSNR 基本持平但略低、SSIM/LPIPS 小幅正向，Gaussian 数多 39,399；相对 Phase 0 `fastgs_big` bicycle 则仍明显落后。当前结论：depth-edge prior 是弱混合信号，不足以直接扩全数据集；下一步先比较 direct relative depth prior。
 
 ## Phase 0：5090 FastGS Big Baseline 复核
 
@@ -110,9 +110,36 @@ Smoke 与 matched baseline：
 
 判断：`depth_anything_depth_edge_prior` 能复用现有 `pixel prior -> top-k metric_map -> accum_metric_counts -> densification importance` 主链路，cache preflight 也能在训练前校验 backend/feature。620-step 指标本身不支持质量结论；下一步可以跑 high-res `bicycle` 30k pilot，并与 Phase 0 FastGS big baseline、0001 high-res DINO descriptor weighted i0.50/i0.70 对照。
 
+### 2026-05-11 Depth Anything V2-S depth-edge 30k bicycle pilot
+
+本轮使用与 620-step smoke 相同的 `fastgs_baseline + densification_interval=100` recipe，保持 high-res `-r -1` / 1.6K 自动缩放口径。为避免把 recipe 差异误读成方法差异，补跑了同配方 30k matched baseline；Phase 0 `fastgs_big` bicycle 只作为 5090 环境上限参考。
+
+| 方法 | Recipe | PSNR | SSIM | LPIPS | Gaussian 数 | 训练时间 | 输出路径 |
+|---|---|---:|---:|---:|---:|---:|---|
+| FastGS matched 30k | `fastgs_baseline + densify100` | 25.0787 | 0.7370 | 0.2779 | 1,023,912 | 124.78s | `output/0002/fastgs_baseline_bicycle_30k_densify100_r_auto` |
+| Depth Anything V2-S depth-edge prior 30k | top-k25 weighted i0.50, `vfm_weight=0.0` | 25.0764 | 0.7387 | 0.2744 | 1,063,311 | 131.21s | `output/0002/depth_anything_edge_prior_bicycle_30k_r_auto` |
+| Phase 0 FastGS big bicycle | `fastgs_big + densify100 + scene overrides` | 25.2569 | 0.7553 | 0.2450 | 1,560,209 | 159.11s | `output/0002/phase0_5090_fastgs_big_baseline_fix1/mipnerf360_single_gpu0/bicycle` |
+
+相对 matched baseline：Depth Anything edge-prior 为 -0.0023 PSNR、+0.0017 SSIM、LPIPS -0.0035，Gaussian 数 +39,399，QCGI 约 +0.010。它说明 dense depth-edge prior 有一点结构性信号，但收益很弱，且 PSNR 没有转正。
+
+相对 Phase 0 FastGS big：Depth Anything edge-prior 为 -0.1805 PSNR、-0.0166 SSIM、LPIPS +0.0294，Gaussian 数 -496,898。该比较混入了 recipe 差异，不能作为 depth-edge prior 的公平负例；但它提醒 0002 若要对齐用户要求的 big baseline，后续应 either 使用 `fastgs_big` recipe 接入 Depth Anything，or 在每个 pilot 中补齐 matched baseline。
+
+日志：
+
+- Depth Anything train：`output/0002/debug_logs/depth_anything_edge_prior_bicycle_30k_train.log`
+- Depth Anything render：`output/0002/debug_logs/depth_anything_edge_prior_bicycle_30k_render.log`
+- Depth Anything metrics：`output/0002/debug_logs/depth_anything_edge_prior_bicycle_30k_metrics.log`
+- matched baseline train：`output/0002/debug_logs/fastgs_baseline_bicycle_30k_densify100_train.log`
+- matched baseline render：`output/0002/debug_logs/fastgs_baseline_bicycle_30k_densify100_render.log`
+- matched baseline metrics：`output/0002/debug_logs/fastgs_baseline_bicycle_30k_densify100_metrics.log`
+
+判断：暂不扩展 depth-edge prior 到全数据集。下一轮优先跑 `depth_anything_depth_prior`，检验直接 relative depth map 是否比 edge map 更适合作为 densification prior；若 direct depth 仍只有弱混合信号，再考虑 `fastgs_big` recipe 下的 matched 接入或在线 render-depth residual。
+
 | 日期 | 数据集 | 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数 | 训练时间 | 输出路径 | 结论 |
 |---|---|---|---|---:|---:|---:|---:|---:|---|---|
 | 2026-05-11 | MipNeRF360 | bicycle | Depth Anything V2-S depth-edge prior 620 smoke | 19.4402 | 0.4039 | 0.6270 | 61,277 | 1.90s | `output/0002/depth_anything_edge_prior_bicycle_620_r_auto` | 链路通过；短程略低于 matched 620 baseline，不作为质量负例 |
+| 2026-05-11 | MipNeRF360 | bicycle | FastGS matched 30k, `fastgs_baseline + densify100` | 25.0787 | 0.7370 | 0.2779 | 1,023,912 | 124.78s | `output/0002/fastgs_baseline_bicycle_30k_densify100_r_auto` | Depth Anything edge-prior 的公平对照 |
+| 2026-05-11 | MipNeRF360 | bicycle | Depth Anything V2-S depth-edge prior 30k | 25.0764 | 0.7387 | 0.2744 | 1,063,311 | 131.21s | `output/0002/depth_anything_edge_prior_bicycle_30k_r_auto` | 弱混合信号：SSIM/LPIPS 小幅正向，PSNR 微负，点数 +39,399 |
 | TBD | MipNeRF360 | stump | Depth Anything dense prior | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 | TBD | MipNeRF360 | bonsai | Depth Anything dense prior | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 | TBD | DB | playroom | Depth Anything dense prior | TBD | TBD | TBD | TBD | TBD | TBD | TBD |

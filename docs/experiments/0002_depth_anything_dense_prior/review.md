@@ -49,7 +49,11 @@ DB/Tandt baseline 也已完成。DB 均值为 30.2331 / 0.9111 / 0.2397、646,60
 
 620-step smoke 完成 train/render/metrics：Depth Anything V2-S depth-edge prior 为 19.4402 / 0.4039 / 0.6270、61,277 个 Gaussians、训练 1.90s；matched high-res FastGS 620 baseline 为 19.4930 / 0.4046 / 0.6268、61,278 个 Gaussians、训练 1.81s。短程指标略低于 matched baseline，但差异很小，且 620-step 只用于链路健康，不作为方法质量负例。
 
-下一步可以进入 high-res `bicycle` 30k pilot。若 30k 仍不正向，应优先比较两个变体：直接 relative depth prior 与 depth-edge prior；再决定是否引入在线 render depth residual 或局部 depth-edge 区域指标。
+30k `bicycle` pilot 已完成，并补跑了同 recipe matched baseline。Depth Anything V2-S depth-edge prior 30k 为 25.0764 / 0.7387 / 0.2744、1,063,311 个 Gaussians、训练 131.21s；matched `fastgs_baseline + densify100` 为 25.0787 / 0.7370 / 0.2779、1,023,912 个 Gaussians、训练 124.78s。相对 matched baseline，Depth Anything edge-prior 是 -0.0023 PSNR、+0.0017 SSIM、LPIPS -0.0035，Gaussian 数 +39,399，QCGI 约 +0.010。
+
+这是一条弱混合信号：SSIM/LPIPS 指向几何边界 prior 可能有用，但 PSNR 没有转正，且需要更多点。相对 Phase 0 `fastgs_big` bicycle 的 25.2569 / 0.7553 / 0.2450 仍明显落后，不过该比较混入了 `fastgs_baseline` 与 `fastgs_big` recipe 差异，只能作为环境上限参考，不能当作 depth-edge prior 的公平负例。
+
+当前决策：不直接把 `depth_anything_depth_edge_prior` 扩到全数据集。下一步优先跑 `depth_anything_depth_prior` 的 high-res `bicycle` 30k pilot，判断 direct relative depth map 是否比 edge map 更适合作为 densification prior；若 direct depth 仍只有弱混合信号，再考虑 `fastgs_big` recipe 下的 matched 接入或在线 render-depth residual。
 
 ## 继承自 0001 的边界
 
@@ -67,4 +71,4 @@ DB/Tandt baseline 也已完成。DB 均值为 30.2331 / 0.9111 / 0.2397、646,60
 
 ## 下一步
 
-进入 Depth Anything dense prior 的 high-res `bicycle` 30k pilot。后续 pilot 仍按 proposal 中的 `bicycle/stump/bonsai/playroom/truck` 顺序推进，并继续用 detached 方式运行长任务。每轮实验完成后更新文档、commit 并 push；当前只有本服务器改动，按用户要求不再强制先 `git pull`。
+构建 `bicycle` 的 Depth Anything V2-S direct relative depth cache，并跑 high-res `depth_anything_depth_prior` 30k matched pilot。后续是否推进 `stump/bonsai/playroom/truck` 取决于 direct depth 与 depth-edge 两条 `bicycle` 信号是否至少有一条形成明确正向。长任务继续用 detached 方式运行；每轮实验完成后更新文档、commit 并 push；当前只有本服务器改动，按用户要求不再强制先 `git pull`。

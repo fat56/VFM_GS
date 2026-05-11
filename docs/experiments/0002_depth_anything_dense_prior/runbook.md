@@ -345,28 +345,99 @@ python -m vfm_gs.cli.metrics \
 正式对照直接使用 high-res 1.6K 口径。先跑少数 pilot 场景；若多场景有效，再扩展全数据集。
 
 ```bash
-python -m vfm_gs.cli.train \
+setsid bash -lc 'cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && CUDA_VISIBLE_DEVICES=0 python -m vfm_gs.cli.train \
   --variant fastgs_baseline \
-  --config configs/experiments/0002_depth_anything_depth_residual_densify_only_topk025_weighted_i050.yaml \
+  --config configs/experiments/0002_depth_anything_depth_edge_prior_densify_only_topk025_weighted_i050.yaml \
   -s datasets/mipnerf360/bicycle \
   -i images \
-  -m output/0002/depth_anything_depth_residual_bicycle_30k_r_auto \
+  -m output/0002/depth_anything_edge_prior_bicycle_30k_r_auto \
   --eval \
   --iterations 30000 \
   --test_iterations 30000 \
   --save_iterations 30000 \
   --checkpoint_iterations 30000 \
-  --vfm_cache_dir output/0002/vfm_cache/bicycle_depth_anything \
-  -r -1
+  --vfm_cache_dir output/0002/vfm_cache/bicycle_depth_anything_v2s_edge \
+  -r -1' > output/0002/debug_logs/depth_anything_edge_prior_bicycle_30k_train.log 2>&1 < /dev/null &
 
 python -m vfm_gs.cli.render \
-  -m output/0002/depth_anything_depth_residual_bicycle_30k_r_auto \
+  -m output/0002/depth_anything_edge_prior_bicycle_30k_r_auto \
   --iteration -1 \
   --skip_train \
   --quiet
 
 python -m vfm_gs.cli.metrics \
-  -m output/0002/depth_anything_depth_residual_bicycle_30k_r_auto
+  -m output/0002/depth_anything_edge_prior_bicycle_30k_r_auto
+```
+
+为了公平解释 30k pilot，需补齐同 recipe matched baseline：
+
+```bash
+setsid bash -lc 'cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && CUDA_VISIBLE_DEVICES=0 python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0002/fastgs_baseline_bicycle_30k_densify100_r_auto \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --densification_interval 100 \
+  -r -1' > output/0002/debug_logs/fastgs_baseline_bicycle_30k_densify100_train.log 2>&1 < /dev/null &
+
+python -m vfm_gs.cli.render \
+  -m output/0002/fastgs_baseline_bicycle_30k_densify100_r_auto \
+  --iteration -1 \
+  --skip_train \
+  --quiet
+
+python -m vfm_gs.cli.metrics \
+  -m output/0002/fastgs_baseline_bicycle_30k_densify100_r_auto
+```
+
+2026-05-11 `bicycle` 30k 结果：Depth Anything V2-S depth-edge prior 为 25.0764 / 0.7387 / 0.2744、1,063,311 个 Gaussians；matched baseline 为 25.0787 / 0.7370 / 0.2779、1,023,912 个 Gaussians。结论是弱混合信号，不直接扩全数据集；下一轮优先跑 direct relative depth prior。
+
+direct relative depth prior 的下一轮命令：
+
+```bash
+HF_HUB_DISABLE_XET=1 python -m vfm_gs.cli.build_vfm_cache \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -o output/0002/vfm_cache/bicycle_depth_anything_v2s_depth \
+  --backend depth_anything_v2 \
+  --max_width 1600 \
+  --device cuda \
+  --depth_anything_feature depth \
+  --storage npz_uint8
+
+python -m vfm_gs.cli.validate_vfm_cache \
+  -c output/0002/vfm_cache/bicycle_depth_anything_v2s_depth \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  --backend depth_anything_v2
+
+python -m vfm_gs.cli.train \
+  --variant fastgs_baseline \
+  --config configs/experiments/0002_depth_anything_depth_prior_densify_only_topk025_weighted_i050.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0002/depth_anything_depth_prior_bicycle_30k_r_auto \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0002/vfm_cache/bicycle_depth_anything_v2s_depth \
+  -r -1
+
+python -m vfm_gs.cli.render \
+  -m output/0002/depth_anything_depth_prior_bicycle_30k_r_auto \
+  --iteration -1 \
+  --skip_train \
+  --quiet
+
+python -m vfm_gs.cli.metrics \
+  -m output/0002/depth_anything_depth_prior_bicycle_30k_r_auto
 ```
 
 必须对照：
