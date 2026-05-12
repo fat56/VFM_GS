@@ -239,9 +239,11 @@ CUDA_VISIBLE_DEVICES=1 python -m vfm_gs.cli.train \
 已完成结果：
 
 - RGB broad control 30k：25.3627 / 0.7656 / 0.2273，1,883,915 Gaussians，`output/0003/rgb_broad_bicycle_30k_r_auto`。
+- DINO RGB rerank l0.25 start7000 30k：25.3695 / 0.7663 / 0.2255，1,924,629 Gaussians，`output/0003/dino_rgb_rerank_l025_start7000_bicycle_30k_r_auto`。
 - DINO RGB rerank l0.25 start9000 30k：25.3538 / 0.7659 / 0.2260，1,915,967 Gaussians，`output/0003/dino_rgb_rerank_l025_start9000_bicycle_30k_r_auto`。
+- DINO RGB rerank l0.25 start11000 30k：25.3515 / 0.7660 / 0.2262，1,905,234 Gaussians，`output/0003/dino_rgb_rerank_l025_start11000_bicycle_30k_r_auto`。
 
-下一轮双卡扫描命令：
+已完成的 start7000/start11000 双卡扫描命令：
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 python -m vfm_gs.cli.train \
@@ -262,6 +264,32 @@ CUDA_VISIBLE_DEVICES=1 python -m vfm_gs.cli.train \
   -m output/0003/dino_rgb_rerank_l025_start11000_bicycle_30k_r_auto \
   --eval \
   --vfm_active_from_iter 11000 \
+  --quiet
+```
+
+下一轮建议先降 DINO rerank 强度，不直接扩多场景：
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0003_dino_descriptor_rgb_rerank_l025.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0003/dino_rgb_rerank_l010_start7000_bicycle_30k_r_auto \
+  --eval \
+  --vfm_active_from_iter 7000 \
+  --vfm_dino_rerank_lambda 0.10 \
+  --quiet
+
+CUDA_VISIBLE_DEVICES=1 python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0003_dino_descriptor_rgb_rerank_l025.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0003/dino_rgb_rerank_l010_start9000_bicycle_30k_r_auto \
+  --eval \
+  --vfm_active_from_iter 9000 \
+  --vfm_dino_rerank_lambda 0.10 \
   --quiet
 ```
 

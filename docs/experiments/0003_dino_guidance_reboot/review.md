@@ -8,7 +8,7 @@
 
 Phase 1 第一轮已实现 `rgb_broad` 和 `rgb_rerank` 两个 importance mode，并完成 high-res `bicycle` 620-step smoke。RGB broad control 为 19.4699 / 0.4046 / 0.6282、63,439 点；DINO rerank l0.25 为 19.4483 / 0.4051 / 0.6281、63,442 点。该结果只证明链路健康，不证明质量收益；真正判断要进入 30k matched pilot。
 
-Phase 2 首轮 high-res `bicycle` 30k matched pilot 已完成。RGB broad control 为 25.3627 / 0.7656 / 0.2273、1,883,915 点；DINO rerank l0.25 start9000 为 25.3538 / 0.7659 / 0.2260、1,915,967 点。相对 matched control，DINO rerank 是 -0.0088 PSNR、+0.0003 SSIM、LPIPS -0.0013、+32,052 点。它证明链路稳定，但还不是明确正向。
+Phase 2 high-res `bicycle` 30k matched pilot 已完成 `lambda=0.25` start_iter 扫描。RGB broad control 为 25.3627 / 0.7656 / 0.2273、1,883,915 点；DINO rerank start7000 为 25.3695 / 0.7663 / 0.2255、1,924,629 点，start9000 为 25.3538 / 0.7659 / 0.2260、1,915,967 点，start11000 为 25.3515 / 0.7660 / 0.2262、1,905,234 点。相对 matched control，start7000 是 +0.0068 PSNR、+0.0007 SSIM、LPIPS -0.0018、+40,714 点；start9000/11000 是 PSNR 小负、SSIM/LPIPS 微正。它证明链路稳定，但还不是可扩场景的明确正向。
 
 这会带来两种混淆：
 
@@ -50,10 +50,10 @@ RGB/SSIM broad candidate -> DINO rerank/protect -> densify
    `w1600` 的 overlap 和 Spearman 都没有改善。高分辨率 tokens 仍可作为后续局部结构指标或可视化工具，但不是 0003 第一训练候选的核心变量。
 
 3. RGB 放宽候选 + DINO rerank
-   第一版训练候选已落地为 `rgb_broad` 和 `rgb_rerank`。当前实现用 `loss_thresh=0.05` 放宽 RGB/FastGS 计数，再用 `vfm_rgb_broad_topk=0.50` 限定 broad candidate；`rgb_rerank` 在候选内采用 `RGB_importance * (1 + lambda * normalize(DINO residual))`。Phase 0 里 DINO top-k 有 52%~55% 落在 RGB top-50% broad candidate 内，这为 rerank 提供了比裸 top-k 更合理的入口。下一步要通过 30k matched control 验证它是否真带来质量或容量收益。
+   第一版训练候选已落地为 `rgb_broad` 和 `rgb_rerank`。当前实现用 `loss_thresh=0.05` 放宽 RGB/FastGS 计数，再用 `vfm_rgb_broad_topk=0.50` 限定 broad candidate；`rgb_rerank` 在候选内采用 `RGB_importance * (1 + lambda * normalize(DINO residual))`。Phase 0 里 DINO top-k 有 52%~55% 落在 RGB top-50% broad candidate 内，这为 rerank 提供了比裸 top-k 更合理的入口。30k start_iter 扫描显示它能产生弱质量收益，但收益薄且伴随更高点数。
 
 4. 后期介入
-   DINO 不应从早期结构尚未成型时介入。第一组训练扫描建议 `DINO_start_iter = 7000/9000/11000`，仍保持 `densify_until_iter = 15000`，只在 densification 后半段做二次筛选。
+   DINO 不应从早期结构尚未成型时介入。第一组训练扫描已覆盖 `DINO_start_iter = 7000/9000/11000`，仍保持 `densify_until_iter = 15000`，只在 densification 后半段做二次筛选。当前 `start7000` 最好，说明过晚介入未带来更强收益；后续优先调低 rerank 强度，而不是继续向更晚 start_iter 扫描。
 
 5. Patch-aware map
    初始阶段至少改成 nearest upsample 或 token-cell mask，避免双线性插值制造虚假的亚 token 精度。后续可改为 token-grid 级 Gaussian visibility 聚合。
@@ -70,4 +70,4 @@ RGB/SSIM broad candidate -> DINO rerank/protect -> densify
 
 ## 下一步
 
-继续完成 start_iter 扫描，但保持保守解释。下一轮用双卡并行跑 `DINO_start_iter=7000/11000`，仍对照同一个 RGB broad 30k control；若两者仍是 PSNR 负、点数增、SSIM/LPIPS 仅微正，则暂停扩场景，改为 `lambda=0.10` 或显式 final top-m/局部指标诊断。
+暂停扩多场景，先在 `bicycle` 上降低 rerank 强度。下一轮建议用双卡并行跑 `lambda=0.10` 的 start7000/start9000 matched pilot；若低 lambda 能保住 start7000 的 LPIPS/SSIM 小收益并减少点数增量，再考虑 `stump/treehill/bonsai`。若仍只是薄弱感知收益，应转向显式 final top-m 或局部指标诊断。

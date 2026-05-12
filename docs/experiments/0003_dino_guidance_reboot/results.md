@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-0003 已完成 Phase 0 `bicycle` 诊断和 Phase 1 第一轮 high-res 620-step smoke。当前结论是：训练时同款 DINO descriptor residual 与 RGB 高误差区域只有弱重叠，单纯把 token grid 从 `10x16` 提高到 `75x114` 没有改善 overlap；但 `RGB broad candidate -> DINO rerank` 的训练链路已经打通，下一步可以进入 30k pilot。
+0003 已完成 Phase 0 `bicycle` 诊断、Phase 1 high-res 620-step smoke，以及 Phase 2 第一轮 high-res `bicycle` 30k matched pilot。当前结论是：训练时同款 DINO descriptor residual 与 RGB 高误差区域只有弱重叠，单纯把 token grid 从 `10x16` 提高到 `75x114` 没有改善 overlap；`RGB broad candidate -> DINO rerank` 的训练链路健康，但 `lambda=0.25` start_iter 扫描只给出弱正/弱混合信号，暂不支持直接扩多场景。
 
 ## 0001 Token 粒度复核
 
@@ -35,7 +35,7 @@
 | 2026-05-12 | Phase 0 | bicycle | 训练时同款 render-vs-GT DINO cosine error overlap | `output/0003/diagnostics/bicycle_dino_descriptor_residual_w{224,518,1600}_topk{25,10}` | 全局 top-k overlap 只比随机基线略高，descriptor residual 不是可靠 RGB error proxy |
 | 2026-05-12 | Phase 0 | bicycle | 224/518/1600 token 粒度比较 | `scripts/diagnose_dino_descriptor_residual.py` | token 变细没有改善；w1600 的 IoU 和 Spearman 反而最低 |
 | 2026-05-12 | Phase 1 | bicycle | RGB-broad candidate + DINO rerank + late activation 620-step smoke | `output/0003/{rgb_broad_bicycle_620_r_auto,dino_rgb_rerank_l025_bicycle_620_r_auto}` | 链路健康；620-step 只作集成验证，不作质量结论 |
-| TBD | Phase 2 | bicycle/stump/treehill/bonsai | start_iter/lambda/broad top-k 30k pilot | TBD | TBD |
+| 2026-05-12 | Phase 2 | bicycle | `lambda=0.25` start_iter 7000/9000/11000 30k matched pilot | `output/0003/dino_rgb_rerank_l025_start{7000,9000,11000}_bicycle_30k_r_auto` | start7000 三项质量小幅正向但点数更多；9000/11000 为 PSNR 小负、SSIM/LPIPS 微正 |
 | TBD | Phase 3 | TBD | DINO prune-protect pilot | TBD | 只在 rerank 成立后推进 |
 
 ## 2026-05-12 Phase 0：训练时同款 DINO Descriptor Residual 诊断
@@ -100,30 +100,36 @@ residual = 0.5 * clamp(1 - cosine(render_token, gt_token), 0, 2)
 - DINO rerank 在 600 iter 触发 DINOv2 token extraction，训练没有报错；点数与 RGB broad control 几乎一致，符合“只在候选内部 rerank”的预期。
 - 620-step 指标差异非常小，且训练过短，不支持质量判断。Phase 2 必须跑 30k matched pilot，第一组固定 `broad_topk=0.50`、`lambda=0.25`，扫描 `DINO_start_iter=7000/9000/11000`，并与 RGB broad 30k matched control 对照。
 
-## 2026-05-12 Phase 2：Bicycle 30k 首轮 Matched Pilot
+## 2026-05-12 Phase 2：Bicycle 30k Start-Iter Matched Pilot
 
-本轮使用双卡同时训练：GPU0 跑 `RGB broad` matched control，GPU1 跑 `DINO RGB rerank l0.25, start_iter=9000`。服务器未安装 `screen`，实际使用 `setsid` wrapper 脱离当前 SSH；两组 train/render/metrics 均完成。训练仍保持 high-res 原图输入/1.6K 自动缩放口径。
+本轮使用双卡分两批训练：第一批 GPU0 跑 `RGB broad` matched control，GPU1 跑 `DINO RGB rerank l0.25, start_iter=9000`；第二批 GPU0/GPU1 并行扫描 `start_iter=7000/11000`。服务器未安装 `screen`，实际使用 `setsid` wrapper 脱离当前 SSH；所有 train/render/metrics 均完成。训练仍保持 high-res 原图输入/1.6K 自动缩放口径。
 
 | Run | 配置 | active_from | PSNR | SSIM | LPIPS | Gaussians | Train wall | 输出 |
 |---|---|---:|---:|---:|---:|---:|---:|---|
 | RGB broad control 30k | `0003_dino_descriptor_rgb_broad.yaml` | 0 | 25.3627 | 0.7656 | 0.2273 | 1,883,915 | 243s | `output/0003/rgb_broad_bicycle_30k_r_auto` |
+| DINO RGB rerank l0.25 30k | `0003_dino_descriptor_rgb_rerank_l025.yaml` | 7000 | 25.3695 | 0.7663 | 0.2255 | 1,924,629 | 245s | `output/0003/dino_rgb_rerank_l025_start7000_bicycle_30k_r_auto` |
 | DINO RGB rerank l0.25 30k | `0003_dino_descriptor_rgb_rerank_l025.yaml` | 9000 | 25.3538 | 0.7659 | 0.2260 | 1,915,967 | 242s | `output/0003/dino_rgb_rerank_l025_start9000_bicycle_30k_r_auto` |
+| DINO RGB rerank l0.25 30k | `0003_dino_descriptor_rgb_rerank_l025.yaml` | 11000 | 25.3515 | 0.7660 | 0.2262 | 1,905,234 | 241s | `output/0003/dino_rgb_rerank_l025_start11000_bicycle_30k_r_auto` |
 
 相对 RGB broad control：
 
 | Run | ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussians | 判断 |
 |---|---:|---:|---:|---:|---|
+| DINO RGB rerank l0.25 start7000 | +0.0068 | +0.0007 | -0.0018 | +40,714 | 唯一三项质量均小幅正向的点，但容量代价更高，收益仍很薄 |
 | DINO RGB rerank l0.25 start9000 | -0.0088 | +0.0003 | -0.0013 | +32,052 | 弱混合信号：感知指标小幅正向，但 PSNR 小负且点数更多 |
+| DINO RGB rerank l0.25 start11000 | -0.0112 | +0.0004 | -0.0011 | +21,319 | 介入更晚可减少点数增量，但质量收益没有扩大 |
 
 参考 5090 high-res FastGS big `bicycle` baseline `25.2569 / 0.7553 / 0.2450`、1,560,209 点：RGB broad 和 DINO rerank 都能明显提升 SSIM/LPIPS，但主要代价是 0.32M~0.36M 级别的额外 Gaussians。当前不能把这解释为 DINO rerank 的独立收益；更可能是放宽 RGB 候选本身带来的容量和质量提升。
 
 日志：
 
 - RGB broad：`output/0003/logs/rgb_broad_bicycle_30k_r_auto.{train,render,metrics}.log`
-- DINO rerank：`output/0003/logs/dino_rgb_rerank_l025_start9000_bicycle_30k_r_auto.{train,render,metrics}.log`
+- DINO rerank start7000：`output/0003/logs/dino_rgb_rerank_l025_start7000_bicycle_30k_r_auto.{train,render,metrics}.log`
+- DINO rerank start9000：`output/0003/logs/dino_rgb_rerank_l025_start9000_bicycle_30k_r_auto.{train,render,metrics}.log`
+- DINO rerank start11000：`output/0003/logs/dino_rgb_rerank_l025_start11000_bicycle_30k_r_auto.{train,render,metrics}.log`
 
 判断：
 
-- Phase 2 首轮证明 `RGB broad -> DINO rerank` 30k 链路健康，且后期介入 `start_iter=9000` 没有训练稳定性问题。
-- DINO rerank 相对 matched RGB broad control 没有形成明确全图质量收益。SSIM/LPIPS 的微弱正向可能仍值得继续看 start_iter/lambda，但不能直接扩全场景。
-- 下一轮先用双卡扫描 `start_iter=7000/11000`。如果仍是 PSNR 负、点数增且感知指标只微正，应转向 `lambda=0.10`、显式 final top-m 或局部指标诊断，而不是继续加大 DINO 影响。
+- Phase 2 证明 `RGB broad -> DINO rerank` 30k 链路健康，`start_iter=7000/9000/11000` 都没有训练稳定性问题。
+- `start7000` 是当前最好的 DINO rerank 点，但相对 RGB broad control 只多 +0.0068 PSNR、+0.0007 SSIM、LPIPS -0.0018，同时多 40,714 个 Gaussians；这更像弱增益，而不是足以扩全场景的明确收益。
+- `start9000/11000` 则维持 PSNR 小负、SSIM/LPIPS 微正。下一轮应优先降低 DINO rerank 强度到 `lambda=0.10`，或引入显式 final top-m/局部指标诊断，而不是继续加大 DINO 影响。
