@@ -242,6 +242,8 @@ CUDA_VISIBLE_DEVICES=1 python -m vfm_gs.cli.train \
 - DINO RGB rerank l0.25 start7000 30k：25.3695 / 0.7663 / 0.2255，1,924,629 Gaussians，`output/0003/dino_rgb_rerank_l025_start7000_bicycle_30k_r_auto`。
 - DINO RGB rerank l0.25 start9000 30k：25.3538 / 0.7659 / 0.2260，1,915,967 Gaussians，`output/0003/dino_rgb_rerank_l025_start9000_bicycle_30k_r_auto`。
 - DINO RGB rerank l0.25 start11000 30k：25.3515 / 0.7660 / 0.2262，1,905,234 Gaussians，`output/0003/dino_rgb_rerank_l025_start11000_bicycle_30k_r_auto`。
+- DINO RGB rerank l0.10 start7000 30k：25.3519 / 0.7660 / 0.2262，1,913,988 Gaussians，`output/0003/dino_rgb_rerank_l010_start7000_bicycle_30k_r_auto`。
+- DINO RGB rerank l0.10 start9000 30k：25.3556 / 0.7660 / 0.2261，1,907,193 Gaussians，`output/0003/dino_rgb_rerank_l010_start9000_bicycle_30k_r_auto`。
 
 已完成的 start7000/start11000 双卡扫描命令：
 
@@ -267,7 +269,7 @@ CUDA_VISIBLE_DEVICES=1 python -m vfm_gs.cli.train \
   --quiet
 ```
 
-下一轮建议先降 DINO rerank 强度，不直接扩多场景：
+已完成的 l0.10 双卡扫描命令：
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 python -m vfm_gs.cli.train \
@@ -292,6 +294,11 @@ CUDA_VISIBLE_DEVICES=1 python -m vfm_gs.cli.train \
   --vfm_dino_rerank_lambda 0.10 \
   --quiet
 ```
+
+下一轮建议暂停相邻 start/lambda 扫描，优先做：
+
+- 局部指标诊断：比较 RGB broad、l0.25 start7000、l0.10 start9000 在 DINO top-k、RGB top-k、DINO/RGB 交集区域的 L1/LPIPS 改善。
+- 显式 final top-m：保持 RGB broad 候选总量/最终 densification 容量不变，只让 DINO 改变候选内部排序。
 
 ## Phase 3：DINO Prune-Protect
 

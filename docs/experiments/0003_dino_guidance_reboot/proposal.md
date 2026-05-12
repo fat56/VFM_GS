@@ -76,7 +76,7 @@
 |---|---|---|---|
 | Phase 0 | 导出训练时同款 render-vs-GT DINO cosine error map，并诊断 overlap / token 粒度 | diagnostic CSV/JSON/overlay；已完成 bicycle w224/w518/w1600 | 否 |
 | Phase 1 | 实现 RGB-broad candidate + DINO rerank + late activation，620-step 验证链路 | config + smoke logs；已完成 bicycle 620 | 是，短跑 |
-| Phase 2 | high-res `bicycle/stump/treehill/bonsai` 30k pilot，扫描 start_iter/lambda/broad top-k | start_iter 7000/9000/11000 已完成 bicycle；下一步低 lambda | 是 |
+| Phase 2 | high-res `bicycle/stump/treehill/bonsai` 30k pilot，扫描 start_iter/lambda/broad top-k | bicycle start_iter 和 lambda=0.10 已完成；下一步局部诊断或 final top-m | 是 |
 | Phase 3 | 若 Phase 2 成立，再做 DINO prune-protect，不做主动 DINO pruning | config + pilot metrics | 是 |
 | Phase 4 | 只在 pilot 成立后扩全数据集 | summary + policy | 是 |
 
@@ -88,4 +88,4 @@
 
 ## 下一步
 
-Phase 2 high-res `bicycle` 30k 已完成 `DINO rerank lambda=0.25, start_iter=7000/9000/11000` 扫描。start7000 相对 RGB broad control 为 +0.0068 PSNR、+0.0007 SSIM、LPIPS -0.0018，但多 40,714 点；start9000/11000 均为 PSNR 小负、SSIM/LPIPS 微正。下一步暂停扩多场景，先用双卡并行验证 `lambda=0.10` 的 start7000/start9000；若低 lambda 不能把质量收益和点数增量拉开，再转向显式 final top-m 或局部指标诊断。
+Phase 2 high-res `bicycle` 30k 已完成 `DINO rerank lambda=0.25, start_iter=7000/9000/11000` 和 `lambda=0.10, start_iter=7000/9000` 扫描。`lambda=0.25 start7000` 相对 RGB broad control 为 +0.0068 PSNR、+0.0007 SSIM、LPIPS -0.0018，但多 40,714 点；`lambda=0.10` 只省 8k~11k 点，PSNR 仍低于 RGB broad control。下一步暂停扩多场景，转向显式 final top-m 或局部指标诊断，先证明 DINO rerank 是否真的改善 DINO/RGB 交集区域。
