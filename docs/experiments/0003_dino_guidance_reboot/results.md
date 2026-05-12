@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-0003 已完成 Phase 0 `bicycle` 诊断、Phase 1 high-res 620-step smoke，以及 Phase 2 high-res `bicycle` 30k matched pilot和局部区域诊断。当前结论是：训练时同款 DINO descriptor residual 与 RGB 高误差区域只有弱重叠，单纯把 token grid 从 `10x16` 提高到 `75x114` 没有改善 overlap；`RGB broad candidate -> DINO rerank` 的训练链路健康，但 `lambda=0.25` start_iter 扫描只给出弱正/弱混合信号，`lambda=0.10` 省点有限且质量不优。局部诊断显示 DINO-only 区域反而退化，暂不支持直接扩多场景。
+0003 已完成 Phase 0 `bicycle` 诊断、Phase 1 high-res 620-step smoke，以及 Phase 2 high-res `bicycle` 30k matched pilot、局部区域诊断和 final-topm 容量锁定判别。当前结论是：训练时同款 DINO descriptor residual 与 RGB 高误差区域只有弱重叠，单纯把 token grid 从 `10x16` 提高到 `75x114` 没有改善 overlap；`RGB broad candidate -> DINO rerank` 的训练链路健康，但未证明 DINO selector 的独立价值。final-topm 能把点数压回接近 RGB broad control，但全图收益仍很薄，DINO-only 区域继续退化，因此 0003 的 DINO rerank 训练分支应暂时收束。
 
 ## 0001 Token 粒度复核
 
@@ -38,6 +38,7 @@
 | 2026-05-12 | Phase 2 | bicycle | `lambda=0.25` start_iter 7000/9000/11000 30k matched pilot | `output/0003/dino_rgb_rerank_l025_start{7000,9000,11000}_bicycle_30k_r_auto` | start7000 三项质量小幅正向但点数更多；9000/11000 为 PSNR 小负、SSIM/LPIPS 微正 |
 | 2026-05-12 | Phase 2 | bicycle | `lambda=0.10` start_iter 7000/9000 30k matched pilot | `output/0003/dino_rgb_rerank_l010_start{7000,9000}_bicycle_30k_r_auto` | 省点约 10k，但 PSNR 低于 RGB broad control，未优于 l0.25 |
 | 2026-05-12 | Phase 2 | bicycle | 局部区域诊断：RGB broad fixed mask 下比较 RGB/DINO/DINO-only/intersection 区域 | `output/0003/diagnostics/bicycle_local_regions_rgb_broad_ref_l025_l010` | DINO-only top25 L1 上升、PSNR 下降；收益主要来自 RGB 高误差候选轨迹 |
+| 2026-05-12 | Phase 2 | bicycle | final-topm 容量锁定实现、620-step smoke 和 30k 判别 | `output/0003/dino_rgb_rerank_finaltopm_l{025,010}_*`；`output/0003/diagnostics/bicycle_local_regions_rgb_broad_ref_finaltopm` | 容量锁定有效，但全图收益很薄，DINO-only top25 仍退化 |
 | TBD | Phase 3 | TBD | DINO prune-protect pilot | TBD | 只在 rerank 成立后推进 |
 
 ## 2026-05-12 Phase 0：训练时同款 DINO Descriptor Residual 诊断
@@ -161,7 +162,7 @@ residual = 0.5 * clamp(1 - cosine(render_token, gt_token), 0, 2)
 
 - `lambda=0.10` 确实略微减少 Gaussians，但只减少 8k~11k，不足以改变 RGB broad + DINO rerank 的容量结论。
 - 低 lambda 没有保住 `lambda=0.25 start7000` 的 PSNR 小正向；start9000 与 l0.25 基本同档。
-- 0003 当前不应扩多场景。下一步更应做显式 final top-m 或局部区域指标诊断，确认 DINO rerank 是否真的改善 DINO/RGB 交集区域，而不是继续扫相近 lambda/start_iter。
+- 0003 当前不应扩多场景。本轮判断已推动后续 final-topm 和局部区域诊断，用来确认 DINO rerank 是否真的改善 DINO/RGB 交集区域，而不是继续扫相近 lambda/start_iter。
 
 ## 2026-05-12 Phase 2：局部区域诊断
 
@@ -190,4 +191,55 @@ mask 仍显示 DINO/RGB 错位：top-25% DINO/RGB IoU 为 0.1627，DINO-only top
 
 - DINO rerank 的局部改善主要出现在 RGB 高误差区域，而不是 DINO-only 区域。DINO/RGB 交集区域改善存在，但与 RGB-only 区域改善幅度接近。
 - DINO-only top-25% 区域 L1 反而升高，说明 DINO descriptor residual 目前不适合单独作为“应该增长”的空间 selector。
-- 这支持下一步做 `final top-m` 容量锁定实验：让 RGB 决定候选和容量，DINO 只改变候选内部排序；如果容量锁定后局部/全图仍无增益，就应收束 0003 的 DINO rerank 训练分支。
+- 这支持继续做 `final top-m` 容量锁定实验：让 RGB 决定候选和容量，DINO 只改变候选内部排序；final-topm 判别结果见下一节。
+
+## 2026-05-12 Phase 2：Final Top-M 容量锁定判别
+
+新增 `vfm_rgb_rerank_final_topm` 配置开关和 `configs/experiments/0003_dino_descriptor_rgb_rerank_final_topm_l025.yaml`。该模式保留 `rgb_rerank` 的 broad RGB gate 和 DINO rerank score，但在实际 densification 前用 RGB broad reference score 计算同一步的参考候选数 `m`，再只从 broad candidate 内按 DINO-rerank 后的 score 取 top-m。这样每个 densification step 的增长容量由 RGB broad control 决定，DINO 只改变候选内部排序。
+
+620-step smoke 已完成：
+
+| Run | active_from | lambda | PSNR | SSIM | LPIPS | Gaussians | 输出 |
+|---|---:|---:|---:|---:|---:|---:|---|
+| final-topm l0.25 620 | 600 | 0.25 | 19.4840 | 0.4052 | 0.6290 | 63,443 | `output/0003/dino_rgb_rerank_finaltopm_l025_bicycle_620_r_auto` |
+| final-topm l0.10 620 | 600 | 0.10 | 19.4752 | 0.4052 | 0.6280 | 63,446 | `output/0003/dino_rgb_rerank_finaltopm_l010_bicycle_620_r_auto` |
+
+判断：
+
+- 两组 train/render/metrics 均完成，说明 final-topm 的 scorer -> GaussianModel 引用分数传递链路健康。
+- 620-step 点数与 RGB broad 620 的 63,439、非锁定 rerank 620 的 63,442 非常接近，符合“容量锁定只改变排序”的预期。
+- 30k 正式判别已用双卡完成：GPU0 跑 `finaltopm l0.25 start7000`，GPU1 跑 `finaltopm l0.10 start9000`。
+
+30k 全图结果：
+
+| Run | lambda | active_from | PSNR | SSIM | LPIPS | Gaussians | vs RGB broad | 输出 |
+|---|---:|---:|---:|---:|---:|---:|---|---|
+| RGB broad control | - | 0 | 25.3627 | 0.7656 | 0.2273 | 1,883,915 | - | `output/0003/rgb_broad_bicycle_30k_r_auto` |
+| rerank l0.25 start7000 | 0.25 | 7000 | 25.3695 | 0.7663 | 0.2255 | 1,924,629 | +0.0068 / +0.0007 / -0.0018，+40,714 点 | `output/0003/dino_rgb_rerank_l025_start7000_bicycle_30k_r_auto` |
+| rerank l0.10 start9000 | 0.10 | 9000 | 25.3556 | 0.7660 | 0.2261 | 1,907,193 | -0.0070 / +0.0004 / -0.0013，+23,278 点 | `output/0003/dino_rgb_rerank_l010_start9000_bicycle_30k_r_auto` |
+| final-topm l0.25 start7000 | 0.25 | 7000 | 25.3564 | 0.7659 | 0.2266 | 1,896,839 | -0.0063 / +0.0003 / -0.0008，+12,924 点 | `output/0003/dino_rgb_rerank_finaltopm_l025_start7000_bicycle_30k_r_auto` |
+| final-topm l0.10 start9000 | 0.10 | 9000 | 25.3692 | 0.7657 | 0.2270 | 1,893,008 | +0.0065 / +0.0001 / -0.0003，+9,093 点 | `output/0003/dino_rgb_rerank_finaltopm_l010_start9000_bicycle_30k_r_auto` |
+
+final-topm 局部区域诊断输出：
+
+- `output/0003/diagnostics/bicycle_local_regions_rgb_broad_ref_finaltopm/summary.json`
+- `output/0003/diagnostics/bicycle_local_regions_rgb_broad_ref_finaltopm/per_view.csv`
+
+相对 RGB broad control 的 top-25 局部变化：
+
+| Region | final-topm l0.25 ΔL1 | final-topm l0.25 ΔPSNR | final-topm l0.10 ΔL1 | final-topm l0.10 ΔPSNR | 解释 |
+|---|---:|---:|---:|---:|---|
+| all | +0.000065 | -0.0165 | +0.000006 | -0.0025 | 全图空间 L1/MSE 无正向 |
+| RGB top25 | -0.011801 | +0.5515 | -0.011939 | +0.5666 | RGB 高误差区仍改善 |
+| RGB-only top25 | -0.011662 | +0.5640 | -0.011821 | +0.5775 | RGB-only 改善幅度不低于交集 |
+| DINO/RGB intersection top25 | -0.012159 | +0.5240 | -0.012243 | +0.5428 | 交集改善存在，但不构成 DINO 独立证据 |
+| DINO top25 | +0.000204 | -0.0392 | +0.000193 | -0.0176 | 纯 DINO top-k 无收益 |
+| DINO-only top25 | +0.005009 | -2.7328 | +0.005027 | -2.7022 | DINO 独有区域继续明显退化 |
+| RGB broad top50 | -0.006082 | +0.3228 | -0.006219 | +0.3401 | broad RGB 候选内整体改善 |
+
+判断：
+
+- final-topm 实现达到了容量锁定目标：相对 RGB broad 只多 9k~13k 点，明显低于非锁定 rerank 的 +23k~41k 点。
+- 容量锁定后没有出现稳定全图质量优势。l0.10 final-topm PSNR 小正，但 SSIM/LPIPS 基本贴近 RGB broad；l0.25 final-topm 则 PSNR 负向。
+- 局部诊断仍显示 DINO-only top-25 区域退化，且 RGB-only 与 DINO/RGB intersection 的改善幅度接近。这说明当前 DINO descriptor residual 没有成为有效的 densification selector。
+- 0003 DINO rerank 训练分支建议收束：保留诊断脚本、final-topm 实现和负结果证据；后续若继续 DINO，应转向新的监督目标或后验分析，而不是继续扫 lambda/start_iter/broad top-k。

@@ -1,0 +1,25 @@
+name: 0003_dino_descriptor_rgb_rerank_final_topm_l025
+extends: fastgs_big
+scorer: vfm_topology_scorer
+training_args:
+  densification_interval: 100
+  loss_thresh: 0.05
+  vfm_enable: true
+  vfm_backend: dinov2_descriptor_cosine
+  vfm_cache_dir: output/0001/vfm_cache/bicycle_dinov2_vits14
+  vfm_dinov2_repo: output/0001/external/dinov2
+  vfm_dinov2_device: cuda
+  vfm_metric_map_mode: topk
+  vfm_metric_topk: 0.25
+  vfm_descriptor_token_smooth_kernel: 3
+  vfm_weight: 0.0
+  vfm_importance_mode: rgb_rerank
+  vfm_rgb_broad_topk: 0.50
+  vfm_rgb_broad_gate: true
+  vfm_dino_rerank_lambda: 0.25
+  vfm_rgb_rerank_final_topm: true
+  vfm_use_albedo_sh0: true
+experiment:
+  status: dino_descriptor_rgb_candidate_rerank_final_topm_probe
+  proposal: docs/experiments/0003_dino_guidance_reboot/proposal.md
+  note: Capacity-locked Phase 2 probe; RGB broad defines the densifiable candidate count at each densification step, while DINO only reranks candidates inside the broad RGB pool.

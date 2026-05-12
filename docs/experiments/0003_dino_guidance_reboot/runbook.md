@@ -324,7 +324,107 @@ python scripts/diagnose_0003_local_regions.py \
 - `l0.25 start7000` 在 DINO-only top-25 区域 L1 反而 +0.004755、PSNR -2.6560；`l0.10 start9000` 同方向。
 - 当前 LPIPS 工具只返回全图标量，局部诊断只报告 L1/MSE/PSNR。
 
-下一轮建议暂停相邻 start/lambda 扫描，优先做显式 final top-m：保持 RGB broad 候选总量/最终 densification 容量不变，只让 DINO 改变候选内部排序。若容量锁定后仍无局部/全图收益，应收束 DINO rerank 训练分支。
+该诊断推动了后续显式 final top-m：保持 RGB broad 候选总量/最终 densification 容量不变，只让 DINO 改变候选内部排序。final-topm 判别结果见 Phase 2B。
+
+## Phase 2B：Final Top-M 容量锁定
+
+已新增：
+
+- `vfm_rgb_rerank_final_topm`
+- `configs/experiments/0003_dino_descriptor_rgb_rerank_final_topm_l025.yaml`
+
+机制：`rgb_rerank` 仍先用 `vfm_rgb_broad_topk=0.50` 生成 broad candidate，再用 `RGB_importance * (1 + lambda * DINO)` 排序；但实际 densification 前会用 RGB broad reference score 计算本 step 的参考候选数 `m`，最终只保留 rerank 后的 top-m。这样 RGB broad 决定容量，DINO 只换排序。
+
+620-step smoke：
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0003_dino_descriptor_rgb_rerank_final_topm_l025.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0003/dino_rgb_rerank_finaltopm_l025_bicycle_620_r_auto \
+  --eval \
+  --iterations 620 \
+  --densify_until_iter 620 \
+  --test_iterations 620 \
+  --save_iterations 620 \
+  --checkpoint_iterations 620 \
+  --vfm_active_from_iter 600 \
+  --quiet
+
+CUDA_VISIBLE_DEVICES=1 python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0003_dino_descriptor_rgb_rerank_final_topm_l025.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0003/dino_rgb_rerank_finaltopm_l010_bicycle_620_r_auto \
+  --eval \
+  --iterations 620 \
+  --densify_until_iter 620 \
+  --test_iterations 620 \
+  --save_iterations 620 \
+  --checkpoint_iterations 620 \
+  --vfm_active_from_iter 600 \
+  --vfm_dino_rerank_lambda 0.10 \
+  --quiet
+```
+
+smoke 结果：
+
+- final-topm l0.25 620：19.4840 / 0.4052 / 0.6290，63,443 Gaussians。
+- final-topm l0.10 620：19.4752 / 0.4052 / 0.6280，63,446 Gaussians。
+
+30k 双卡训练命令：
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0003_dino_descriptor_rgb_rerank_final_topm_l025.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0003/dino_rgb_rerank_finaltopm_l025_start7000_bicycle_30k_r_auto \
+  --eval \
+  --vfm_active_from_iter 7000 \
+  --quiet
+
+CUDA_VISIBLE_DEVICES=1 python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0003_dino_descriptor_rgb_rerank_final_topm_l025.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0003/dino_rgb_rerank_finaltopm_l010_start9000_bicycle_30k_r_auto \
+  --eval \
+  --vfm_active_from_iter 9000 \
+  --vfm_dino_rerank_lambda 0.10 \
+  --quiet
+```
+
+30k 结果：
+
+- final-topm l0.25 start7000：25.3564 / 0.7659 / 0.2266，1,896,839 Gaussians。
+- final-topm l0.10 start9000：25.3692 / 0.7657 / 0.2270，1,893,008 Gaussians。
+
+局部诊断命令：
+
+```bash
+python scripts/diagnose_0003_local_regions.py \
+  --reference-run rgb_broad=output/0003/rgb_broad_bicycle_30k_r_auto \
+  --run rgb_broad=output/0003/rgb_broad_bicycle_30k_r_auto \
+  --run finaltopm_l025_start7000=output/0003/dino_rgb_rerank_finaltopm_l025_start7000_bicycle_30k_r_auto \
+  --run finaltopm_l010_start9000=output/0003/dino_rgb_rerank_finaltopm_l010_start9000_bicycle_30k_r_auto \
+  --run rerank_l025_start7000=output/0003/dino_rgb_rerank_l025_start7000_bicycle_30k_r_auto \
+  --run rerank_l010_start9000=output/0003/dino_rgb_rerank_l010_start9000_bicycle_30k_r_auto \
+  --gt-cache output/0001/vfm_cache/bicycle_dinov2_vits14 \
+  --dinov2-repo output/0001/external/dinov2 \
+  --device cuda \
+  --topk 0.25 0.10 \
+  --rgb-broad-topk 0.50 \
+  --smooth-kernel 3 \
+  --output output/0003/diagnostics/bicycle_local_regions_rgb_broad_ref_finaltopm
+```
+
+局部结论：final-topm 在 RGB top25 / RGB broad top50 区域仍有改善，但 DINO-only top25 继续退化。l0.25 final-topm 的 DINO-only top25 为 ΔL1 +0.005009、ΔPSNR -2.7328；l0.10 final-topm 为 ΔL1 +0.005027、ΔPSNR -2.7022。因此 final-topm 只证明容量可控，未证明 DINO selector 有独立贡献。
 
 ## Phase 3：DINO Prune-Protect
 

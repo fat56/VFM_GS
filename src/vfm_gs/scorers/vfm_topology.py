@@ -62,6 +62,11 @@ def _is_vfm_active(args):
     return True
 
 
+def _clear_rgb_rerank_reference(args):
+    if hasattr(args, "vfm_rgb_broad_reference_score"):
+        args.vfm_rgb_broad_reference_score = None
+
+
 class VFMFeatureCache:
     def __init__(self, cache_dir):
         self.cache_dir = cache_dir
@@ -555,6 +560,7 @@ def compute_gaussian_score_fastgs_with_vfm(camlist, gaussians, pipe, bg, args, D
     rgb_ms = _elapsed_ms(rgb_start, profile_this)
     backend = getattr(args, "vfm_backend", "mock_l1")
     if not _is_vfm_active(args):
+        _clear_rgb_rerank_reference(args)
         if profile_this:
             total_ms = _elapsed_ms(total_start, profile_this)
             print(
@@ -732,6 +738,10 @@ def compute_gaussian_score_fastgs_with_vfm(camlist, gaussians, pipe, bg, args, D
             rerank_weight = max(0.0, float(getattr(args, "vfm_dino_rerank_lambda", 0.25) or 0.0))
             importance_score = rgb_score * (1.0 + rerank_weight * dino_score)
             importance_score = importance_score.masked_fill(~broad_mask, 0.0)
+            if getattr(args, "vfm_rgb_rerank_final_topm", False):
+                args.vfm_rgb_broad_reference_score = rgb_score.masked_fill(~broad_mask, 0.0).detach()
+            else:
+                _clear_rgb_rerank_reference(args)
         else:
             raise ValueError(
                 "Unsupported vfm_importance_mode {!r}. Available: max, weighted, adaptive_weighted, "

@@ -125,6 +125,7 @@ class OptimizationParams(ParamGroup):
         self.vfm_rgb_broad_topk = 0.50
         self.vfm_rgb_broad_gate = True
         self.vfm_dino_rerank_lambda = 0.25
+        self.vfm_rgb_rerank_final_topm = False
         self.vfm_importance_budget_count = 0
         self.vfm_importance_budget_start_ratio = 0.9
         self.vfm_importance_budget_min_weight = 0.0

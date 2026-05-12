@@ -72,4 +72,4 @@ RGB/SSIM broad candidate -> DINO rerank/protect -> densify
 
 ## 下一步
 
-暂停扩多场景，也暂停相邻 lambda/start_iter 扫描。局部指标已经显示 DINO-only 区域退化，因此下一轮只保留一个关键判别实验：实现显式 final top-m，让 DINO rerank 只改变候选排序但不增加最终 densification 容量。若容量锁定后局部/全图仍无增益，应把 0003 暂时收束为“DINO descriptor 不适合作为当前 FastGS RGB 瓶颈 selector”。
+暂停扩多场景，也暂停相邻 lambda/start_iter 扫描。局部指标已经显示 DINO-only 区域退化，因此最后保留一个关键判别实验：显式 final top-m，让 DINO rerank 只改变候选排序但不增加最终 densification 容量。该实现、620-step smoke 和 30k 双卡判别已完成。final-topm 确实把点数压回接近 RGB broad control，但全图只有弱混合信号，DINO-only top25 仍然退化。0003 的 DINO rerank 训练分支应暂时收束为“当前 DINO descriptor residual 不适合作为 FastGS RGB 瓶颈 selector”；后续如果继续 DINO，应换监督目标或做后验解释，而不是继续扫相邻超参。

@@ -589,6 +589,34 @@ class GaussianModel:
         keep_mask[candidate_indices[topk_indices]] = True
         return torch.logical_and(metric_mask, keep_mask)
 
+    def _rgb_rerank_final_topm_mask(self, args, importance_score, metric_threshold, all_clones, all_splits):
+        reference_score = getattr(args, "vfm_rgb_broad_reference_score", None)
+        if reference_score is None:
+            return None
+        if reference_score.shape[0] != importance_score.shape[0]:
+            return None
+
+        densifiable = torch.logical_or(all_clones, all_splits)
+        reference_candidates = torch.logical_and(reference_score > metric_threshold, densifiable)
+        quota = int(reference_candidates.sum().item())
+        keep_mask = torch.zeros_like(importance_score, dtype=torch.bool)
+        if quota <= 0:
+            return keep_mask
+
+        candidates = torch.logical_and(importance_score > 0.0, densifiable)
+        candidate_indices = candidates.nonzero(as_tuple=False).squeeze(1)
+        candidate_count = int(candidate_indices.numel())
+        if candidate_count <= 0:
+            return keep_mask
+        if candidate_count <= quota:
+            keep_mask[candidate_indices] = True
+            return keep_mask
+
+        candidate_scores = importance_score[candidate_indices]
+        selected = torch.topk(candidate_scores, k=quota, largest=True, sorted=False).indices
+        keep_mask[candidate_indices[selected]] = True
+        return keep_mask
+
     def _cap_densify_candidates_branch_type(self, metric_mask, clone_indices, clone_scores, split_indices, split_scores, remaining):
         keep_mask = torch.zeros_like(metric_mask, dtype=torch.bool)
         clone_count = int(clone_indices.numel())
@@ -813,6 +841,16 @@ class GaussianModel:
         # We use this metric to further filter the candidates for densification, which is similar to taming 3dgs.
         metric_threshold = self._densify_metric_threshold(args)
         metric_mask = importance_score > metric_threshold
+        if getattr(args, "vfm_rgb_rerank_final_topm", False):
+            final_topm_mask = self._rgb_rerank_final_topm_mask(
+                args,
+                importance_score,
+                metric_threshold,
+                all_clones,
+                all_splits,
+            )
+            if final_topm_mask is not None:
+                metric_mask = final_topm_mask
         metric_mask = self._cap_densify_candidates(args, importance_score, metric_mask, all_clones, all_splits)
 
         self.densify_and_clone_fastgs(metric_mask, all_clones)

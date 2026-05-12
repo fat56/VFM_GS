@@ -76,7 +76,7 @@
 |---|---|---|---|
 | Phase 0 | 导出训练时同款 render-vs-GT DINO cosine error map，并诊断 overlap / token 粒度 | diagnostic CSV/JSON/overlay；已完成 bicycle w224/w518/w1600 | 否 |
 | Phase 1 | 实现 RGB-broad candidate + DINO rerank + late activation，620-step 验证链路 | config + smoke logs；已完成 bicycle 620 | 是，短跑 |
-| Phase 2 | high-res `bicycle/stump/treehill/bonsai` 30k pilot，扫描 start_iter/lambda/broad top-k | bicycle start_iter、lambda=0.10 和局部区域诊断已完成；下一步 final top-m 容量锁定 | 是 |
+| Phase 2 | high-res `bicycle/stump/treehill/bonsai` 30k pilot，扫描 start_iter/lambda/broad top-k | bicycle start_iter、lambda=0.10、局部区域诊断和 final-topm 容量锁定已完成；DINO rerank 训练分支收束 | 是 |
 | Phase 3 | 若 Phase 2 成立，再做 DINO prune-protect，不做主动 DINO pruning | config + pilot metrics | 是 |
 | Phase 4 | 只在 pilot 成立后扩全数据集 | summary + policy | 是 |
 
@@ -88,4 +88,4 @@
 
 ## 下一步
 
-Phase 2 high-res `bicycle` 30k 已完成 `DINO rerank lambda=0.25, start_iter=7000/9000/11000` 和 `lambda=0.10, start_iter=7000/9000` 扫描。`lambda=0.25 start7000` 相对 RGB broad control 为 +0.0068 PSNR、+0.0007 SSIM、LPIPS -0.0018，但多 40,714 点；`lambda=0.10` 只省 8k~11k 点，PSNR 仍低于 RGB broad control。局部区域诊断显示 DINO/RGB top-25 IoU 仍只有 0.1627，DINO-only top-25 区域 L1 上升、PSNR 下降，DINO rerank 的收益主要发生在 RGB 高误差区域而不是 DINO 独有区域。下一步暂停扩多场景，做显式 final top-m 容量锁定；如果容量锁定后全图和局部指标仍无增益，则收束 0003 的 DINO rerank 训练分支。
+Phase 2 high-res `bicycle` 30k 已完成 `DINO rerank lambda=0.25, start_iter=7000/9000/11000` 和 `lambda=0.10, start_iter=7000/9000` 扫描。`lambda=0.25 start7000` 相对 RGB broad control 为 +0.0068 PSNR、+0.0007 SSIM、LPIPS -0.0018，但多 40,714 点；`lambda=0.10` 只省 8k~11k 点，PSNR 仍低于 RGB broad control。局部区域诊断显示 DINO/RGB top-25 IoU 仍只有 0.1627，DINO-only top-25 区域 L1 上升、PSNR 下降，DINO rerank 的收益主要发生在 RGB 高误差区域而不是 DINO 独有区域。显式 final-topm 容量锁定已完成实现、620-step smoke 和 30k 判别：它能把点数压回接近 RGB broad control，但全图收益仍很薄，DINO-only top25 继续退化。因此 0003 的 DINO rerank 训练分支应收束；如果继续 DINO，需要换监督目标或改为后验分析，而不是继续扫相邻超参。
