@@ -2,7 +2,9 @@
 
 ## 当前判断
 
-0001 最大的问题不是“DINO 完全无效”，而是证据链不够闭合：它证明了 DINO 介入 densification 后训练结果能变好，却没有充分证明 DINO descriptor residual map 与当前 FastGS 的重建瓶颈对齐。0002 里的 token-edge overlap 只能提示这个风险，不能直接解释 0001 descriptor 结果。0003 需要把训练时同款 `render-vs-GT DINO cosine error map` 先导出来，再决定训练策略。
+0001 最大的问题不是“DINO 完全无效”，而是证据链不够闭合：它证明了 DINO 介入 densification 后训练结果能变好，却没有充分证明 DINO descriptor residual map 与当前 FastGS 的重建瓶颈对齐。0002 里的 token-edge overlap 只能提示这个风险，不能直接解释 0001 descriptor 结果。
+
+2026-05-12 的 Phase 0 已补上训练时同款 `render-vs-GT DINO cosine error map` 诊断。high-res `bicycle` 上，DINO descriptor residual 的 top-k 与 RGB 高误差 top-k 只有弱重叠：top-25% IoU 为 0.155~0.164，随机基线为 0.143；top-10% IoU 为 0.064~0.071，随机基线为 0.053。`w1600` 并没有优于 `w224/w518`，说明单纯提高 token 粒度不是解法。
 
 这会带来两种混淆：
 
@@ -14,6 +16,8 @@
 0001 descriptor 主线实际使用的 token grid 是 `10x16` 量级。它在 `-r 8` 图像上已经偏粗，在 high-res 1.6K 复验中则明显过粗。`vfm_descriptor_token_smooth_kernel=3` 会在 `10x16` grid 上进一步平滑，相当于把少数 patch 的响应扩成大块区域。
 
 这可能解释 top-k25 的一部分不稳定性：它可能在“粗结构区域”增加了 Gaussian，而不是在真正的当前误差瓶颈处做精细复制。但这仍是假设，必须用真实 descriptor residual overlap 验证，不能由 token-edge 低重叠直接推出。
+
+Phase 0 的结果进一步收紧了这个判断：`w224` 的 IoU 略高于 `w518/w1600`，说明 0001 的问题不只是 token 太粗；DINO descriptor residual 本身与 photometric error 的目标就不一致。后续不应继续把“更密 DINO tokens”作为主要修复方向。
 
 ## DINO 特性重新理解
 
@@ -35,14 +39,14 @@ RGB/SSIM broad candidate -> DINO rerank/protect -> densify
 
 ## 优先修改方向
 
-1. 先导出训练时同款 DINO residual map
-   不能用 descriptor cache 的 channel norm 替代训练时的 cosine residual。应读取 baseline render 和 GT，复现 `dinov2_descriptor_cosine` 的 patch error，再做 overlap 诊断。`output/0001/vfm_cache/*_dinov2_vits14` 已保存 GT/source image 的 DINO patch tokens；诊断只需要对 render 图重新跑 DINO，若本机缺 checkpoint 则重新下载 DINOv2 权重。
+1. 训练时同款 DINO residual map 已落地
+   `scripts/diagnose_dino_descriptor_residual.py` 已能读取 baseline render、GT/cache tokens，复现 `dinov2_descriptor_cosine` 的 patch error，并输出 per-view CSV 与 summary JSON。`w224/w518/w1600` 三尺度已经在 `bicycle` 上完成 top-25/top-10 overlap 诊断。
 
-2. 使用高分辨率 patch tokens
-   high-res 实验至少要用 `max_width=1600` 的 patch-token cache 做小范围验证。ViT-S/14 高分辨率 patch tokens 存储较大，但在少数场景上可接受；如果全量存储压力太大，可以先只导出 residual/prior 2D map。
+2. 不再把高分辨率 patch tokens 当作主修复
+   `w1600` 的 overlap 和 Spearman 都没有改善。高分辨率 tokens 仍可作为后续局部结构指标或可视化工具，但不是 0003 第一训练候选的核心变量。
 
 3. RGB 放宽候选 + DINO rerank
-   第一版训练候选应先用 RGB/FastGS 放宽候选区域，例如 `topk(RGB error, 0.40~0.50)`，再用 DINO residual 在候选内部 rerank。不要让 DINO 单独把 RGB 低误差区域拉入 densification。候选 score 可从 `RGB_importance * (1 + lambda * normalize(DINO residual))` 起步，并与 `RGB-only broad candidate` 做 matched 对照。
+   第一版训练候选应先用 RGB/FastGS 放宽候选区域，例如 `topk(RGB error, 0.40~0.50)`，再用 DINO residual 在候选内部 rerank。不要让 DINO 单独把 RGB 低误差区域拉入 densification。候选 score 可从 `RGB_importance * (1 + lambda * normalize(DINO residual))` 起步，并与 `RGB-only broad candidate` 做 matched 对照。Phase 0 里 DINO top-k 有 52%~55% 落在 RGB top-50% broad candidate 内，这为 rerank 提供了比裸 top-k 更合理的入口。
 
 4. 后期介入
    DINO 不应从早期结构尚未成型时介入。第一组训练扫描建议 `DINO_start_iter = 7000/9000/11000`，仍保持 `densify_until_iter = 15000`，只在 densification 后半段做二次筛选。
@@ -62,4 +66,4 @@ RGB/SSIM broad candidate -> DINO rerank/protect -> densify
 
 ## 下一步
 
-实现训练时同款 render-vs-GT DINO cosine error 诊断，并在 `bicycle` 上比较 `max_width=224`、`518` 和 `1600` 三种 token 粒度；随后实现 RGB 放宽候选 + DINO rerank + 后期介入的 620-step smoke。
+实现 RGB 放宽候选 + DINO rerank + 后期介入的 620-step smoke，并配套 RGB-only broad candidate 对照。第一组建议固定 `broad_topk=0.50`、`final_topk=0.25`、`lambda=0.25`、`DINO_start_iter=9000`。

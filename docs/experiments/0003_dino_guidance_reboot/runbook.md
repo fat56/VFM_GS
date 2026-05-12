@@ -37,7 +37,7 @@ PY
 
 当前 `scripts/diagnose_prior_overlap.py` 适合 2D prior map。若传入 3D descriptor cache，它只能用 channel norm 作为粗略 saliency proxy，不等价于训练时的 descriptor cosine residual。
 
-0003 需要新增诊断脚本，复现 `dinov2_descriptor_cosine` 训练后端的中间 error map：
+0003 已新增 `scripts/diagnose_dino_descriptor_residual.py`，用于复现 `dinov2_descriptor_cosine` 训练后端的中间 error map：
 
 ```text
 baseline render image -> DINO patch tokens
@@ -63,17 +63,49 @@ residual = 1 - cosine(render_token, gt_token)
 - per-view CSV
 - 可选 overlay 图
 
-建议输出路径：
+已完成的 bicycle 诊断命令：
 
 ```bash
-output/0003/diagnostics/bicycle_dino_descriptor_true_residual_w224
-output/0003/diagnostics/bicycle_dino_descriptor_true_residual_w518
-output/0003/diagnostics/bicycle_dino_descriptor_true_residual_w1600
+python scripts/diagnose_dino_descriptor_residual.py \
+  --baseline-model output/0002/fastgs_baseline_bicycle_30k_densify100_r_auto \
+  --gt-cache output/0001/vfm_cache/bicycle_dinov2_vits14 \
+  --dinov2-repo output/0001/external/dinov2 \
+  --device cuda \
+  --topk 0.25 \
+  --rgb-topk 0.25 \
+  --rgb-broad-topk 0.50 \
+  --smooth-kernel 3 \
+  --output output/0003/diagnostics/bicycle_dino_descriptor_residual_w224_topk25
+
+python scripts/diagnose_dino_descriptor_residual.py \
+  --baseline-model output/0002/fastgs_baseline_bicycle_30k_densify100_r_auto \
+  --gt-cache output/0001/vfm_cache/bicycle_dinov2_vits14_w518 \
+  --dinov2-repo output/0001/external/dinov2 \
+  --device cuda \
+  --topk 0.25 \
+  --rgb-topk 0.25 \
+  --rgb-broad-topk 0.50 \
+  --smooth-kernel 3 \
+  --output output/0003/diagnostics/bicycle_dino_descriptor_residual_w518_topk25
+
+python scripts/diagnose_dino_descriptor_residual.py \
+  --baseline-model output/0002/fastgs_baseline_bicycle_30k_densify100_r_auto \
+  --backend dinov2_vits14 \
+  --max-width 1600 \
+  --dinov2-repo output/0001/external/dinov2 \
+  --device cuda \
+  --topk 0.25 \
+  --rgb-topk 0.25 \
+  --rgb-broad-topk 0.50 \
+  --smooth-kernel 3 \
+  --output output/0003/diagnostics/bicycle_dino_descriptor_residual_w1600_topk25
 ```
+
+top-10 诊断同理，把 `--topk` 和 `--rgb-topk` 改成 `0.10`，输出目录后缀改为 `topk10`。
 
 ## 高分辨率 DINO Cache 试建
 
-先在 `bicycle` 上构建 ViT-S/14 high-res patch-token cache，确认体积和速度：
+Phase 0 第一轮已经用即时提取方式完成 `max_width=1600` 诊断，不需要先构建全量 cache。若后续训练需要复用 high-res GT tokens，再在 `bicycle` 上构建 ViT-S/14 high-res patch-token cache：
 
 ```bash
 .venv/bin/python -m vfm_gs.cli.build_vfm_cache \
