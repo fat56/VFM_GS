@@ -6,6 +6,8 @@
 
 2026-05-12 的 Phase 0 已补上训练时同款 `render-vs-GT DINO cosine error map` 诊断。high-res `bicycle` 上，DINO descriptor residual 的 top-k 与 RGB 高误差 top-k 只有弱重叠：top-25% IoU 为 0.155~0.164，随机基线为 0.143；top-10% IoU 为 0.064~0.071，随机基线为 0.053。`w1600` 并没有优于 `w224/w518`，说明单纯提高 token 粒度不是解法。
 
+Phase 1 第一轮已实现 `rgb_broad` 和 `rgb_rerank` 两个 importance mode，并完成 high-res `bicycle` 620-step smoke。RGB broad control 为 19.4699 / 0.4046 / 0.6282、63,439 点；DINO rerank l0.25 为 19.4483 / 0.4051 / 0.6281、63,442 点。该结果只证明链路健康，不证明质量收益；真正判断要进入 30k matched pilot。
+
 这会带来两种混淆：
 
 - 如果 DINO top-k 区域和 RGB 高误差区域不重叠，质量提升可能来自训练轨迹、容量变化或间接正则，而不是精准结构引导。
@@ -46,7 +48,7 @@ RGB/SSIM broad candidate -> DINO rerank/protect -> densify
    `w1600` 的 overlap 和 Spearman 都没有改善。高分辨率 tokens 仍可作为后续局部结构指标或可视化工具，但不是 0003 第一训练候选的核心变量。
 
 3. RGB 放宽候选 + DINO rerank
-   第一版训练候选应先用 RGB/FastGS 放宽候选区域，例如 `topk(RGB error, 0.40~0.50)`，再用 DINO residual 在候选内部 rerank。不要让 DINO 单独把 RGB 低误差区域拉入 densification。候选 score 可从 `RGB_importance * (1 + lambda * normalize(DINO residual))` 起步，并与 `RGB-only broad candidate` 做 matched 对照。Phase 0 里 DINO top-k 有 52%~55% 落在 RGB top-50% broad candidate 内，这为 rerank 提供了比裸 top-k 更合理的入口。
+   第一版训练候选已落地为 `rgb_broad` 和 `rgb_rerank`。当前实现用 `loss_thresh=0.05` 放宽 RGB/FastGS 计数，再用 `vfm_rgb_broad_topk=0.50` 限定 broad candidate；`rgb_rerank` 在候选内采用 `RGB_importance * (1 + lambda * normalize(DINO residual))`。Phase 0 里 DINO top-k 有 52%~55% 落在 RGB top-50% broad candidate 内，这为 rerank 提供了比裸 top-k 更合理的入口。下一步要通过 30k matched control 验证它是否真带来质量或容量收益。
 
 4. 后期介入
    DINO 不应从早期结构尚未成型时介入。第一组训练扫描建议 `DINO_start_iter = 7000/9000/11000`，仍保持 `densify_until_iter = 15000`，只在 densification 后半段做二次筛选。
@@ -66,4 +68,4 @@ RGB/SSIM broad candidate -> DINO rerank/protect -> densify
 
 ## 下一步
 
-实现 RGB 放宽候选 + DINO rerank + 后期介入的 620-step smoke，并配套 RGB-only broad candidate 对照。第一组建议固定 `broad_topk=0.50`、`final_topk=0.25`、`lambda=0.25`、`DINO_start_iter=9000`。
+进入 30k pilot。第一组建议固定 `broad_topk=0.50`、`lambda=0.25`，跑 `RGB broad 30k` matched control，并扫描 `DINO_start_iter=7000/9000/11000`。如果 `9000` 档相对 RGB broad control 三项质量不退、点数不异常，再扩到 `stump/treehill/bonsai`；如果仅 SSIM/LPIPS 微正而 PSNR 负，应增加局部区域指标后再决定是否扩展。

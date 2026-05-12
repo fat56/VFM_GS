@@ -56,6 +56,8 @@
 
    这样 DINO 只在当前重建确实困难的区域内改变优先级，不允许单独把 RGB 低误差区域拉进 densification。
 
+   2026-05-12 已落地第一版实现：`rgb_broad` 作为 RGB broad matched control，`rgb_rerank` 在 broad candidate 内用 DINO descriptor residual 调整 importance。当前实现暂不做独立 `final_topm` 截断，而是沿用 FastGS 的 `densify_metric_thresh` 选择；620-step smoke 已证明链路健康，30k pilot 后再决定是否需要显式 top-m。
+
 4. 后期介入
    DINO 不应从早期结构尚未成型时介入。第一组训练扫描使用 `DINO_start_iter = 7000/9000/11000`，保持 `densify_until_iter = 15000`。前半段让 FastGS/RGB 建立几何和外观 scaffold，后半段再让 DINO 在 RGB 候选中做语义结构二次筛选。
 
@@ -72,8 +74,8 @@
 
 | 阶段 | 目标 | 产物 | 是否训练 |
 |---|---|---|---|
-| Phase 0 | 导出训练时同款 render-vs-GT DINO cosine error map，并诊断 overlap / token 粒度 | diagnostic CSV/JSON/overlay | 否 |
-| Phase 1 | 实现 RGB-broad candidate + DINO rerank + late activation，620-step 验证链路 | config + smoke logs | 是，短跑 |
+| Phase 0 | 导出训练时同款 render-vs-GT DINO cosine error map，并诊断 overlap / token 粒度 | diagnostic CSV/JSON/overlay；已完成 bicycle w224/w518/w1600 | 否 |
+| Phase 1 | 实现 RGB-broad candidate + DINO rerank + late activation，620-step 验证链路 | config + smoke logs；已完成 bicycle 620 | 是，短跑 |
 | Phase 2 | high-res `bicycle/stump/treehill/bonsai` 30k pilot，扫描 start_iter/lambda/broad top-k | matched metrics + overlap | 是 |
 | Phase 3 | 若 Phase 2 成立，再做 DINO prune-protect，不做主动 DINO pruning | config + pilot metrics | 是 |
 | Phase 4 | 只在 pilot 成立后扩全数据集 | summary + policy | 是 |
@@ -86,4 +88,4 @@
 
 ## 下一步
 
-新增一个诊断脚本，导出训练时同款 render-vs-GT DINO cosine error map，并在 high-res `bicycle` 上比较 `224/518/1600` 三种 token 粒度与 RGB error 的重叠；随后实现 RGB 放宽候选 + DINO rerank + 后期介入的 620-step 链路。
+进入 Phase 2 30k pilot。先在 high-res `bicycle` 上跑 `RGB broad 30k` matched control 与 `DINO rerank lambda=0.25, start_iter=9000`；若不退，再扫描 start_iter `7000/11000` 和 lambda `0.10/0.50`，最后扩到 `stump/treehill/bonsai`。

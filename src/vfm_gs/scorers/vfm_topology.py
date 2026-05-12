@@ -366,6 +366,25 @@ def _topk_metric_map(normalized_error, topk_fraction):
     return metric_flat.view_as(normalized_error)
 
 
+def _topk_score_mask(score, topk_fraction):
+    topk_fraction = min(max(float(topk_fraction), 0.0), 1.0)
+    flat_score = torch.nan_to_num(score.detach().to(torch.float32).reshape(-1), nan=0.0, posinf=0.0, neginf=0.0)
+    mask = torch.zeros(flat_score.shape[0], dtype=torch.bool, device=flat_score.device)
+    if topk_fraction <= 0.0 or flat_score.numel() == 0:
+        return mask.view_as(score)
+
+    positive_mask = flat_score > 0
+    positive_count = int(torch.count_nonzero(positive_mask).item())
+    if positive_count == 0:
+        return mask.view_as(score)
+
+    k = min(max(1, int(math.ceil(flat_score.numel() * topk_fraction))), positive_count)
+    candidate_score = flat_score.masked_fill(~positive_mask, float("-inf"))
+    _, indices = torch.topk(candidate_score, k=k, largest=True, sorted=False)
+    mask[indices] = True
+    return mask.view_as(score)
+
+
 def _percentile_metric_map(normalized_error, percentile):
     percentile = min(max(float(percentile), 0.0), 1.0)
     flat_error = normalized_error.reshape(-1)
@@ -699,9 +718,24 @@ def compute_gaussian_score_fastgs_with_vfm(camlist, gaussians, pipe, bg, args, D
             if vfm_importance_weight != 1.0:
                 vfm_importance = torch.floor(vfm_importance.to(torch.float32) * vfm_importance_weight)
             importance_score = torch.maximum(rgb_importance.to(torch.float32), vfm_importance)
+        elif vfm_importance_mode == "rgb_broad":
+            rgb_score = rgb_importance.to(torch.float32)
+            broad_mask = _topk_score_mask(rgb_score, getattr(args, "vfm_rgb_broad_topk", 0.50))
+            importance_score = rgb_score.masked_fill(~broad_mask, 0.0)
+        elif vfm_importance_mode == "rgb_rerank":
+            rgb_score = rgb_importance.to(torch.float32)
+            dino_score = normalize01(vfm_importance.to(torch.float32))
+            if getattr(args, "vfm_rgb_broad_gate", True):
+                broad_mask = _topk_score_mask(rgb_score, getattr(args, "vfm_rgb_broad_topk", 0.50))
+            else:
+                broad_mask = rgb_score > 0
+            rerank_weight = max(0.0, float(getattr(args, "vfm_dino_rerank_lambda", 0.25) or 0.0))
+            importance_score = rgb_score * (1.0 + rerank_weight * dino_score)
+            importance_score = importance_score.masked_fill(~broad_mask, 0.0)
         else:
             raise ValueError(
-                "Unsupported vfm_importance_mode {!r}. Available: max, weighted, adaptive_weighted, rgb_only.".format(
+                "Unsupported vfm_importance_mode {!r}. Available: max, weighted, adaptive_weighted, "
+                "rgb_only, rgb_broad, rgb_rerank.".format(
                     vfm_importance_mode
                 )
             )

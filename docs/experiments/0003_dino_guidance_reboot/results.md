@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-0003 已完成 Phase 0 第一轮 `bicycle` 诊断。当前结论是：训练时同款 DINO descriptor residual 与 RGB 高误差区域只有弱重叠，单纯把 token grid 从 `10x16` 提高到 `75x114` 没有改善 overlap。下一步不应回到裸 DINO top-k，而应实现 RGB 放宽候选内部的 DINO rerank。
+0003 已完成 Phase 0 `bicycle` 诊断和 Phase 1 第一轮 high-res 620-step smoke。当前结论是：训练时同款 DINO descriptor residual 与 RGB 高误差区域只有弱重叠，单纯把 token grid 从 `10x16` 提高到 `75x114` 没有改善 overlap；但 `RGB broad candidate -> DINO rerank` 的训练链路已经打通，下一步可以进入 30k pilot。
 
 ## 0001 Token 粒度复核
 
@@ -34,7 +34,7 @@
 |---|---|---|---|---|---|
 | 2026-05-12 | Phase 0 | bicycle | 训练时同款 render-vs-GT DINO cosine error overlap | `output/0003/diagnostics/bicycle_dino_descriptor_residual_w{224,518,1600}_topk{25,10}` | 全局 top-k overlap 只比随机基线略高，descriptor residual 不是可靠 RGB error proxy |
 | 2026-05-12 | Phase 0 | bicycle | 224/518/1600 token 粒度比较 | `scripts/diagnose_dino_descriptor_residual.py` | token 变细没有改善；w1600 的 IoU 和 Spearman 反而最低 |
-| TBD | Phase 1 | bicycle | RGB-broad candidate + DINO rerank + late activation 620-step smoke | TBD | TBD |
+| 2026-05-12 | Phase 1 | bicycle | RGB-broad candidate + DINO rerank + late activation 620-step smoke | `output/0003/{rgb_broad_bicycle_620_r_auto,dino_rgb_rerank_l025_bicycle_620_r_auto}` | 链路健康；620-step 只作集成验证，不作质量结论 |
 | TBD | Phase 2 | bicycle/stump/treehill/bonsai | start_iter/lambda/broad top-k 30k pilot | TBD | TBD |
 | TBD | Phase 3 | TBD | DINO prune-protect pilot | TBD | 只在 rerank 成立后推进 |
 
@@ -69,3 +69,33 @@ residual = 0.5 * clamp(1 - cosine(render_token, gt_token), 0, 2)
 ## 决策
 
 0003 不继承 0001 的“DINO descriptor 已经定位清楚”作为前提。0001 的全图质量正向仍是有价值证据，但 Phase 0 已确认：在 high-res `bicycle` 上，训练时同款 DINO residual 的全局 top-k 与 RGB 高误差区域只有弱重叠。第一训练候选改为 RGB 放宽候选内部的 DINO rerank，而不是裸 DINO top-k 或 DINO 主动扩候选。
+
+## 2026-05-12 Phase 1：RGB Broad + DINO Rerank 620-step Smoke
+
+代码新增两个 densification importance mode：
+
+- `rgb_broad`：使用 RGB/FastGS importance 作为候选，配合较宽松的 `loss_thresh=0.05` 和 `vfm_rgb_broad_topk=0.50`，作为 matched control。
+- `rgb_rerank`：仍由 RGB/FastGS 生成 broad candidate，DINO descriptor residual 只在候选内部通过 `RGB_importance * (1 + lambda * normalize(DINO))` 调整强度，不允许 DINO 单独拉入 RGB 低误差区域。
+
+新增配置：
+
+- `configs/experiments/0003_dino_descriptor_rgb_broad.yaml`
+- `configs/experiments/0003_dino_descriptor_rgb_rerank_l025.yaml`
+
+本轮在 high-res `bicycle`、原图输入/1.6K 自动缩放口径下跑 620 iteration。`DINO rerank` smoke 通过 `--vfm_active_from_iter 600` 只在最后一次 densification 介入，用于确认 late activation、DINO cache、在线 render-token extraction 和 Gaussian score 回写链路正常。
+
+| Run | 配置 | DINO 介入 | PSNR | SSIM | LPIPS | Gaussians | 输出 |
+|---|---|---:|---:|---:|---:|---:|---|
+| RGB broad control 620 | `0003_dino_descriptor_rgb_broad.yaml` | active from 0 | 19.4699 | 0.4046 | 0.6282 | 63,439 | `output/0003/rgb_broad_bicycle_620_r_auto` |
+| DINO RGB rerank l0.25 620 | `0003_dino_descriptor_rgb_rerank_l025.yaml` | active from 600 | 19.4483 | 0.4051 | 0.6281 | 63,442 | `output/0003/dino_rgb_rerank_l025_bicycle_620_r_auto` |
+
+日志：
+
+- RGB broad train/render/metrics：`output/0003/logs/rgb_broad_bicycle_620_r_auto.{train,render,metrics}.log`
+- DINO rerank train/render/metrics：`output/0003/logs/dino_rgb_rerank_l025_bicycle_620_r_auto.{train,render,metrics}.log`
+
+判断：
+
+- 两组 train/render/metrics 均完成，说明新增 mode、配置解析、cache preflight、DINOv2 repo 加载和 1.6K render/metrics 链路健康。
+- DINO rerank 在 600 iter 触发 DINOv2 token extraction，训练没有报错；点数与 RGB broad control 几乎一致，符合“只在候选内部 rerank”的预期。
+- 620-step 指标差异非常小，且训练过短，不支持质量判断。Phase 2 必须跑 30k matched pilot，第一组固定 `broad_topk=0.50`、`lambda=0.25`，扫描 `DINO_start_iter=7000/9000/11000`，并与 RGB broad 30k matched control 对照。

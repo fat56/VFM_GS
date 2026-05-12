@@ -128,28 +128,113 @@ Phase 0 第一轮已经用即时提取方式完成 `max_width=1600` 诊断，不
 
 ## Phase 1：RGB 放宽候选 + DINO Rerank Smoke
 
-待实现配置方向：
+已实现配置：
 
-```text
-vfm_backend: dinov2_descriptor_cosine_rgb_rerank
+- `configs/experiments/0003_dino_descriptor_rgb_broad.yaml`
+- `configs/experiments/0003_dino_descriptor_rgb_rerank_l025.yaml`
+
+关键参数：
+
+```yaml
+loss_thresh: 0.05
+vfm_backend: dinov2_descriptor_cosine
 vfm_metric_map_mode: topk
-vfm_rgb_broad_topk: 0.40
 vfm_metric_topk: 0.25
+vfm_importance_mode: rgb_broad 或 rgb_rerank
+vfm_rgb_broad_topk: 0.50
 vfm_dino_rerank_lambda: 0.25
-vfm_dino_start_iter: 9000
 vfm_weight: 0.0
-vfm_importance_mode: weighted
-vfm_importance_weight: 0.50
 ```
 
 核心约束：
 
-- RGB/FastGS 先给出放宽候选，例如 top-40% 或 top-50%。
+- RGB/FastGS 先给出放宽候选，例如 top-40% 或 top-50%；当前第一版使用 top-50%。
 - DINO 只在 RGB 候选内部 rerank，不允许单独把 RGB 低误差区域拉进 densification。
 - 第一组 start iter 扫描：`7000/9000/11000`，保持 `densify_until_iter=15000`。
 - matched 对照必须包含 `RGB-only broad candidate`，否则无法判断 DINO rerank 是否真有贡献。
 
 620-step 只验证链路健康；30k 才做质量判断。
+
+已完成的 high-res `bicycle` 620-step smoke：
+
+```bash
+source .venv/bin/activate
+
+CUDA_VISIBLE_DEVICES=0 python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0003_dino_descriptor_rgb_broad.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0003/rgb_broad_bicycle_620_r_auto \
+  --eval \
+  --iterations 620 \
+  --densify_until_iter 620 \
+  --test_iterations 620 \
+  --save_iterations 620 \
+  --checkpoint_iterations 620 \
+  --quiet
+
+python -m vfm_gs.cli.render \
+  -m output/0003/rgb_broad_bicycle_620_r_auto \
+  --iteration 620 \
+  --skip_train \
+  --quiet
+
+python -m vfm_gs.cli.metrics \
+  -m output/0003/rgb_broad_bicycle_620_r_auto
+
+CUDA_VISIBLE_DEVICES=0 python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0003_dino_descriptor_rgb_rerank_l025.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0003/dino_rgb_rerank_l025_bicycle_620_r_auto \
+  --eval \
+  --iterations 620 \
+  --densify_until_iter 620 \
+  --test_iterations 620 \
+  --save_iterations 620 \
+  --checkpoint_iterations 620 \
+  --vfm_active_from_iter 600 \
+  --quiet
+
+python -m vfm_gs.cli.render \
+  -m output/0003/dino_rgb_rerank_l025_bicycle_620_r_auto \
+  --iteration 620 \
+  --skip_train \
+  --quiet
+
+python -m vfm_gs.cli.metrics \
+  -m output/0003/dino_rgb_rerank_l025_bicycle_620_r_auto
+```
+
+结果：
+
+- RGB broad control 620：19.4699 / 0.4046 / 0.6282，63,439 Gaussians。
+- DINO RGB rerank l0.25 620：19.4483 / 0.4051 / 0.6281，63,442 Gaussians。
+
+Phase 2 第一组 30k 建议命令：
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0003_dino_descriptor_rgb_broad.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0003/rgb_broad_bicycle_30k_r_auto \
+  --eval \
+  --quiet
+
+CUDA_VISIBLE_DEVICES=1 python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0003_dino_descriptor_rgb_rerank_l025.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0003/dino_rgb_rerank_l025_start9000_bicycle_30k_r_auto \
+  --eval \
+  --vfm_active_from_iter 9000 \
+  --quiet
+```
 
 ## Phase 3：DINO Prune-Protect
 
