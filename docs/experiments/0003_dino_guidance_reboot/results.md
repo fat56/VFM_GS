@@ -32,10 +32,12 @@
 
 | 日期 | 阶段 | 场景 | 内容 | 输出 | 结论 |
 |---|---|---|---|---|---|
-| TBD | Phase 0 | bicycle | true DINO descriptor residual overlap | TBD | TBD |
+| TBD | Phase 0 | bicycle | 训练时同款 render-vs-GT DINO cosine error overlap | TBD | TBD |
 | TBD | Phase 0 | bicycle | 224/518/1600 token 粒度比较 | TBD | TBD |
-| TBD | Phase 1 | bicycle | RGB-gated DINO 620-step smoke | TBD | TBD |
+| TBD | Phase 1 | bicycle | RGB-broad candidate + DINO rerank + late activation 620-step smoke | TBD | TBD |
+| TBD | Phase 2 | bicycle/stump/treehill/bonsai | start_iter/lambda/broad top-k 30k pilot | TBD | TBD |
+| TBD | Phase 3 | TBD | DINO prune-protect pilot | TBD | 只在 rerank 成立后推进 |
 
 ## 决策
 
-0003 不继承 0001 的“DINO descriptor 已经定位清楚”作为前提。0001 的全图质量正向仍是有价值证据，但 0003 会重新验证 DINO metric map 是否真的覆盖当前重建误差瓶颈。
+0003 不继承 0001 的“DINO descriptor 已经定位清楚”作为前提。0001 的全图质量正向仍是有价值证据，但 0003 会先导出训练时同款 DINO residual map，验证它是否覆盖当前重建误差瓶颈。若 DINO/RGB 全局 top-k 不重合，第一训练候选改为 RGB 放宽候选内部的 DINO rerank，而不是裸 DINO top-k 或 DINO 主动扩候选。
