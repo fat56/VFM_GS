@@ -10,6 +10,8 @@ Phase 1 第一轮已实现 `rgb_broad` 和 `rgb_rerank` 两个 importance mode�
 
 Phase 2 high-res `bicycle` 30k matched pilot 已完成 `lambda=0.25` start_iter 扫描和 `lambda=0.10` 复核。RGB broad control 为 25.3627 / 0.7656 / 0.2273、1,883,915 点；`lambda=0.25 start7000` 为 25.3695 / 0.7663 / 0.2255、1,924,629 点，是唯一三项质量小幅正向的 DINO rerank 点，但只多 +0.0068 PSNR 且多 40,714 点。`lambda=0.10 start7000/start9000` 分别为 25.3519 / 0.7660 / 0.2262、1,913,988 点和 25.3556 / 0.7660 / 0.2261、1,907,193 点；低 lambda 省点有限且 PSNR 仍低于 RGB broad control。它证明链路稳定，但还不是可扩场景的明确正向。
 
+随后完成的局部区域诊断把这一点进一步收紧：以 RGB broad control 构造固定 mask 后，DINO/RGB top-25 IoU 为 0.1627、top-10 IoU 为 0.0716。相对 RGB broad control，`lambda=0.25 start7000` 在 RGB top-25 区域 L1 改善 -0.011869、PSNR +0.5414，在 DINO/RGB intersection top-25 区域 L1 改善 -0.012438、PSNR +0.5276；但在 DINO-only top-25 区域 L1 反而 +0.004755、PSNR -2.6560。`lambda=0.10 start9000` 也呈现同样方向。这说明当前 DINO rerank 的局部收益主要来自 RGB high-error 候选轨迹，DINO-only selector 并没有提供独立正证据。
+
 这会带来两种混淆：
 
 - 如果 DINO top-k 区域和 RGB 高误差区域不重叠，质量提升可能来自训练轨迹、容量变化或间接正则，而不是精准结构引导。
@@ -62,7 +64,7 @@ RGB/SSIM broad candidate -> DINO rerank/protect -> densify
    若二次筛选有效，再考虑 DINO 辅助 pruning。第一版只做 semantic protection：`RGB pruning says bad AND DINO says important -> protect`。主动用 DINO 删除多余 GS 风险更高，暂不作为 0003 第一候选。
 
 7. 局部指标必须入表
-   每轮除了 PSNR/SSIM/LPIPS，还要报告 DINO top-k 区域、RGB 高误差区域和二者交集区域的 L1/LPIPS 改善。
+   已新增 `scripts/diagnose_0003_local_regions.py`，每轮除了 PSNR/SSIM/LPIPS，还要报告 DINO top-k 区域、RGB 高误差区域和二者交集区域的 L1/PSNR 改善。当前 LPIPS 工具只返回全图标量，暂不伪造空间 LPIPS map。
 
 ## 对 0001 的重新定位
 
@@ -70,4 +72,4 @@ RGB/SSIM broad candidate -> DINO rerank/protect -> densify
 
 ## 下一步
 
-暂停扩多场景，也暂停相邻 lambda/start_iter 扫描。下一轮建议做两个只读/小改动诊断：一是对 RGB broad、l0.25 start7000、l0.10 start9000 输出做 DINO/RGB top-k 局部指标对比；二是实现显式 final top-m，让 DINO rerank 只改变候选排序但不增加最终 densification 容量。若局部指标也不能证明 DINO 贡献，应把 0003 暂时收束为“DINO descriptor 不适合作为当前 FastGS RGB 瓶颈 selector”。
+暂停扩多场景，也暂停相邻 lambda/start_iter 扫描。局部指标已经显示 DINO-only 区域退化，因此下一轮只保留一个关键判别实验：实现显式 final top-m，让 DINO rerank 只改变候选排序但不增加最终 densification 容量。若容量锁定后局部/全图仍无增益，应把 0003 暂时收束为“DINO descriptor 不适合作为当前 FastGS RGB 瓶颈 selector”。

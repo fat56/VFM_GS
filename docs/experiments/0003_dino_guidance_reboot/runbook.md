@@ -295,10 +295,36 @@ CUDA_VISIBLE_DEVICES=1 python -m vfm_gs.cli.train \
   --quiet
 ```
 
-下一轮建议暂停相邻 start/lambda 扫描，优先做：
+已完成的局部区域诊断命令：
 
-- 局部指标诊断：比较 RGB broad、l0.25 start7000、l0.10 start9000 在 DINO top-k、RGB top-k、DINO/RGB 交集区域的 L1/LPIPS 改善。
-- 显式 final top-m：保持 RGB broad 候选总量/最终 densification 容量不变，只让 DINO 改变候选内部排序。
+```bash
+python scripts/diagnose_0003_local_regions.py \
+  --reference-run rgb_broad=output/0003/rgb_broad_bicycle_30k_r_auto \
+  --run rgb_broad=output/0003/rgb_broad_bicycle_30k_r_auto \
+  --run l025_start7000=output/0003/dino_rgb_rerank_l025_start7000_bicycle_30k_r_auto \
+  --run l010_start9000=output/0003/dino_rgb_rerank_l010_start9000_bicycle_30k_r_auto \
+  --gt-cache output/0001/vfm_cache/bicycle_dinov2_vits14 \
+  --dinov2-repo output/0001/external/dinov2 \
+  --device cuda \
+  --topk 0.25 0.10 \
+  --rgb-broad-topk 0.50 \
+  --smooth-kernel 3 \
+  --output output/0003/diagnostics/bicycle_local_regions_rgb_broad_ref_l025_l010
+```
+
+输出：
+
+- `output/0003/diagnostics/bicycle_local_regions_rgb_broad_ref_l025_l010/summary.json`
+- `output/0003/diagnostics/bicycle_local_regions_rgb_broad_ref_l025_l010/per_view.csv`
+
+关键结果：
+
+- DINO/RGB top-25 IoU 为 0.1627，top-10 IoU 为 0.0716。
+- `l0.25 start7000` 在 RGB top-25 区域 L1 改善 -0.011869、PSNR +0.5414；在 DINO/RGB intersection top-25 区域 L1 改善 -0.012438、PSNR +0.5276。
+- `l0.25 start7000` 在 DINO-only top-25 区域 L1 反而 +0.004755、PSNR -2.6560；`l0.10 start9000` 同方向。
+- 当前 LPIPS 工具只返回全图标量，局部诊断只报告 L1/MSE/PSNR。
+
+下一轮建议暂停相邻 start/lambda 扫描，优先做显式 final top-m：保持 RGB broad 候选总量/最终 densification 容量不变，只让 DINO 改变候选内部排序。若容量锁定后仍无局部/全图收益，应收束 DINO rerank 训练分支。
 
 ## Phase 3：DINO Prune-Protect
 

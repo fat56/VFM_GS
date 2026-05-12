@@ -56,7 +56,7 @@
 
    这样 DINO 只在当前重建确实困难的区域内改变优先级，不允许单独把 RGB 低误差区域拉进 densification。
 
-   2026-05-12 已落地第一版实现：`rgb_broad` 作为 RGB broad matched control，`rgb_rerank` 在 broad candidate 内用 DINO descriptor residual 调整 importance。当前实现暂不做独立 `final_topm` 截断，而是沿用 FastGS 的 `densify_metric_thresh` 选择；620-step smoke 已证明链路健康，30k pilot 后再决定是否需要显式 top-m。
+   2026-05-12 已落地第一版实现：`rgb_broad` 作为 RGB broad matched control，`rgb_rerank` 在 broad candidate 内用 DINO descriptor residual 调整 importance。当前实现暂不做独立 `final_topm` 截断，而是沿用 FastGS 的 `densify_metric_thresh` 选择；620-step smoke 和 30k pilot 已证明链路健康，但质量收益很薄且伴随更多 Gaussians。局部区域诊断进一步显示，改善主要来自 RGB high-error 区域，DINO-only 区域反而退化。因此下一步需要显式 `final_topm` 容量锁定：让 RGB 决定候选和总增长容量，只让 DINO 改变候选内部排序。
 
 4. 后期介入
    DINO 不应从早期结构尚未成型时介入。第一组训练扫描使用 `DINO_start_iter = 7000/9000/11000`，保持 `densify_until_iter = 15000`。前半段让 FastGS/RGB 建立几何和外观 scaffold，后半段再让 DINO 在 RGB 候选中做语义结构二次筛选。
@@ -76,7 +76,7 @@
 |---|---|---|---|
 | Phase 0 | 导出训练时同款 render-vs-GT DINO cosine error map，并诊断 overlap / token 粒度 | diagnostic CSV/JSON/overlay；已完成 bicycle w224/w518/w1600 | 否 |
 | Phase 1 | 实现 RGB-broad candidate + DINO rerank + late activation，620-step 验证链路 | config + smoke logs；已完成 bicycle 620 | 是，短跑 |
-| Phase 2 | high-res `bicycle/stump/treehill/bonsai` 30k pilot，扫描 start_iter/lambda/broad top-k | bicycle start_iter 和 lambda=0.10 已完成；下一步局部诊断或 final top-m | 是 |
+| Phase 2 | high-res `bicycle/stump/treehill/bonsai` 30k pilot，扫描 start_iter/lambda/broad top-k | bicycle start_iter、lambda=0.10 和局部区域诊断已完成；下一步 final top-m 容量锁定 | 是 |
 | Phase 3 | 若 Phase 2 成立，再做 DINO prune-protect，不做主动 DINO pruning | config + pilot metrics | 是 |
 | Phase 4 | 只在 pilot 成立后扩全数据集 | summary + policy | 是 |
 
@@ -88,4 +88,4 @@
 
 ## 下一步
 
-Phase 2 high-res `bicycle` 30k 已完成 `DINO rerank lambda=0.25, start_iter=7000/9000/11000` 和 `lambda=0.10, start_iter=7000/9000` 扫描。`lambda=0.25 start7000` 相对 RGB broad control 为 +0.0068 PSNR、+0.0007 SSIM、LPIPS -0.0018，但多 40,714 点；`lambda=0.10` 只省 8k~11k 点，PSNR 仍低于 RGB broad control。下一步暂停扩多场景，转向显式 final top-m 或局部指标诊断，先证明 DINO rerank 是否真的改善 DINO/RGB 交集区域。
+Phase 2 high-res `bicycle` 30k 已完成 `DINO rerank lambda=0.25, start_iter=7000/9000/11000` 和 `lambda=0.10, start_iter=7000/9000` 扫描。`lambda=0.25 start7000` 相对 RGB broad control 为 +0.0068 PSNR、+0.0007 SSIM、LPIPS -0.0018，但多 40,714 点；`lambda=0.10` 只省 8k~11k 点，PSNR 仍低于 RGB broad control。局部区域诊断显示 DINO/RGB top-25 IoU 仍只有 0.1627，DINO-only top-25 区域 L1 上升、PSNR 下降，DINO rerank 的收益主要发生在 RGB 高误差区域而不是 DINO 独有区域。下一步暂停扩多场景，做显式 final top-m 容量锁定；如果容量锁定后全图和局部指标仍无增益，则收束 0003 的 DINO rerank 训练分支。
