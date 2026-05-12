@@ -2,7 +2,7 @@
 
 ## 当前判断
 
-0001 最大的问题不是“DINO 完全无效”，而是证据链不够闭合：它证明了 DINO 介入 densification 后训练结果能变好，却没有充分证明 DINO metric map 与当前 FastGS 的重建瓶颈对齐。
+0001 最大的问题不是“DINO 完全无效”，而是证据链不够闭合：它证明了 DINO 介入 densification 后训练结果能变好，却没有充分证明 DINO descriptor residual map 与当前 FastGS 的重建瓶颈对齐。0002 里的 token-edge overlap 只能提示这个风险，不能直接解释 0001 descriptor 结果。
 
 这会带来两种混淆：
 
@@ -13,7 +13,7 @@
 
 0001 descriptor 主线实际使用的 token grid 是 `10x16` 量级。它在 `-r 8` 图像上已经偏粗，在 high-res 1.6K 复验中则明显过粗。`vfm_descriptor_token_smooth_kernel=3` 会在 `10x16` grid 上进一步平滑，相当于把少数 patch 的响应扩成大块区域。
 
-这解释了为什么 top-k25 会带来全图轻微正向，但场景间容量/QCGI 不稳定：它可能在“粗结构区域”增加了 Gaussian，而不是在真正的当前误差瓶颈处做精细复制。
+这可能解释 top-k25 的一部分不稳定性：它可能在“粗结构区域”增加了 Gaussian，而不是在真正的当前误差瓶颈处做精细复制。但这仍是假设，必须用真实 descriptor residual overlap 验证，不能由 token-edge 低重叠直接推出。
 
 ## DINO 特性重新理解
 
@@ -40,7 +40,7 @@ RGB/SSIM says still bad AND DINO says structurally meaningful -> densify
    high-res 实验至少要用 `max_width=1600` 的 patch-token cache 做小范围验证。ViT-S/14 高分辨率 patch tokens 存储较大，但在少数场景上可接受；如果全量存储压力太大，可以先只导出 residual/prior 2D map。
 
 3. RGB-gated DINO  
-   第一版训练候选应是 DINO residual 与 RGB error 的乘积或交集，而不是裸 DINO top-k。这样能让 DINO 指导“哪些高误差区域值得复制”，而不是单独决定复制区域。
+   只有真实 descriptor residual 与 RGB/局部结构瓶颈有可解释重叠时，第一版训练候选才使用 DINO residual 与 RGB error 的乘积或交集，而不是裸 DINO top-k。这样能让 DINO 指导“哪些高误差区域值得复制”，而不是单独决定复制区域。
 
 4. Patch-aware map  
    初始阶段至少改成 nearest upsample 或 token-cell mask，避免双线性插值制造虚假的亚 token 精度。后续可改为 token-grid 级 Gaussian visibility 聚合。

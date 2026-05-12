@@ -59,16 +59,16 @@ direct relative depth cache 与 30k pilot 也已完成。cache 为 `output/0002/
 
 ## 2026-05-12 指标瓶颈诊断
 
-为回应“DINO descriptor 改善很薄，瓶颈到底在哪里”的问题，新增 `scripts/diagnose_prior_overlap.py` 并先在 high-res `bicycle` 上补充验证。该诊断不重新训练，只读取已有 baseline/candidate render、GT、`cameras.json` 和 VFM cache，比较 prior top-k 与 RGB 高误差 top-k 的重叠，并看候选方法的 L1 改善是否真的落在 prior 区域。
+为回应“这些 prior 是否真的命中当前重建瓶颈”的问题，新增 `scripts/diagnose_prior_overlap.py` 并先在 high-res `bicycle` 上补充验证。该诊断不重新训练，只读取已有 baseline/candidate render、GT、`cameras.json` 和 VFM cache，比较 prior top-k 与 RGB 高误差 top-k 的重叠，并看候选方法的 L1 改善是否真的落在 prior 区域。DINO token-edge 行只是 2D prior 对照，不能替代 0001 真实 descriptor residual 诊断。
 
 关键结论是：当前 prior 并没有很好覆盖全图 RGB 指标的主要误差区域。Depth Anything relative depth 比 depth-edge 和 DINO token-edge 更接近 RGB 瓶颈，但重叠仍有限。
 
 - Direct depth prior top-25% 区域的 baseline L1 为 0.0501，高于非 prior 区域 0.0358；candidate 在该区域 L1 改善 -0.000656，也大于非 prior 区域 -0.000344。这说明 `depth_anything_depth_prior` 的 bicycle 正向是有区域对应关系的。
 - Direct depth prior 与 RGB 高误差 top-25% 的 IoU 只有 0.226，top-10% 只有 0.124。也就是说，它命中的是“相对更难”的区域，但不是 RGB loss 最大的那一小撮区域。
 - Depth-edge prior top-25% 区域 baseline L1 为 0.0463，高于非 prior 区域 0.0370，但 candidate 在 prior 区域 L1 反而 +0.000072，改善主要来自非 prior 区域。这解释了 depth-edge 30k 只有弱混合信号。
-- DINO ViT-L token-edge 与 RGB 高误差区域重叠最低：top-25% IoU 0.149，top-10% IoU 0.068。它更像结构重要性信号，不是全图 RGB 指标瓶颈的直接代理。
+- DINO ViT-L token-edge 与 RGB 高误差区域重叠最低：top-25% IoU 0.149，top-10% IoU 0.068。它更像结构重要性信号，不是全图 RGB 指标瓶颈的直接代理；但这不能外推为“DINO descriptor residual 已经错位”，因为 token-edge 与训练时的 descriptor cosine residual 不是同一个 metric map。
 
-这条诊断改变后续优先级：不再把“换一个结构 prior”默认视为提高全图 PSNR/SSIM 的主路径。后续每个 pilot 都应先回答两个问题：prior top-k 是否覆盖 RGB 高误差区域；candidate 改善是否确实落在 prior 区域。如果答案是否定的，应该转向局部结构指标、validation selector 或更直接的优化入口，而不是继续扩大同类 prior 扫描。
+这条诊断改变后续优先级：不再把“换一个结构 prior”默认视为提高全图 PSNR/SSIM 的主路径。后续每个 pilot 都应先回答两个问题：prior top-k 是否覆盖 RGB 高误差区域；candidate 改善是否确实落在 prior 区域。如果答案是否定的，应该转向局部结构指标、validation selector 或更直接的优化入口，而不是继续扩大同类 prior 扫描。对于 DINO descriptor，下一步应先补做真实 render-vs-GT descriptor residual overlap，再决定是否训练。
 
 ## 继承自 0001 的边界
 

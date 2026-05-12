@@ -161,7 +161,7 @@ Smoke 与 matched baseline：
 
 ### 2026-05-12 Prior/RGB 瓶颈重叠诊断
 
-为避免继续盲目扩展 prior，新增 `scripts/diagnose_prior_overlap.py`，直接读取已有 render/gt、`cameras.json` 和 VFM cache，检查 prior top-k 区域是否也是 baseline RGB 高误差区域，并统计候选方法的 L1 改善是否集中在 prior 区域。该脚本不依赖 CUDA，可作为每个新 prior 的轻量体检。
+为避免继续盲目扩展 prior，新增 `scripts/diagnose_prior_overlap.py`，直接读取已有 render/gt、`cameras.json` 和 VFM cache，检查 prior top-k 区域是否也是 baseline RGB 高误差区域，并统计候选方法的 L1 改善是否集中在 prior 区域。该脚本不依赖 CUDA，可作为每个新 prior 的轻量体检；但它对 DINO descriptor cache 不能直接复现训练时的 render-vs-GT cosine residual，DINO token-edge 行只能作为 2D prior 对照。
 
 诊断对象为 high-res `bicycle` matched baseline：
 
@@ -193,7 +193,7 @@ Top-k 10% 结果：
 - Direct relative depth prior 命中的 top-k 区域确实比非 prior 区域更难：top-25% L1 为 0.0501 vs 0.0358，top-10% L1 为 0.0567 vs 0.0374。candidate 的 L1 改善在 prior 区域也更大，说明 `depth_anything_depth_prior` 的 bicycle 正向不是纯随机波动。
 - 但 direct depth 与 RGB 高误差 top-k 的重叠仍有限：top-25% IoU 只有 0.226，top-10% IoU 只有 0.124。这解释了为什么即使命中区域有效，全图 PSNR/SSIM 也只有小幅上涨。
 - Depth-edge prior 的 top-k 区域也是较难区域，但 candidate 在这些区域反而微弱变差，改善主要来自非 prior 区域；这支持“不扩展 depth-edge prior”的决定。
-- DINO token-edge 与 RGB 高误差 top-k 的重叠更低，top-10% recall 只有 0.127。它更像结构重要性信号，而不是当前全图 RGB 指标的主要误差瓶颈。
+- DINO token-edge 与 RGB 高误差 top-k 的重叠更低，top-10% recall 只有 0.127。它更像结构重要性信号，而不是当前全图 RGB 指标的主要误差瓶颈；但这只能评价 token-edge prior，不能解释或否定 0001 的 descriptor residual 结果。
 - 后续 pilot 必须同时报告全图指标和 prior-overlap 诊断；如果某 prior 的 top-k 区域不覆盖 RGB 高误差区域，不能期待全图指标明显提升，只能转向局部结构指标或训练策略贡献。
 
 | 日期 | 数据集 | 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数 | 训练时间 | 输出路径 | 结论 |

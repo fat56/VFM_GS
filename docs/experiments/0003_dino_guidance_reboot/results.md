@@ -26,7 +26,7 @@
 | DINO ViT-L token edge | 25% | 0.149 | 0.259 | 更像结构重要性，不是 RGB error proxy |
 | DINO ViT-L token edge | 10% | 0.068 | 0.127 | 与 RGB 最大误差区域明显错位 |
 
-解释边界：这里的 DINO 是 token-edge prior，不是 0001 训练时的 descriptor residual。0003 必须补做真实 descriptor residual overlap，不能只用 token-edge 诊断替代。
+解释边界：这里的 DINO 是 token-edge prior，不是 0001 训练时的 descriptor residual。0003 必须补做真实 descriptor residual overlap，不能只用 token-edge 诊断替代，也不能用这组 IoU 直接解释 0001 descriptor 为什么指标涨得薄。
 
 ## 待产出
 

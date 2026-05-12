@@ -2,7 +2,7 @@
 
 ## 核心假设
 
-0001 证明了 DINO descriptor guidance 可以通过 densification 改变 FastGS 训练结果，但它没有充分证明 DINO metric map 精准命中了当前渲染的 RGB/LPIPS 瓶颈。0003 重新审视 DINO 的 token 粒度、语义不变性和 metric-map 构造方式，目标是把 DINO 从“单独的结构 prior”改成“由当前重建误差锚定的结构引导”。
+0001 证明了 DINO descriptor guidance 可以通过 densification 改变 FastGS 训练结果，但它没有充分证明 DINO metric map 精准命中了当前渲染的 RGB/LPIPS 瓶颈。0003 重新审视 DINO 的 token 粒度、语义不变性和 metric-map 构造方式，目标是先补齐真实 descriptor residual 诊断，再决定 DINO 是否应该从“单独的结构 prior”改成“由当前重建误差锚定的结构引导”。
 
 ## 0001 的关键事实
 
@@ -26,7 +26,7 @@
 
 `scripts/diagnose_prior_overlap.py` 在 0002 中显示，结构 prior top-k 与 RGB 高误差 top-k 的重叠并不高。尤其 high-res `bicycle` 上，DINO ViT-L token-edge top-25% 与 RGB error top-25% 的 IoU 只有 0.149，top-10% 只有 0.068。
 
-这不能直接否定 0001 的 descriptor residual，因为 token-edge 不是 descriptor residual；同时该诊断脚本如果直接读取 3D descriptor cache，只能用 channel norm 做粗略 proxy，也不等价于训练时的 render-vs-GT cosine error。但它足以说明一个风险：DINO 结构显著区域不必然是当前 FastGS 的 RGB/LPIPS 瓶颈区域。
+这不能直接否定 0001 的 descriptor residual，因为 token-edge 不是 descriptor residual；同时该诊断脚本如果直接读取 3D descriptor cache，只能用 channel norm 做粗略 proxy，也不等价于训练时的 render-vs-GT cosine error。更准确的说法是：token-edge 结果只证明裸结构显著性 prior 不能自动当成 RGB error proxy，并提示 0003 必须直接诊断真实 descriptor residual，而不是用 token-edge 低重叠来解释 0001 的 descriptor 训练结果。
 
 0003 的第一原则是：先诊断真实 DINO descriptor residual map，再训练。不要继续只扫 top-k、importance weight、candidate cap 或 staged target。
 
@@ -39,7 +39,7 @@
    在 high-res 场景上优先测试 ViT-S/14 `max_width=1600` patch-token cache，先用少数场景评估存储和速度。对 1.6K 图像，token grid 约 `75x114`，比 0001 的 `10x16` 更适合做局部引导。
 
 3. RGB 锚定的 DINO map  
-   0003 不再默认使用 `topk(DINO)`。首选候选是：
+   只有当 Phase 0 显示真实 DINO residual 与 RGB/局部结构瓶颈存在可解释关系时，0003 才进入训练候选。第一版候选是：
 
    ```text
    metric = normalize(DINO residual)^beta * normalize(RGB error)^alpha
@@ -51,7 +51,7 @@
    metric = topk(DINO residual) AND topk(RGB error)
    ```
 
-   这样 DINO 只在当前重建确实困难的区域放大 densification，而不是在所有语义/结构显著区域复制 Gaussian。
+   这样 DINO 只在当前重建确实困难的区域放大 densification，而不是在所有语义/结构显著区域复制 Gaussian。若真实 residual overlap 仍然很低，则不继续包装成全图 PSNR 主线。
 
 4. Patch-aware Gaussian 计数  
    避免把低分辨率 patch map 双线性上采样成看似精细的像素 map。初始实现可以先用 nearest upsample 保持 token cell 边界；后续再考虑把 Gaussian visibility 直接聚合到 patch grid。
