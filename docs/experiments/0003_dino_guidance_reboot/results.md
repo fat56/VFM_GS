@@ -99,3 +99,31 @@ residual = 0.5 * clamp(1 - cosine(render_token, gt_token), 0, 2)
 - 两组 train/render/metrics 均完成，说明新增 mode、配置解析、cache preflight、DINOv2 repo 加载和 1.6K render/metrics 链路健康。
 - DINO rerank 在 600 iter 触发 DINOv2 token extraction，训练没有报错；点数与 RGB broad control 几乎一致，符合“只在候选内部 rerank”的预期。
 - 620-step 指标差异非常小，且训练过短，不支持质量判断。Phase 2 必须跑 30k matched pilot，第一组固定 `broad_topk=0.50`、`lambda=0.25`，扫描 `DINO_start_iter=7000/9000/11000`，并与 RGB broad 30k matched control 对照。
+
+## 2026-05-12 Phase 2：Bicycle 30k 首轮 Matched Pilot
+
+本轮使用双卡同时训练：GPU0 跑 `RGB broad` matched control，GPU1 跑 `DINO RGB rerank l0.25, start_iter=9000`。服务器未安装 `screen`，实际使用 `setsid` wrapper 脱离当前 SSH；两组 train/render/metrics 均完成。训练仍保持 high-res 原图输入/1.6K 自动缩放口径。
+
+| Run | 配置 | active_from | PSNR | SSIM | LPIPS | Gaussians | Train wall | 输出 |
+|---|---|---:|---:|---:|---:|---:|---:|---|
+| RGB broad control 30k | `0003_dino_descriptor_rgb_broad.yaml` | 0 | 25.3627 | 0.7656 | 0.2273 | 1,883,915 | 243s | `output/0003/rgb_broad_bicycle_30k_r_auto` |
+| DINO RGB rerank l0.25 30k | `0003_dino_descriptor_rgb_rerank_l025.yaml` | 9000 | 25.3538 | 0.7659 | 0.2260 | 1,915,967 | 242s | `output/0003/dino_rgb_rerank_l025_start9000_bicycle_30k_r_auto` |
+
+相对 RGB broad control：
+
+| Run | ΔPSNR | ΔSSIM | ΔLPIPS | ΔGaussians | 判断 |
+|---|---:|---:|---:|---:|---|
+| DINO RGB rerank l0.25 start9000 | -0.0088 | +0.0003 | -0.0013 | +32,052 | 弱混合信号：感知指标小幅正向，但 PSNR 小负且点数更多 |
+
+参考 5090 high-res FastGS big `bicycle` baseline `25.2569 / 0.7553 / 0.2450`、1,560,209 点：RGB broad 和 DINO rerank 都能明显提升 SSIM/LPIPS，但主要代价是 0.32M~0.36M 级别的额外 Gaussians。当前不能把这解释为 DINO rerank 的独立收益；更可能是放宽 RGB 候选本身带来的容量和质量提升。
+
+日志：
+
+- RGB broad：`output/0003/logs/rgb_broad_bicycle_30k_r_auto.{train,render,metrics}.log`
+- DINO rerank：`output/0003/logs/dino_rgb_rerank_l025_start9000_bicycle_30k_r_auto.{train,render,metrics}.log`
+
+判断：
+
+- Phase 2 首轮证明 `RGB broad -> DINO rerank` 30k 链路健康，且后期介入 `start_iter=9000` 没有训练稳定性问题。
+- DINO rerank 相对 matched RGB broad control 没有形成明确全图质量收益。SSIM/LPIPS 的微弱正向可能仍值得继续看 start_iter/lambda，但不能直接扩全场景。
+- 下一轮先用双卡扫描 `start_iter=7000/11000`。如果仍是 PSNR 负、点数增且感知指标只微正，应转向 `lambda=0.10`、显式 final top-m 或局部指标诊断，而不是继续加大 DINO 影响。

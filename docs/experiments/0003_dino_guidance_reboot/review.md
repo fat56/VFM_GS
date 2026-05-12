@@ -8,6 +8,8 @@
 
 Phase 1 第一轮已实现 `rgb_broad` 和 `rgb_rerank` 两个 importance mode，并完成 high-res `bicycle` 620-step smoke。RGB broad control 为 19.4699 / 0.4046 / 0.6282、63,439 点；DINO rerank l0.25 为 19.4483 / 0.4051 / 0.6281、63,442 点。该结果只证明链路健康，不证明质量收益；真正判断要进入 30k matched pilot。
 
+Phase 2 首轮 high-res `bicycle` 30k matched pilot 已完成。RGB broad control 为 25.3627 / 0.7656 / 0.2273、1,883,915 点；DINO rerank l0.25 start9000 为 25.3538 / 0.7659 / 0.2260、1,915,967 点。相对 matched control，DINO rerank 是 -0.0088 PSNR、+0.0003 SSIM、LPIPS -0.0013、+32,052 点。它证明链路稳定，但还不是明确正向。
+
 这会带来两种混淆：
 
 - 如果 DINO top-k 区域和 RGB 高误差区域不重叠，质量提升可能来自训练轨迹、容量变化或间接正则，而不是精准结构引导。
@@ -68,4 +70,4 @@ RGB/SSIM broad candidate -> DINO rerank/protect -> densify
 
 ## 下一步
 
-进入 30k pilot。第一组建议固定 `broad_topk=0.50`、`lambda=0.25`，跑 `RGB broad 30k` matched control，并扫描 `DINO_start_iter=7000/9000/11000`。如果 `9000` 档相对 RGB broad control 三项质量不退、点数不异常，再扩到 `stump/treehill/bonsai`；如果仅 SSIM/LPIPS 微正而 PSNR 负，应增加局部区域指标后再决定是否扩展。
+继续完成 start_iter 扫描，但保持保守解释。下一轮用双卡并行跑 `DINO_start_iter=7000/11000`，仍对照同一个 RGB broad 30k control；若两者仍是 PSNR 负、点数增、SSIM/LPIPS 仅微正，则暂停扩场景，改为 `lambda=0.10` 或显式 final top-m/局部指标诊断。

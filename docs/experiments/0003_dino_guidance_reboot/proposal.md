@@ -88,4 +88,4 @@
 
 ## 下一步
 
-进入 Phase 2 30k pilot。先在 high-res `bicycle` 上跑 `RGB broad 30k` matched control 与 `DINO rerank lambda=0.25, start_iter=9000`；若不退，再扫描 start_iter `7000/11000` 和 lambda `0.10/0.50`，最后扩到 `stump/treehill/bonsai`。
+Phase 2 首轮 high-res `bicycle` 30k 已完成：`DINO rerank lambda=0.25, start_iter=9000` 相对 RGB broad control 是 PSNR 小负、SSIM/LPIPS 微正、点数更多。下一步先完成 start_iter `7000/11000` 扫描；若仍无明确收益，再转向 `lambda=0.10`、显式 final top-m 或局部指标诊断，而不是直接扩到多场景。

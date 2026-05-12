@@ -236,6 +236,35 @@ CUDA_VISIBLE_DEVICES=1 python -m vfm_gs.cli.train \
   --quiet
 ```
 
+已完成结果：
+
+- RGB broad control 30k：25.3627 / 0.7656 / 0.2273，1,883,915 Gaussians，`output/0003/rgb_broad_bicycle_30k_r_auto`。
+- DINO RGB rerank l0.25 start9000 30k：25.3538 / 0.7659 / 0.2260，1,915,967 Gaussians，`output/0003/dino_rgb_rerank_l025_start9000_bicycle_30k_r_auto`。
+
+下一轮双卡扫描命令：
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0003_dino_descriptor_rgb_rerank_l025.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0003/dino_rgb_rerank_l025_start7000_bicycle_30k_r_auto \
+  --eval \
+  --vfm_active_from_iter 7000 \
+  --quiet
+
+CUDA_VISIBLE_DEVICES=1 python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0003_dino_descriptor_rgb_rerank_l025.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0003/dino_rgb_rerank_l025_start11000_bicycle_30k_r_auto \
+  --eval \
+  --vfm_active_from_iter 11000 \
+  --quiet
+```
+
 ## Phase 3：DINO Prune-Protect
 
 只有 Phase 1/2 的 densification rerank 成立后再做 pruning 方向。第一版只做保护，不做主动删除：
