@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-0003 已完成 Phase 0 `bicycle` 诊断、Phase 1 high-res 620-step smoke，以及 Phase 2 high-res `bicycle` 30k matched pilot、局部区域诊断和 final-topm 容量锁定判别。当前结论是：训练时同款 DINO descriptor residual 与 RGB 高误差区域只有弱重叠，单纯把 token grid 从 `10x16` 提高到 `75x114` 没有改善 overlap；`RGB broad candidate -> DINO rerank` 的训练链路健康，但未证明 DINO selector 的独立价值。final-topm 能把点数压回接近 RGB broad control，但全图收益仍很薄，DINO-only 区域继续退化，因此 0003 的 DINO rerank 训练分支暂时收束。Phase 3 的 DINO prune-protect 30k pilot 已完成：DINO 不主动删除、不参与 densification，只在 RGB pruning high-score 候选中降低误删概率；结果与 FastGS big baseline 基本贴合，但保护候选只有 1~2 个/step。随后把 `rgb_pruning` gate 从 0.90 放宽到 0.80/0.70，18.1k smoke 仍只有 `protected=1 / rgb_candidates=1`，说明 threshold gate 本身无法提供足够候选空间。新增 `rgb_prune_topk` 后，top-0.1% / top-1.0% RGB pruning proposal 分别扩大到 1,786 / 17,813 个候选，18.1k 链路健康但质量未形成结论。30k top-k pilot 已完成：topk001 相对 FastGS big baseline 为 +0.0049 PSNR、+0.00025 SSIM、LPIPS -0.00035，少 5,078 点；topk010 为 +0.0192 PSNR、+0.00090 SSIM、LPIPS -0.00045，少 6,337 点。当前只能判为 `bicycle` 单场景弱正向，下一步应做 1-2 个异质场景复验，而不是直接扩全数据集。
+0003 已完成 Phase 0 `bicycle` 诊断、Phase 1 high-res 620-step smoke，以及 Phase 2 high-res `bicycle` 30k matched pilot、局部区域诊断和 final-topm 容量锁定判别。当前结论是：训练时同款 DINO descriptor residual 与 RGB 高误差区域只有弱重叠，单纯把 token grid 从 `10x16` 提高到 `75x114` 没有改善 overlap；`RGB broad candidate -> DINO rerank` 的训练链路健康，但未证明 DINO selector 的独立价值。final-topm 能把点数压回接近 RGB broad control，但全图收益仍很薄，DINO-only 区域继续退化，因此 0003 的 DINO rerank 训练分支暂时收束。Phase 3 的 DINO prune-protect 30k pilot 已完成：DINO 不主动删除、不参与 densification，只在 RGB pruning high-score 候选中降低误删概率；绝对阈值 protect 基本等同 baseline 且候选过少。新增 `rgb_prune_topk` 后，`bicycle` topk010 30k 相对 FastGS big baseline 为 +0.0192 PSNR、+0.00090 SSIM、LPIPS -0.00045，少 6,337 点，形成单场景弱正向。但 2026-05-13 的异质场景复验没有复现该收益：`stump` topk010 相对 baseline 为 -0.1920 PSNR、-0.00824 SSIM、LPIPS +0.00744，且多 19,816 点；`room` 为 -0.3258 PSNR、-0.00574 SSIM、LPIPS +0.01773，少 261,082 点但质量明显退化。因此 Phase 3 top-k prune-protect 判为跨场景失败，0003 不应继续扩全数据集或宣称 DINOv2 descriptor 可作为稳定 GS lifecycle signal。
 
 ## 0001 Token 粒度复核
 
@@ -46,6 +46,7 @@
 | 2026-05-13 | Phase 3 | bicycle | RGB pruning proposal gate 0.80/0.70 18.1k smoke | `output/0003/dino_pruneprotect_rgb{080,070}_bicycle_18100_r_auto` | threshold 放宽仍只有 1 个候选；下一步转 top-k/top-p proposal |
 | 2026-05-13 | Phase 3 | bicycle | RGB pruning top-k proposal 0.1%/1.0% 18.1k smoke | `output/0003/dino_pruneprotect_topk{001,010}_bicycle_18100_r_auto` | top-k 成功扩大 proposal；质量未崩，但 18.1k 还不能证明 DINO protect 有正向收益 |
 | 2026-05-13 | Phase 3 | bicycle | RGB pruning top-k proposal 0.1%/1.0% 30k pilot | `output/0003/dino_pruneprotect_topk{001,010}_bicycle_30k_r_auto` | 单场景弱正向：topk010 三项质量均小幅优于 FastGS big baseline 且点数更少 |
+| 2026-05-13 | Phase 3 | stump/room | RGB pruning top-k proposal 1.0% 30k 异质场景复验 | `output/0003/dino_pruneprotect_topk010_{stump,room}_30k_r_auto` | 负结果：`stump` 三项质量退化且点数更多；`room` 少点但质量明显退化，`bicycle` 弱正向不可外推 |
 
 ## 2026-05-12 Phase 0：训练时同款 DINO Descriptor Residual 诊断
 
@@ -297,6 +298,8 @@ top-k proposal 复核把 `vfm_prune_protect_mode` 改为 `rgb_prune_topk`，并�
 | prune-protect topk010 18.1k | 取 top 1.0% RGB pruning score 作为 proposal | 0.7502 | 25.0689 | 0.2515 | 1,584,250 | `[VFM PRUNE PROTECT] iter=18000 ... protected=15446 rgb_candidates=17813 max=1.000000` | `output/0003/dino_pruneprotect_topk010_bicycle_18100_r_auto` |
 | prune-protect topk001 30k | top 0.1% proposal 正式 pilot | 0.7555 | 25.2618 | 0.2446 | 1,555,131 | 18k/21k/24k/27k 保护 `1633/1360/1226/1281` | `output/0003/dino_pruneprotect_topk001_bicycle_30k_r_auto` |
 | prune-protect topk010 30k | top 1.0% proposal 正式 pilot | 0.7562 | 25.2761 | 0.2445 | 1,553,872 | 18k/21k/24k/27k 保护 `15574/12575/12122/12725` | `output/0003/dino_pruneprotect_topk010_bicycle_30k_r_auto` |
+| prune-protect topk010 stump 30k | 异质场景复验，高容量/遮挡 | 0.7786 | 26.9865 | 0.2468 | 1,084,676 | 18k/21k/24k/27k 保护 `11160/8812/9117/8273` | `output/0003/dino_pruneprotect_topk010_stump_30k_r_auto` |
+| prune-protect topk010 room 30k | 异质场景复验，室内结构 | 0.9247 | 31.8878 | 0.2059 | 310,525 | 18k/21k/24k/27k 保护 `2590/2535/1890/2789` | `output/0003/dino_pruneprotect_topk010_room_30k_r_auto` |
 
 判断：
 
@@ -308,6 +311,7 @@ top-k proposal 复核把 `vfm_prune_protect_mode` 改为 `rgb_prune_topk`，并�
 - 固定 top-k proposal 能解决候选不足：top-0.1% 在 18k 产生 1,786 个候选，top-1.0% 产生 17,813 个候选，且 DINO min-count 过滤后仍分别保护 1,682 / 15,446 个 GS。这个结果说明 pruning-side 的二阶段接法可以获得足够决策权。
 - 但 18.1k 质量信号仍不充分：topk001 为 25.0515 / 0.7500 / 0.2513，topk010 为 25.0689 / 0.7502 / 0.2515，没有出现灾难性退化，也没有形成明确正向。下一轮应只把 top-k 作为 30k pilot，不直接扩全数据集。
 - 30k top-k pilot 在 `bicycle` 上出现弱正向：topk001 三项质量均小幅优于 FastGS big baseline且点数更少；topk010 幅度稍大，PSNR +0.0192、SSIM +0.00090、LPIPS -0.00045、Gaussians -6,337。该幅度仍很小，不能抵消 Phase 0/2 对 DINO selector 错位的担忧，只能作为 pruning-side top-k protect 的继续验证理由。
+- topk010 异质场景复验失败：`stump` 和 `room` 都低于各自 FastGS big baseline。尤其 `room` 虽然少 261k 点，但 LPIPS 变差 +0.0177，说明这不是可接受的少点保质；`stump` 则同时质量退化和点数增加。`bicycle` 的弱正向不能作为跨场景结论。
 
 30k 对照表：
 
@@ -320,6 +324,17 @@ top-k proposal 复核把 `vfm_prune_protect_mode` 改为 `rgb_prune_topk`，并�
 | Delta protect-only | -0.0050 | +0.0002 | -0.0000 | -4,985 | +0.95s | - |
 | Delta topk001 | +0.0049 | +0.0002 | -0.0004 | -5,078 | +0.68s | - |
 | Delta topk010 | +0.0192 | +0.0009 | -0.0004 | -6,337 | +0.57s | - |
+
+topk010 异质场景 30k 对照表：
+
+| Scene | Run | PSNR | SSIM | LPIPS | Gaussians | Train wall | 输出 |
+|---|---|---:|---:|---:|---:|---:|---|
+| stump | FastGS big baseline | 27.1784 | 0.7868 | 0.2393 | 1,064,860 | - | `output/0002/phase0_5090_fastgs_big_baseline_fix1/mipnerf360_gpu0/stump/fastgs_big_densify100_30k_r_auto` |
+| stump | DINO prune-protect topk010 | 26.9865 | 0.7786 | 0.2468 | 1,084,676 | 127.52s | `output/0003/dino_pruneprotect_topk010_stump_30k_r_auto` |
+| stump | Delta | -0.1920 | -0.0082 | +0.0074 | +19,816 | - | - |
+| room | FastGS big baseline | 32.2136 | 0.9304 | 0.1882 | 571,607 | - | `output/0002/phase0_5090_fastgs_big_baseline_fix1/mipnerf360_gpu1/room/fastgs_big_densify100_30k_r_auto` |
+| room | DINO prune-protect topk010 | 31.8878 | 0.9247 | 0.2059 | 310,525 | 89.84s | `output/0003/dino_pruneprotect_topk010_room_30k_r_auto` |
+| room | Delta | -0.3258 | -0.0057 | +0.0177 | -261,082 | - | - |
 
 30k protection 日志：
 
@@ -343,8 +358,22 @@ top-k 30k protection 日志：
 | topk010 | 24000 | 12,122 | 15,674 | 1.000000 |
 | topk010 | 27000 | 12,725 | 15,596 | 1.000000 |
 
+topk010 异质场景 protection 日志：
+
+| Scene | Iter | protected | rgb_candidates | max protection |
+|---|---:|---:|---:|---:|
+| stump | 18000 | 11,160 | 12,375 | 1.000000 |
+| stump | 21000 | 8,812 | 11,076 | 1.000000 |
+| stump | 24000 | 9,117 | 10,972 | 1.000000 |
+| stump | 27000 | 8,273 | 10,901 | 1.000000 |
+| room | 18000 | 2,590 | 3,657 | 1.000000 |
+| room | 21000 | 2,535 | 3,168 | 0.838511 |
+| room | 24000 | 1,890 | 3,141 | 1.000000 |
+| room | 27000 | 2,789 | 3,121 | 1.000000 |
+
 结论：
 
-- Phase 3 没有造成质量崩坏，也没有显著增加点数，说明“RGB high-prune candidate -> DINO protect”是安全的接法。
+- Phase 3 的 top-k protect 在 `bicycle` 单场景没有崩坏，但异质场景复验显示它不是稳定安全的质量策略。
 - 绝对阈值配置下保护集合太小，30k 指标基本等同 baseline，不能证明 DINOv2 descriptor 能改善 pruning 决策。
-- top-k proposal 已经证明可以扩大候选空间。30k `bicycle` topk010 是当前 Phase 3 最好的配置，但收益幅度很小，仍需要异质场景复验；暂不直接扩全数据集。
+- top-k proposal 已经证明可以扩大候选空间，但扩大候选后 DINO protection 没有跨场景收益。`bicycle` topk010 的弱正向应视为场景偶然或训练噪声范围内的窄结果。
+- 0003 当前应停止把 DINOv2 descriptor 接入 densification/pruning 主链路；若继续使用 DINO，更适合转为离线语义/结构诊断，或等待新的监督目标和区域对齐证据。

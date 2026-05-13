@@ -86,9 +86,11 @@ Phase 3 prune-protect only 已完成 620-step preflight、18.1k prune-path smoke
 
 top-k 30k pilot 随后完成。topk001 为 25.2618 / 0.7555 / 0.2446、1,555,131 点，相对 FastGS big baseline +0.0049 PSNR、+0.00025 SSIM、LPIPS -0.00035、少 5,078 点；topk010 为 25.2761 / 0.7562 / 0.2445、1,553,872 点，相对 +0.0192 PSNR、+0.00090 SSIM、LPIPS -0.00045、少 6,337 点。四次 pruning step 均有足量保护，topk010 每步保护约 12k-15k 个 GS。
 
+但 topk010 的异质场景复验没有复现 `bicycle` 的弱正向。`stump` 为 26.9865 / 0.7786 / 0.2468、1,084,676 点，相对 FastGS big baseline 27.1784 / 0.7868 / 0.2393、1,064,860 点为 -0.1920 PSNR、-0.00824 SSIM、LPIPS +0.00744，且多 19,816 点。`room` 为 31.8878 / 0.9247 / 0.2059、310,525 点，相对 baseline 32.2136 / 0.9304 / 0.1882、571,607 点为 -0.3258 PSNR、-0.00574 SSIM、LPIPS +0.01773；虽然少 261,082 点，但质量退化太明显，不能解释成有效压缩。
+
 ## Phase 3 结论
 
-当前 prune-protect 不是负向崩坏，而是近 no-op：
+当前 prune-protect 的阶段性判断从“近 no-op 或 bicycle 单场景弱正向”更新为“跨场景失败”：
 
 - 它没有显著增加点数：比 baseline 少 4,985 个 Gaussians。
 - 它没有显著改变质量：PSNR -0.0050，SSIM +0.0002，LPIPS -0.0000。
@@ -97,12 +99,12 @@ top-k 30k pilot 随后完成。topk001 为 25.2618 / 0.7555 / 0.2446、1,555,131
 - top-k proposal 有效扩大候选：top-0.1%/top-1.0% 分别有 1,786 / 17,813 个 18k candidate，DINO 保护 1,682 / 15,446 个。
 - top-k 18.1k 质量未崩但也未证明正向：topk010 的 PSNR 略高于 threshold gate 复核，SSIM/LPIPS 仍基本贴近同口径 18.1k smoke。
 - top-k 30k 在 `bicycle` 单场景弱正向：topk010 三项质量均略高于 FastGS big baseline，并且点数更少。
+- topk010 30k 在 `stump` 与 `room` 都显著低于 baseline；`stump` 是质量退化且点数更多，`room` 是少点但 LPIPS 大幅变差。
 
-因此这条分支现在有一个窄正证据：在 `bicycle` 上，`RGB pruning top-1% proposal -> DINO protect` 比 FastGS big baseline 和绝对阈值 protect 更好。但幅度很小，且 Phase 0/2 仍说明 DINO descriptor 与 RGB 瓶颈错位明显；不能据此直接扩全数据集或宣称 DINOv2 pruning 已成立。
+因此这条分支的最终判断是：`RGB pruning top-1% proposal -> DINO protect` 只在 `bicycle` 上出现了很窄的弱正向，不能跨场景复现。结合 Phase 0/2 已确认的 DINO descriptor 与 RGB 瓶颈错位，DINOv2 descriptor 目前不适合作为 FastGS per-Gaussian lifecycle signal。
 
-后续若继续 pruning 方向，应该先做候选空间诊断，而不是直接跑全数据集：
+后续不建议继续扩这条 pruning 主链路：
 
-- 放宽 RGB pruning proposal 时不要再扫绝对阈值；0.80/0.70 已经没有扩大候选。下一步应基于 topk010 跑 1-2 个异质场景，例如 `stump` 或 `garden` 代表高容量/遮挡，`bonsai` 或 `room` 代表室内结构。
 - 保持 DINO 只做保护，不做主动删除。DINO-only densify 已显示错位，主动 prune 的风险更高。
-- 增加 per-view/区域可视化：检查被保护 GS 投影到哪些图像区域，是否落在边界、遮挡、细结构或 DINO/RGB 交集区域。
-- 若放宽后候选足够但指标仍贴 baseline，应把 DINOv2 descriptor 从 GS lifecycle signal 中移出，只保留为离线诊断或语义可视化工具。
+- 若还要研究 DINO，只把它保留为离线诊断或语义/结构可视化工具，先做 per-view/区域对齐证据，不再直接接入 densification/pruning 决策。
+- 新的主实验应转向与 RGB/geometry bottleneck 更贴近的信号，例如 0002 的 dense depth prior、可解释的深度残差或遮挡边界，而不是继续扫 DINO descriptor 的 top-k、lambda、start_iter 或 protect 权重。

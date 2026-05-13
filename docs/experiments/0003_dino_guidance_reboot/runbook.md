@@ -690,6 +690,64 @@ iter=27000 protected=12725 rgb_candidates=15596 max=1.000000
 
 结论：topk010 是当前 prune-protect 分支在 `bicycle` 上最好的单场景配置，但提升幅度很小。下一轮应优先复验 1-2 个异质场景，而不是直接扩全数据集。
 
+RGB topk010 异质场景 30k 复验：
+
+新增配置：
+
+- `configs/experiments/0003_dino_descriptor_prune_protect_topk010_stump.yaml`
+- `configs/experiments/0003_dino_descriptor_prune_protect_topk010_room.yaml`
+
+关键差异只在 `vfm_cache_dir`，其余保持 `bicycle` topk010 设置：
+
+```text
+vfm_importance_mode=rgb_only
+vfm_weight=0.0
+vfm_active_from_iter=15001
+vfm_prune_protect_mode=rgb_prune_topk
+vfm_prune_protect_rgb_topk=0.010
+vfm_prune_protect_weight=0.25
+```
+
+cache preflight：
+
+```text
+stump: output/0001/vfm_cache/stump_dinov2_vits14, 125 entries
+room: output/0001/vfm_cache/room_dinov2_vits14, 311 entries
+```
+
+本轮实际使用 detached 双卡 wrapper：
+
+```bash
+setsid bash -lc 'cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && export PYTHONPATH="${PYTHONPATH:-}:$(pwd)/src" && CUDA_VISIBLE_DEVICES=0 python -m vfm_gs.cli.train --variant fastgs_big --config configs/experiments/0003_dino_descriptor_prune_protect_topk010_stump.yaml -s datasets/mipnerf360/stump -i images -m output/0003/dino_pruneprotect_topk010_stump_30k_r_auto --eval --iterations 30000 --test_iterations 30000 --save_iterations 30000 --checkpoint_iterations 30000 -r -1 > output/0003/logs/dino_pruneprotect_topk010_stump_30k_r_auto.train.log 2>&1 && CUDA_VISIBLE_DEVICES=0 python -m vfm_gs.cli.render -m output/0003/dino_pruneprotect_topk010_stump_30k_r_auto --iteration -1 --skip_train --quiet > output/0003/logs/dino_pruneprotect_topk010_stump_30k_r_auto.render.log 2>&1 && CUDA_VISIBLE_DEVICES=0 python -m vfm_gs.cli.metrics -m output/0003/dino_pruneprotect_topk010_stump_30k_r_auto > output/0003/logs/dino_pruneprotect_topk010_stump_30k_r_auto.metrics.log 2>&1' > output/0003/logs/dino_pruneprotect_topk010_stump_30k_r_auto.driver.log 2>&1 < /dev/null &
+
+setsid bash -lc 'cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && export PYTHONPATH="${PYTHONPATH:-}:$(pwd)/src" && CUDA_VISIBLE_DEVICES=1 python -m vfm_gs.cli.train --variant fastgs_big --config configs/experiments/0003_dino_descriptor_prune_protect_topk010_room.yaml -s datasets/mipnerf360/room -i images -m output/0003/dino_pruneprotect_topk010_room_30k_r_auto --eval --iterations 30000 --test_iterations 30000 --save_iterations 30000 --checkpoint_iterations 30000 -r -1 > output/0003/logs/dino_pruneprotect_topk010_room_30k_r_auto.train.log 2>&1 && CUDA_VISIBLE_DEVICES=1 python -m vfm_gs.cli.render -m output/0003/dino_pruneprotect_topk010_room_30k_r_auto --iteration -1 --skip_train --quiet > output/0003/logs/dino_pruneprotect_topk010_room_30k_r_auto.render.log 2>&1 && CUDA_VISIBLE_DEVICES=1 python -m vfm_gs.cli.metrics -m output/0003/dino_pruneprotect_topk010_room_30k_r_auto > output/0003/logs/dino_pruneprotect_topk010_room_30k_r_auto.metrics.log 2>&1' > output/0003/logs/dino_pruneprotect_topk010_room_30k_r_auto.driver.log 2>&1 < /dev/null &
+```
+
+结果：
+
+- stump topk010：`output/0003/dino_pruneprotect_topk010_stump_30k_r_auto`，26.9865 / 0.7786 / 0.2468，1,084,676 GS，训练 127.52s。相对 FastGS big baseline 27.1784 / 0.7868 / 0.2393、1,064,860 GS，为 -0.1920 PSNR、-0.00824 SSIM、LPIPS +0.00744，且多 19,816 GS。
+- room topk010：`output/0003/dino_pruneprotect_topk010_room_30k_r_auto`，31.8878 / 0.9247 / 0.2059，310,525 GS，训练 89.84s。相对 FastGS big baseline 32.2136 / 0.9304 / 0.1882、571,607 GS，为 -0.3258 PSNR、-0.00574 SSIM、LPIPS +0.01773，少 261,082 GS。
+
+stump protection 日志：
+
+```text
+iter=18000 protected=11160 rgb_candidates=12375 max=1.000000
+iter=21000 protected=8812 rgb_candidates=11076 max=1.000000
+iter=24000 protected=9117 rgb_candidates=10972 max=1.000000
+iter=27000 protected=8273 rgb_candidates=10901 max=1.000000
+```
+
+room protection 日志：
+
+```text
+iter=18000 protected=2590 rgb_candidates=3657 max=1.000000
+iter=21000 protected=2535 rgb_candidates=3168 max=0.838511
+iter=24000 protected=1890 rgb_candidates=3141 max=1.000000
+iter=27000 protected=2789 rgb_candidates=3121 max=1.000000
+```
+
+结论：topk010 的 `bicycle` 弱正向没有跨场景复现。`stump` 三项质量退化且点数更多；`room` 虽然显著少点，但 PSNR/SSIM/LPIPS 全部退化，尤其 LPIPS 变差明显。Phase 3 top-k prune-protect 不应扩全数据集。
+
 2026-05-13 smoke 结果：
 
 - 620 preflight：`output/0003/dino_pruneprotect_only_bicycle_620_r_auto`，19.3464 / 0.4003 / 0.6293，66,232 GS。只验证配置与 cache preflight，不触发 final pruning。
