@@ -76,4 +76,23 @@ RGB/SSIM broad candidate -> DINO rerank/protect -> densify
 
 Phase 3 转向 DINO prune-protect only。新增 `configs/experiments/0003_dino_descriptor_prune_protect_only.yaml`，使用 `vfm_importance_mode=rgb_only`、`vfm_weight=0.0`、`vfm_active_from_iter=15001`，保证 DINO 不参与 15k 前 densification，只在后期 final pruning 中保护 `rgb_pruning >= 0.90` 的候选。这个实验回答的问题更窄：DINO 能否减少 RGB final pruning 的误删，而不是 DINO 能否发现应该删除或应该增长的位置。若该分支仍只带来点数增加、质量不升，DINOv2 descriptor 就不适合作为当前 FastGS per-Gaussian lifecycle signal。
 
-首轮 smoke 已完成：620-step preflight 跑通 train/render/metrics，18.1k prune-path 在 iteration 18000 打出 `[VFM PRUNE PROTECT]`，说明 DINO protection 分支真实进入 final pruning score。但日志中只有 `protected=1 / rgb_candidates=1`，这意味着当前 `rgb_pruning >= 0.90` 的 candidate gate 极窄，30k 正式结果可能接近 no-op。这个现象本身也有诊断价值：FastGS final-prune 的高分候选很少，DINO protect 在最安全约束下可能没有足够作用空间。
+Phase 3 prune-protect only 已完成 620-step preflight、18.1k prune-path smoke 和 high-res `bicycle` 30k pilot。30k 指标为 25.2519 / 0.7554 / 0.2449、1,555,224 点，相对 5090 FastGS big baseline 25.2569 / 0.7553 / 0.2450、1,560,209 点基本等同。四次 final-pruning 日志分别只有 `protected=2 / rgb_candidates=2`、`1/1`、`1/1`、`1/1`，说明 DINO protection 分支确实触发，但在 `rgb_pruning >= 0.90` 的安全 gate 下几乎没有作用空间。
+
+这轮结果把 pruning 方向也收紧了：`RGB high-prune candidate -> DINO protect` 是安全的，但当前候选定义太窄，无法证明 DINOv2 descriptor 能改善 pruning 决策；若直接扩多场景，预计只会得到接近 baseline 的 no-op 结果。
+
+## Phase 3 结论
+
+当前 prune-protect 不是负向崩坏，而是近 no-op：
+
+- 它没有显著增加点数：比 baseline 少 4,985 个 Gaussians。
+- 它没有显著改变质量：PSNR -0.0050，SSIM +0.0002，LPIPS -0.0000。
+- 它没有足够候选：18k/21k/24k/27k 的 RGB high-prune candidate 总数只有 5 个。
+
+因此这条分支不能作为“DINOv2 可辅助 pruning”的正证据。更准确的判断是：在最保守的 RGB proposal gate 下，DINOv2 descriptor 的保护信号无法获得足够决策权。
+
+后续若继续 pruning 方向，应该先做候选空间诊断，而不是直接跑全数据集：
+
+- 放宽 RGB pruning proposal：把 `vfm_prune_protect_rgb_min_score` 从 0.90 扫到 0.80/0.70，或改成每个 pruning step 固定 top-k/top-p RGB pruning candidate。
+- 保持 DINO 只做保护，不做主动删除。DINO-only densify 已显示错位，主动 prune 的风险更高。
+- 增加 per-view/区域可视化：检查被保护 GS 投影到哪些图像区域，是否落在边界、遮挡、细结构或 DINO/RGB 交集区域。
+- 若放宽后候选足够但指标仍贴 baseline，应把 DINOv2 descriptor 从 GS lifecycle signal 中移出，只保留为离线诊断或语义可视化工具。

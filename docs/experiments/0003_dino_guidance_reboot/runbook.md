@@ -539,6 +539,42 @@ setsid bash -lc 'cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && C
   > output/0003/logs/dino_pruneprotect_only_bicycle_30k_r_auto.driver.log 2>&1 < /dev/null &
 ```
 
+本轮实际 detached 命令：
+
+```bash
+setsid bash -lc 'cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && export PYTHONPATH="${PYTHONPATH:-}:$(pwd)/src" && CUDA_VISIBLE_DEVICES=0 python -m vfm_gs.cli.train --variant fastgs_big --config configs/experiments/0003_dino_descriptor_prune_protect_only.yaml -s datasets/mipnerf360/bicycle -i images -m output/0003/dino_pruneprotect_only_bicycle_30k_r_auto --eval --iterations 30000 --test_iterations 30000 --save_iterations 30000 --checkpoint_iterations 30000 -r -1 > output/0003/logs/dino_pruneprotect_only_bicycle_30k_r_auto.train.log 2>&1 && CUDA_VISIBLE_DEVICES=0 python -m vfm_gs.cli.render -m output/0003/dino_pruneprotect_only_bicycle_30k_r_auto --iteration -1 --skip_train --quiet > output/0003/logs/dino_pruneprotect_only_bicycle_30k_r_auto.render.log 2>&1 && CUDA_VISIBLE_DEVICES=0 python -m vfm_gs.cli.metrics -m output/0003/dino_pruneprotect_only_bicycle_30k_r_auto > output/0003/logs/dino_pruneprotect_only_bicycle_30k_r_auto.metrics.log 2>&1' > output/0003/logs/dino_pruneprotect_only_bicycle_30k_r_auto.driver.log 2>&1 < /dev/null &
+```
+
+检查命令：
+
+```bash
+rg -n "VFM PRUNE PROTECT|Gaussian number|Training time|Training complete" \
+  output/0003/logs/dino_pruneprotect_only_bicycle_30k_r_auto.train.log
+
+cat output/0003/dino_pruneprotect_only_bicycle_30k_r_auto/results.json
+head -n 4 output/0003/dino_pruneprotect_only_bicycle_30k_r_auto/point_cloud/iteration_30000/point_cloud.ply
+```
+
+30k pilot 结果：
+
+- 输出：`output/0003/dino_pruneprotect_only_bicycle_30k_r_auto`
+- 日志：`output/0003/logs/dino_pruneprotect_only_bicycle_30k_r_auto.{train,render,metrics}.log`
+- 指标：25.2519 PSNR / 0.7554 SSIM / 0.2449 LPIPS
+- Gaussians：1,555,224
+- 训练时间：160.06s
+- 对照 FastGS big baseline：25.2569 / 0.7553 / 0.2450，1,560,209 点，159.11s
+
+Protection 日志：
+
+```text
+iter=18000 protected=2 rgb_candidates=2 max=0.154052
+iter=21000 protected=1 rgb_candidates=1 max=0.303642
+iter=24000 protected=1 rgb_candidates=1 max=0.072603
+iter=27000 protected=1 rgb_candidates=1 max=0.153624
+```
+
+结论：prune-protect 链路安全、可复现，但当前 `rgb_pruning >= 0.90` 的候选空间极窄，30k 结果基本等同 baseline。下一轮若继续 pruning，应先放宽 proposal gate 或改为 top-k proposal，再做小场景 smoke。
+
 2026-05-13 smoke 结果：
 
 - 620 preflight：`output/0003/dino_pruneprotect_only_bicycle_620_r_auto`，19.3464 / 0.4003 / 0.6293，66,232 GS。只验证配置与 cache preflight，不触发 final pruning。
