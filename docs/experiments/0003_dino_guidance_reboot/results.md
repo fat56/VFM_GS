@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-0003 已完成 Phase 0 `bicycle` 诊断、Phase 1 high-res 620-step smoke，以及 Phase 2 high-res `bicycle` 30k matched pilot、局部区域诊断和 final-topm 容量锁定判别。当前结论是：训练时同款 DINO descriptor residual 与 RGB 高误差区域只有弱重叠，单纯把 token grid 从 `10x16` 提高到 `75x114` 没有改善 overlap；`RGB broad candidate -> DINO rerank` 的训练链路健康，但未证明 DINO selector 的独立价值。final-topm 能把点数压回接近 RGB broad control，但全图收益仍很薄，DINO-only 区域继续退化，因此 0003 的 DINO rerank 训练分支暂时收束。Phase 3 的 DINO prune-protect 30k pilot 已完成：DINO 不主动删除、不参与 densification，只在 RGB pruning high-score 候选中降低误删概率；结果与 FastGS big baseline 基本贴合，但保护候选只有 1~2 个/step，说明该安全约束下几乎没有作用空间。
+0003 已完成 Phase 0 `bicycle` 诊断、Phase 1 high-res 620-step smoke，以及 Phase 2 high-res `bicycle` 30k matched pilot、局部区域诊断和 final-topm 容量锁定判别。当前结论是：训练时同款 DINO descriptor residual 与 RGB 高误差区域只有弱重叠，单纯把 token grid 从 `10x16` 提高到 `75x114` 没有改善 overlap；`RGB broad candidate -> DINO rerank` 的训练链路健康，但未证明 DINO selector 的独立价值。final-topm 能把点数压回接近 RGB broad control，但全图收益仍很薄，DINO-only 区域继续退化，因此 0003 的 DINO rerank 训练分支暂时收束。Phase 3 的 DINO prune-protect 30k pilot 已完成：DINO 不主动删除、不参与 densification，只在 RGB pruning high-score 候选中降低误删概率；结果与 FastGS big baseline 基本贴合，但保护候选只有 1~2 个/step。随后把 `rgb_pruning` gate 从 0.90 放宽到 0.80/0.70，18.1k smoke 仍只有 `protected=1 / rgb_candidates=1`，说明 threshold gate 本身无法提供足够候选空间，下一步应改为 top-k/top-p RGB pruning proposal。
 
 ## 0001 Token 粒度复核
 
@@ -43,6 +43,7 @@
 | 2026-05-13 | Phase 3 | bicycle | prune-protect 620-step preflight smoke | `output/0003/dino_pruneprotect_only_bicycle_620_r_auto` | train/render/metrics 完成；只验证配置和 cache preflight |
 | 2026-05-13 | Phase 3 | bicycle | prune-protect 18.1k prune-path smoke | `output/0003/dino_pruneprotect_only_bicycle_18100_r_auto` | train/render/metrics 完成；iteration 18000 打出 protection 日志，链路真实触发 |
 | 2026-05-13 | Phase 3 | bicycle | prune-protect 30k pilot | `output/0003/dino_pruneprotect_only_bicycle_30k_r_auto` | 与 FastGS big baseline 基本贴合；保护候选过少，分支判为安全但近 no-op |
+| 2026-05-13 | Phase 3 | bicycle | RGB pruning proposal gate 0.80/0.70 18.1k smoke | `output/0003/dino_pruneprotect_rgb{080,070}_bicycle_18100_r_auto` | threshold 放宽仍只有 1 个候选；下一步转 top-k/top-p proposal |
 
 ## 2026-05-12 Phase 0：训练时同款 DINO Descriptor Residual 诊断
 
@@ -254,6 +255,8 @@ final-topm 局部区域诊断输出：
 新增配置：
 
 - `configs/experiments/0003_dino_descriptor_prune_protect_only.yaml`
+- `configs/experiments/0003_dino_descriptor_prune_protect_rgb080.yaml`
+- `configs/experiments/0003_dino_descriptor_prune_protect_rgb070.yaml`
 
 关键参数：
 
@@ -282,6 +285,8 @@ vfm_prune_protect_power = 2.0
 | prune-protect 620 | preflight smoke，只验证配置和 cache preflight | 0.4003 | 19.3464 | 0.6293 | 66,232 | 未触发 final pruning，符合预期 | `output/0003/dino_pruneprotect_only_bicycle_620_r_auto` |
 | prune-protect 18.1k | prune-path smoke，触发 iteration 18000 final pruning | 0.7510 | 25.0803 | 0.2504 | 1,586,344 | `[VFM PRUNE PROTECT] iter=18000 ... protected=1 rgb_candidates=1 max=0.132225` | `output/0003/dino_pruneprotect_only_bicycle_18100_r_auto` |
 | prune-protect 30k | 正式 pilot，对照 FastGS big baseline | 0.7554 | 25.2519 | 0.2449 | 1,555,224 | 18k/21k/24k/27k 均触发，但每次只有 1~2 个候选 | `output/0003/dino_pruneprotect_only_bicycle_30k_r_auto` |
+| prune-protect rgb080 18.1k | 放宽 RGB pruning gate 到 0.80 | 0.7501 | 25.0579 | 0.2517 | 1,586,419 | `[VFM PRUNE PROTECT] iter=18000 ... protected=1 rgb_candidates=1 max=1.000000` | `output/0003/dino_pruneprotect_rgb080_bicycle_18100_r_auto` |
+| prune-protect rgb070 18.1k | 放宽 RGB pruning gate 到 0.70 | 0.7504 | 25.0638 | 0.2513 | 1,581,575 | `[VFM PRUNE PROTECT] iter=18000 ... protected=1 rgb_candidates=1 max=1.000000` | `output/0003/dino_pruneprotect_rgb070_bicycle_18100_r_auto` |
 
 判断：
 
@@ -289,6 +294,7 @@ vfm_prune_protect_power = 2.0
 - 18.1k smoke 在 iteration 18000 真实触发 DINO protection 分支，证明 `vfm_active_from_iter=15001` 与 `rgb_prune_candidate` 的后期 pruning-only 链路可运行。
 - 30k pilot 完整完成 train/render/metrics。相对 5090 FastGS big baseline，PSNR -0.0050，SSIM +0.0002，LPIPS -0.0000，Gaussians -4,985，训练时间 +0.95s；质量和容量都基本贴合。
 - 保护候选极少：18.1k smoke 为 `protected=1 / rgb_candidates=1`，30k pilot 的四次 final-pruning 日志也只有 `2/2`、`1/1`、`1/1`、`1/1`。这说明当前 `rgb_pruning >= 0.90` 约束非常保守，DINO protect 在最安全设置下几乎没有行动空间。
+- 将 `vfm_prune_protect_rgb_min_score` 从 0.90 放宽到 0.80/0.70 后，18.1k 仍然只有 `protected=1 / rgb_candidates=1`。这说明当前 RGB pruning score 的分布非常尖，threshold gate 不能形成稳定 proposal 集合。
 
 30k 对照表：
 
@@ -311,4 +317,4 @@ vfm_prune_protect_power = 2.0
 
 - Phase 3 没有造成质量崩坏，也没有显著增加点数，说明“RGB high-prune candidate -> DINO protect”是安全的接法。
 - 但当前配置下保护集合太小，30k 指标基本等同 baseline，不能证明 DINOv2 descriptor 能改善 pruning 决策。
-- 不建议直接扩全数据集。若继续 pruning 方向，必须先改变候选定义，例如降低 `vfm_prune_protect_rgb_min_score` 到 0.80/0.70 或改为固定 top-k RGB pruning candidate，再配合局部区域/可视化诊断；否则继续跑只是在重复 no-op。
+- 不建议直接扩全数据集。threshold gate 0.80/0.70 已证明无效；若继续 pruning 方向，必须把 proposal 定义改为固定 top-k/top-p RGB pruning candidate，再配合局部区域/可视化诊断；否则继续跑只是在重复 no-op。

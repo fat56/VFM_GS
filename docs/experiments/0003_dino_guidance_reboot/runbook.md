@@ -575,6 +575,43 @@ iter=27000 protected=1 rgb_candidates=1 max=0.153624
 
 结论：prune-protect 链路安全、可复现，但当前 `rgb_pruning >= 0.90` 的候选空间极窄，30k 结果基本等同 baseline。下一轮若继续 pruning，应先放宽 proposal gate 或改为 top-k proposal，再做小场景 smoke。
 
+RGB threshold gate 复核：
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0003_dino_descriptor_prune_protect_rgb080.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0003/dino_pruneprotect_rgb080_bicycle_18100_r_auto \
+  --eval \
+  --iterations 18100 \
+  --test_iterations 18100 \
+  --save_iterations 18100 \
+  --checkpoint_iterations 18100 \
+  -r -1
+
+CUDA_VISIBLE_DEVICES=1 python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0003_dino_descriptor_prune_protect_rgb070.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0003/dino_pruneprotect_rgb070_bicycle_18100_r_auto \
+  --eval \
+  --iterations 18100 \
+  --test_iterations 18100 \
+  --save_iterations 18100 \
+  --checkpoint_iterations 18100 \
+  -r -1
+```
+
+结果：
+
+- rgb080：`output/0003/dino_pruneprotect_rgb080_bicycle_18100_r_auto`，25.0579 / 0.7501 / 0.2517，1,586,419 GS。日志为 `protected=1 / rgb_candidates=1`。
+- rgb070：`output/0003/dino_pruneprotect_rgb070_bicycle_18100_r_auto`，25.0638 / 0.7504 / 0.2513，1,581,575 GS。日志为 `protected=1 / rgb_candidates=1`。
+
+结论：把 `rgb_min_score` 从 0.90 放宽到 0.80/0.70 没有扩大 RGB pruning proposal。下一步应新增 top-k/top-p proposal mode，而不是继续扫绝对阈值。
+
 2026-05-13 smoke 结果：
 
 - 620 preflight：`output/0003/dino_pruneprotect_only_bicycle_620_r_auto`，19.3464 / 0.4003 / 0.6293，66,232 GS。只验证配置与 cache preflight，不触发 final pruning。

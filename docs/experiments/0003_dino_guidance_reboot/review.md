@@ -80,6 +80,8 @@ Phase 3 prune-protect only 已完成 620-step preflight、18.1k prune-path smoke
 
 这轮结果把 pruning 方向也收紧了：`RGB high-prune candidate -> DINO protect` 是安全的，但当前候选定义太窄，无法证明 DINOv2 descriptor 能改善 pruning 决策；若直接扩多场景，预计只会得到接近 baseline 的 no-op 结果。
 
+随后完成的 threshold gate 复核进一步排除了一个简单修复：把 `vfm_prune_protect_rgb_min_score` 从 0.90 放宽到 0.80/0.70 后，18.1k prune-path smoke 仍然只有 `protected=1 / rgb_candidates=1`。这说明 RGB pruning score 在当前实现中并不是一个适合用绝对阈值切 proposal 的连续空间；至少在 `bicycle` 18k，threshold gate 放宽不会带来更多候选。
+
 ## Phase 3 结论
 
 当前 prune-protect 不是负向崩坏，而是近 no-op：
@@ -87,12 +89,13 @@ Phase 3 prune-protect only 已完成 620-step preflight、18.1k prune-path smoke
 - 它没有显著增加点数：比 baseline 少 4,985 个 Gaussians。
 - 它没有显著改变质量：PSNR -0.0050，SSIM +0.0002，LPIPS -0.0000。
 - 它没有足够候选：18k/21k/24k/27k 的 RGB high-prune candidate 总数只有 5 个。
+- threshold 放宽无效：0.80/0.70 仍然各只有 1 个 18k candidate。
 
 因此这条分支不能作为“DINOv2 可辅助 pruning”的正证据。更准确的判断是：在最保守的 RGB proposal gate 下，DINOv2 descriptor 的保护信号无法获得足够决策权。
 
 后续若继续 pruning 方向，应该先做候选空间诊断，而不是直接跑全数据集：
 
-- 放宽 RGB pruning proposal：把 `vfm_prune_protect_rgb_min_score` 从 0.90 扫到 0.80/0.70，或改成每个 pruning step 固定 top-k/top-p RGB pruning candidate。
+- 放宽 RGB pruning proposal 时不要再扫绝对阈值；0.80/0.70 已经没有扩大候选。下一步应改成每个 pruning step 固定 top-k/top-p RGB pruning candidate。
 - 保持 DINO 只做保护，不做主动删除。DINO-only densify 已显示错位，主动 prune 的风险更高。
 - 增加 per-view/区域可视化：检查被保护 GS 投影到哪些图像区域，是否落在边界、遮挡、细结构或 DINO/RGB 交集区域。
 - 若放宽后候选足够但指标仍贴 baseline，应把 DINOv2 descriptor 从 GS lifecycle signal 中移出，只保留为离线诊断或语义可视化工具。
