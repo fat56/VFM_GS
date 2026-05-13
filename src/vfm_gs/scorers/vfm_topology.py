@@ -491,8 +491,12 @@ def _build_prune_protection(vfm_counts, rgb_pruning, args):
         return protect, weight
     if mode == "rgb_aware":
         return protect * (1.0 - rgb_pruning.to(torch.float32)), weight
+    if mode == "rgb_prune_candidate":
+        min_score = float(getattr(args, "vfm_prune_protect_rgb_min_score", 0.9) or 0.0)
+        rgb_candidate = rgb_pruning.to(torch.float32) >= min_score
+        return protect * rgb_candidate.to(torch.float32), weight
     raise ValueError(
-        "Unsupported vfm_prune_protect_mode {!r}. Available: vfm, rgb_aware.".format(mode)
+        "Unsupported vfm_prune_protect_mode {!r}. Available: vfm, rgb_aware, rgb_prune_candidate.".format(mode)
     )
 
 
@@ -686,6 +690,24 @@ def compute_gaussian_score_fastgs_with_vfm(camlist, gaussians, pipe, bg, args, D
     pruning_score = normalize01(rgb_pruning + vfm_weight * vfm_pruning)
     protection, protection_weight = _build_prune_protection(vfm_counts_total, rgb_pruning, args)
     if protection is not None:
+        if not DENSIFY:
+            protected = int((protection > 0).sum().item())
+            rgb_candidates = int(
+                (rgb_pruning.to(torch.float32) >= float(getattr(args, "vfm_prune_protect_rgb_min_score", 0.9) or 0.0))
+                .sum()
+                .item()
+            )
+            print(
+                "[VFM PRUNE PROTECT] iter={} mode={} weight={:.4f} protected={} rgb_candidates={} mean={:.6f} max={:.6f}".format(
+                    int(getattr(args, "current_iteration", 0) or 0),
+                    str(getattr(args, "vfm_prune_protect_mode", "vfm") or "vfm"),
+                    float(protection_weight),
+                    protected,
+                    rgb_candidates,
+                    float(protection.mean().item()) if protection.numel() else 0.0,
+                    float(protection.max().item()) if protection.numel() else 0.0,
+                )
+            )
         pruning_score = normalize01(pruning_score - protection_weight * protection)
 
     if DENSIFY:

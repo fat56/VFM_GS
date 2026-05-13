@@ -335,7 +335,7 @@ python scripts/diagnose_0003_local_regions.py \
 
 机制：`rgb_rerank` 仍先用 `vfm_rgb_broad_topk=0.50` 生成 broad candidate，再用 `RGB_importance * (1 + lambda * DINO)` 排序；但实际 densification 前会用 RGB broad reference score 计算本 step 的参考候选数 `m`，最终只保留 rerank 后的 top-m。这样 RGB broad 决定容量，DINO 只换排序。
 
-620-step smoke：
+620-step preflight smoke：
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 python -m vfm_gs.cli.train \
@@ -428,13 +428,116 @@ python scripts/diagnose_0003_local_regions.py \
 
 ## Phase 3：DINO Prune-Protect
 
-只有 Phase 1/2 的 densification rerank 成立后再做 pruning 方向。第一版只做保护，不做主动删除：
+Phase 2 已显示 DINO rerank 不能成为可靠 densification selector。Phase 3 只做 pruning-side protection，不做主动删除：
 
 ```text
 RGB pruning says bad AND DINO says important -> protect
 ```
 
 不直接启用 `DINO says redundant -> prune`，因为语义不重要的 GS 仍可能承担遮挡、边界或细纹理贡献。
+
+新增配置：
+
+- `configs/experiments/0003_dino_descriptor_prune_protect_only.yaml`
+
+关键机制：
+
+```text
+vfm_importance_mode=rgb_only
+vfm_weight=0.0
+vfm_active_from_iter=15001
+vfm_prune_protect_mode=rgb_prune_candidate
+vfm_prune_protect_rgb_min_score=0.90
+```
+
+这保证 15k 前 densification 完全由 FastGS/RGB 决定；DINO 只在 18k/21k/24k/27k 的 final pruning score 里保护 RGB high-prune candidate。
+
+620-step smoke：
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0003_dino_descriptor_prune_protect_only.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0003/dino_pruneprotect_only_bicycle_620_r_auto \
+  --eval \
+  --iterations 620 \
+  --densify_from_iter 500 \
+  --densify_until_iter 620 \
+  --test_iterations 620 \
+  --save_iterations 620 \
+  --checkpoint_iterations 620 \
+  -r -1
+
+CUDA_VISIBLE_DEVICES=0 python -m vfm_gs.cli.render \
+  -m output/0003/dino_pruneprotect_only_bicycle_620_r_auto \
+  --iteration -1 \
+  --skip_train \
+  --quiet
+
+CUDA_VISIBLE_DEVICES=0 python -m vfm_gs.cli.metrics \
+  -m output/0003/dino_pruneprotect_only_bicycle_620_r_auto
+```
+
+18.1k prune-path smoke：
+
+```bash
+CUDA_VISIBLE_DEVICES=1 python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0003_dino_descriptor_prune_protect_only.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0003/dino_pruneprotect_only_bicycle_18100_r_auto \
+  --eval \
+  --iterations 18100 \
+  --test_iterations 18100 \
+  --save_iterations 18100 \
+  --checkpoint_iterations 18100 \
+  -r -1
+
+CUDA_VISIBLE_DEVICES=1 python -m vfm_gs.cli.render \
+  -m output/0003/dino_pruneprotect_only_bicycle_18100_r_auto \
+  --iteration -1 \
+  --skip_train \
+  --quiet
+
+CUDA_VISIBLE_DEVICES=1 python -m vfm_gs.cli.metrics \
+  -m output/0003/dino_pruneprotect_only_bicycle_18100_r_auto
+```
+
+30k pilot：
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0003_dino_descriptor_prune_protect_only.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0003/dino_pruneprotect_only_bicycle_30k_r_auto \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  -r -1
+
+CUDA_VISIBLE_DEVICES=0 python -m vfm_gs.cli.render \
+  -m output/0003/dino_pruneprotect_only_bicycle_30k_r_auto \
+  --iteration -1 \
+  --skip_train \
+  --quiet
+
+CUDA_VISIBLE_DEVICES=0 python -m vfm_gs.cli.metrics \
+  -m output/0003/dino_pruneprotect_only_bicycle_30k_r_auto
+```
+
+Detached wrapper：
+
+```bash
+setsid bash -lc 'cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && CUDA_VISIBLE_DEVICES=0 python -m vfm_gs.cli.train ... && CUDA_VISIBLE_DEVICES=0 python -m vfm_gs.cli.render ... && CUDA_VISIBLE_DEVICES=0 python -m vfm_gs.cli.metrics ...' \
+  > output/0003/logs/dino_pruneprotect_only_bicycle_30k_r_auto.driver.log 2>&1 < /dev/null &
+```
 
 ## 记录要求
 

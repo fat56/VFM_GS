@@ -61,7 +61,7 @@ RGB/SSIM broad candidate -> DINO rerank/protect -> densify
    初始阶段至少改成 nearest upsample 或 token-cell mask，避免双线性插值制造虚假的亚 token 精度。后续可改为 token-grid 级 Gaussian visibility 聚合。
 
 6. DINO prune 先做保护，不做主动删除
-   若二次筛选有效，再考虑 DINO 辅助 pruning。第一版只做 semantic protection：`RGB pruning says bad AND DINO says important -> protect`。主动用 DINO 删除多余 GS 风险更高，暂不作为 0003 第一候选。
+   DINO rerank 分支已经显示 DINO-only 区域会退化，因此 pruning 方向只保留保守保护实验，不把 DINO 当主动删除信号。Phase 3 使用 `RGB pruning says bad AND DINO says important -> protect`，并限制在 RGB pruning high-score 候选中生效，等价于先由 FastGS/RGB 给出可删 proposal，再用 DINO 做 proposal 内保护。主动用 DINO 删除多余 GS 风险更高，暂不作为 0003 候选。
 
 7. 局部指标必须入表
    已新增 `scripts/diagnose_0003_local_regions.py`，每轮除了 PSNR/SSIM/LPIPS，还要报告 DINO top-k 区域、RGB 高误差区域和二者交集区域的 L1/PSNR 改善。当前 LPIPS 工具只返回全图标量，暂不伪造空间 LPIPS map。
@@ -72,4 +72,6 @@ RGB/SSIM broad candidate -> DINO rerank/protect -> densify
 
 ## 下一步
 
-暂停扩多场景，也暂停相邻 lambda/start_iter 扫描。局部指标已经显示 DINO-only 区域退化，因此最后保留一个关键判别实验：显式 final top-m，让 DINO rerank 只改变候选排序但不增加最终 densification 容量。该实现、620-step smoke 和 30k 双卡判别已完成。final-topm 确实把点数压回接近 RGB broad control，但全图只有弱混合信号，DINO-only top25 仍然退化。0003 的 DINO rerank 训练分支应暂时收束为“当前 DINO descriptor residual 不适合作为 FastGS RGB 瓶颈 selector”；后续如果继续 DINO，应换监督目标或做后验解释，而不是继续扫相邻超参。
+暂停扩多场景，也暂停相邻 lambda/start_iter 扫描。局部指标已经显示 DINO-only 区域退化，因此最后保留一个关键判别实验：显式 final top-m，让 DINO rerank 只改变候选排序但不增加最终 densification 容量。该实现、620-step smoke 和 30k 双卡判别已完成。final-topm 确实把点数压回接近 RGB broad control，但全图只有弱混合信号，DINO-only top25 仍然退化。0003 的 DINO rerank 训练分支应暂时收束为“当前 DINO descriptor residual 不适合作为 FastGS RGB 瓶颈 selector”。
+
+Phase 3 转向 DINO prune-protect only。新增 `configs/experiments/0003_dino_descriptor_prune_protect_only.yaml`，使用 `vfm_importance_mode=rgb_only`、`vfm_weight=0.0`、`vfm_active_from_iter=15001`，保证 DINO 不参与 15k 前 densification，只在后期 final pruning 中保护 `rgb_pruning >= 0.90` 的候选。这个实验回答的问题更窄：DINO 能否减少 RGB final pruning 的误删，而不是 DINO 能否发现应该删除或应该增长的位置。若该分支仍只带来点数增加、质量不升，DINOv2 descriptor 就不适合作为当前 FastGS per-Gaussian lifecycle signal。

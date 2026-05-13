@@ -64,8 +64,8 @@
 5. Patch-aware Gaussian 计数
    避免把低分辨率 patch map 双线性上采样成看似精细的像素 map。初始实现可以先用 nearest upsample 保持 token cell 边界；后续再考虑把 Gaussian visibility 直接聚合到 patch grid。
 
-6. DINO 辅助裁剪只做后续保护型实验
-   如果 densification rerank 成立，再研究 DINO pruning。第一版不让 DINO 主动删除 GS，而是做 semantic protection：`RGB pruning says bad AND DINO says important -> protect`。主动裁剪风险更高，只有在保护型实验明确正向后再考虑。
+6. DINO 辅助裁剪只做保护型实验
+   Densification rerank 的局部诊断已经显示 DINO-only 区域会退化，因此 pruning 方向不再以 rerank 成立为前提扩张，而是作为更保守的 Phase 3 判别：不让 DINO 主动删除 GS，只做 semantic protection。第一版使用 `RGB pruning says bad AND DINO says important -> protect`，并进一步限制为只在 RGB pruning high-score 候选中保护，贴近 DINOv2 在 proposal/SAM 后做 rerank 的用法。主动裁剪风险更高，只有 protect-only 实验明确正向后再考虑。
 
 7. 局部指标优先
    DINO guidance 的成功标准不能只看全图 PSNR。每轮必须报告 DINO/RGB overlap、prior 区域 L1/LPIPS 改善、非 prior 区域变化和 Gaussian 增量分布。
@@ -77,7 +77,7 @@
 | Phase 0 | 导出训练时同款 render-vs-GT DINO cosine error map，并诊断 overlap / token 粒度 | diagnostic CSV/JSON/overlay；已完成 bicycle w224/w518/w1600 | 否 |
 | Phase 1 | 实现 RGB-broad candidate + DINO rerank + late activation，620-step 验证链路 | config + smoke logs；已完成 bicycle 620 | 是，短跑 |
 | Phase 2 | high-res `bicycle/stump/treehill/bonsai` 30k pilot，扫描 start_iter/lambda/broad top-k | bicycle start_iter、lambda=0.10、局部区域诊断和 final-topm 容量锁定已完成；DINO rerank 训练分支收束 | 是 |
-| Phase 3 | 若 Phase 2 成立，再做 DINO prune-protect，不做主动 DINO pruning | config + pilot metrics | 是 |
+| Phase 3 | DINO prune-protect only：RGB/FastGS 决定增长和可删候选，DINO 只保护 RGB high-prune candidate | config + pilot metrics | 是 |
 | Phase 4 | 只在 pilot 成立后扩全数据集 | summary + policy | 是 |
 
 ## 初始成功标准
@@ -88,4 +88,4 @@
 
 ## 下一步
 
-Phase 2 high-res `bicycle` 30k 已完成 `DINO rerank lambda=0.25, start_iter=7000/9000/11000` 和 `lambda=0.10, start_iter=7000/9000` 扫描。`lambda=0.25 start7000` 相对 RGB broad control 为 +0.0068 PSNR、+0.0007 SSIM、LPIPS -0.0018，但多 40,714 点；`lambda=0.10` 只省 8k~11k 点，PSNR 仍低于 RGB broad control。局部区域诊断显示 DINO/RGB top-25 IoU 仍只有 0.1627，DINO-only top-25 区域 L1 上升、PSNR 下降，DINO rerank 的收益主要发生在 RGB 高误差区域而不是 DINO 独有区域。显式 final-topm 容量锁定已完成实现、620-step smoke 和 30k 判别：它能把点数压回接近 RGB broad control，但全图收益仍很薄，DINO-only top25 继续退化。因此 0003 的 DINO rerank 训练分支应收束；如果继续 DINO，需要换监督目标或改为后验分析，而不是继续扫相邻超参。
+Phase 2 high-res `bicycle` 30k 已完成 `DINO rerank lambda=0.25, start_iter=7000/9000/11000` 和 `lambda=0.10, start_iter=7000/9000` 扫描。`lambda=0.25 start7000` 相对 RGB broad control 为 +0.0068 PSNR、+0.0007 SSIM、LPIPS -0.0018，但多 40,714 点；`lambda=0.10` 只省 8k~11k 点，PSNR 仍低于 RGB broad control。局部区域诊断显示 DINO/RGB top-25 IoU 仍只有 0.1627，DINO-only top-25 区域 L1 上升、PSNR 下降，DINO rerank 的收益主要发生在 RGB 高误差区域而不是 DINO 独有区域。显式 final-topm 容量锁定已完成实现、620-step smoke 和 30k 判别：它能把点数压回接近 RGB broad control，但全图收益仍很薄，DINO-only top25 继续退化。因此 0003 的 DINO rerank 训练分支应收束；如果继续 DINO，应换成 pruning-side protect-only 或后验分析，而不是继续扫相邻超参。Phase 3 已新增 `configs/experiments/0003_dino_descriptor_prune_protect_only.yaml`，采用 `vfm_importance_mode=rgb_only`、`vfm_weight=0.0`、`vfm_active_from_iter=15001`，使 DINO 不参与 15k 前 densification，只在 18k/21k/24k/27k 的 final pruning 中保护 RGB high-prune candidate。

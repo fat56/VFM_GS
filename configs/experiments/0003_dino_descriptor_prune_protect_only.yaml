@@ -1,0 +1,26 @@
+name: 0003_dino_descriptor_prune_protect_only
+extends: fastgs_big
+scorer: vfm_topology_scorer
+training_args:
+  densification_interval: 100
+  vfm_enable: true
+  vfm_backend: dinov2_descriptor_cosine
+  vfm_cache_dir: output/0001/vfm_cache/bicycle_dinov2_vits14
+  vfm_dinov2_repo: output/0001/external/dinov2
+  vfm_dinov2_device: cuda
+  vfm_metric_map_mode: topk
+  vfm_metric_topk: 0.25
+  vfm_descriptor_token_smooth_kernel: 3
+  vfm_weight: 0.0
+  vfm_importance_mode: rgb_only
+  vfm_prune_protect_weight: 0.25
+  vfm_prune_protect_mode: rgb_prune_candidate
+  vfm_prune_protect_rgb_min_score: 0.90
+  vfm_prune_protect_min_count: 5
+  vfm_prune_protect_power: 2.0
+  vfm_active_from_iter: 15001
+  vfm_use_albedo_sh0: true
+experiment:
+  status: dino_descriptor_prune_protect_only_probe
+  proposal: docs/experiments/0003_dino_guidance_reboot/proposal.md
+  note: Phase 3 pruning-only probe. FastGS/RGB keeps all densification decisions; DINO descriptor residual is activated only after densification ends and only protects RGB high-pruning-score candidates from final pruning.

@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-0003 已完成 Phase 0 `bicycle` 诊断、Phase 1 high-res 620-step smoke，以及 Phase 2 high-res `bicycle` 30k matched pilot、局部区域诊断和 final-topm 容量锁定判别。当前结论是：训练时同款 DINO descriptor residual 与 RGB 高误差区域只有弱重叠，单纯把 token grid 从 `10x16` 提高到 `75x114` 没有改善 overlap；`RGB broad candidate -> DINO rerank` 的训练链路健康，但未证明 DINO selector 的独立价值。final-topm 能把点数压回接近 RGB broad control，但全图收益仍很薄，DINO-only 区域继续退化，因此 0003 的 DINO rerank 训练分支应暂时收束。
+0003 已完成 Phase 0 `bicycle` 诊断、Phase 1 high-res 620-step smoke，以及 Phase 2 high-res `bicycle` 30k matched pilot、局部区域诊断和 final-topm 容量锁定判别。当前结论是：训练时同款 DINO descriptor residual 与 RGB 高误差区域只有弱重叠，单纯把 token grid 从 `10x16` 提高到 `75x114` 没有改善 overlap；`RGB broad candidate -> DINO rerank` 的训练链路健康，但未证明 DINO selector 的独立价值。final-topm 能把点数压回接近 RGB broad control，但全图收益仍很薄，DINO-only 区域继续退化，因此 0003 的 DINO rerank 训练分支暂时收束。Phase 3 改为只测试 DINO prune-protect：DINO 不主动删除、不参与 densification，只在 RGB pruning high-score 候选中降低误删概率。
 
 ## 0001 Token 粒度复核
 
@@ -39,7 +39,7 @@
 | 2026-05-12 | Phase 2 | bicycle | `lambda=0.10` start_iter 7000/9000 30k matched pilot | `output/0003/dino_rgb_rerank_l010_start{7000,9000}_bicycle_30k_r_auto` | 省点约 10k，但 PSNR 低于 RGB broad control，未优于 l0.25 |
 | 2026-05-12 | Phase 2 | bicycle | 局部区域诊断：RGB broad fixed mask 下比较 RGB/DINO/DINO-only/intersection 区域 | `output/0003/diagnostics/bicycle_local_regions_rgb_broad_ref_l025_l010` | DINO-only top25 L1 上升、PSNR 下降；收益主要来自 RGB 高误差候选轨迹 |
 | 2026-05-12 | Phase 2 | bicycle | final-topm 容量锁定实现、620-step smoke 和 30k 判别 | `output/0003/dino_rgb_rerank_finaltopm_l{025,010}_*`；`output/0003/diagnostics/bicycle_local_regions_rgb_broad_ref_finaltopm` | 容量锁定有效，但全图收益很薄，DINO-only top25 仍退化 |
-| TBD | Phase 3 | TBD | DINO prune-protect pilot | TBD | 只在 rerank 成立后推进 |
+| 2026-05-13 | Phase 3 | bicycle | DINO prune-protect only 设计与配置 | `configs/experiments/0003_dino_descriptor_prune_protect_only.yaml` | 待跑；DINO 只保护 RGB high-prune candidate，不参与 densify 或主动 pruning |
 
 ## 2026-05-12 Phase 0：训练时同款 DINO Descriptor Residual 诊断
 
@@ -243,3 +243,39 @@ final-topm 局部区域诊断输出：
 - 容量锁定后没有出现稳定全图质量优势。l0.10 final-topm PSNR 小正，但 SSIM/LPIPS 基本贴近 RGB broad；l0.25 final-topm 则 PSNR 负向。
 - 局部诊断仍显示 DINO-only top-25 区域退化，且 RGB-only 与 DINO/RGB intersection 的改善幅度接近。这说明当前 DINO descriptor residual 没有成为有效的 densification selector。
 - 0003 DINO rerank 训练分支建议收束：保留诊断脚本、final-topm 实现和负结果证据；后续若继续 DINO，应转向新的监督目标或后验分析，而不是继续扫 lambda/start_iter/broad top-k。
+
+## 2026-05-13 Phase 3：DINO Prune-Protect Only 设计
+
+本轮不再让 DINO 参与增长，也不做 `DINO says redundant -> prune`。设计目标是验证一个更保守的问题：在 FastGS/RGB 已经认为某些 GS 多视角不一致、可能进入 final pruning 时，DINO descriptor residual 是否能保护一小部分语义/结构上仍有价值的 GS，减少误删。
+
+新增配置：
+
+- `configs/experiments/0003_dino_descriptor_prune_protect_only.yaml`
+
+关键参数：
+
+```text
+vfm_importance_mode = rgb_only
+vfm_weight = 0.0
+vfm_active_from_iter = 15001
+vfm_prune_protect_weight = 0.25
+vfm_prune_protect_mode = rgb_prune_candidate
+vfm_prune_protect_rgb_min_score = 0.90
+vfm_prune_protect_min_count = 5
+vfm_prune_protect_power = 2.0
+```
+
+含义：
+
+- 15k 之前的 densification 完全由 FastGS/RGB 决定；DINO 不参与增长。
+- 15k 之后才激活 DINO，因此只影响 18k/21k/24k/27k 的 final pruning score。
+- `rgb_prune_candidate` 只在 `rgb_pruning >= 0.90` 的候选中允许 DINO 保护，避免 DINO 对全局 pruning score 产生无锚点扰动。
+- 第一轮对照 high-res `bicycle` 的 5090 FastGS big baseline：25.2569 / 0.7553 / 0.2450，1,560,209 个 Gaussians，输出位于 `output/0002/phase0_5090_fastgs_big_baseline_fix1/mipnerf360_single_gpu0/bicycle/fastgs_big_densify100_30k_r_auto`。
+
+待跑顺序：
+
+1. 620-step preflight smoke：只验证配置和 cache preflight，不触发 DINO protection。
+2. 18.1k prune-path smoke：触发 iteration 18000 的 final pruning，确认 `rgb_prune_candidate` protection 分支真实运行。
+3. 30k pilot：与 high-res FastGS big bicycle baseline 对比 PSNR/SSIM/LPIPS、Gaussian count 和日志中的 pruning 行为。
+
+成功标准：相对 FastGS big baseline 至少 SSIM/LPIPS 不退，PSNR 不明显下降，Gaussian count 不显著增加；若只增加点数或保护导致剪不动但质量不升，则 prune-protect 分支收束为负结果。
