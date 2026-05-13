@@ -539,6 +539,11 @@ setsid bash -lc 'cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && C
   > output/0003/logs/dino_pruneprotect_only_bicycle_30k_r_auto.driver.log 2>&1 < /dev/null &
 ```
 
+2026-05-13 smoke 结果：
+
+- 620 preflight：`output/0003/dino_pruneprotect_only_bicycle_620_r_auto`，19.3464 / 0.4003 / 0.6293，66,232 GS。只验证配置与 cache preflight，不触发 final pruning。
+- 18.1k prune-path：`output/0003/dino_pruneprotect_only_bicycle_18100_r_auto`，25.0803 / 0.7510 / 0.2504，1,586,344 GS。iteration 18000 打出 `[VFM PRUNE PROTECT] iter=18000 mode=rgb_prune_candidate weight=0.2500 protected=1 rgb_candidates=1 mean=0.000000 max=0.132225`，证明 pruning-only protection 链路真实触发。
+
 ## 记录要求
 
 每轮实验必须更新：

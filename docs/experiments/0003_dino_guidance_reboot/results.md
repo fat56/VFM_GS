@@ -39,7 +39,9 @@
 | 2026-05-12 | Phase 2 | bicycle | `lambda=0.10` start_iter 7000/9000 30k matched pilot | `output/0003/dino_rgb_rerank_l010_start{7000,9000}_bicycle_30k_r_auto` | 省点约 10k，但 PSNR 低于 RGB broad control，未优于 l0.25 |
 | 2026-05-12 | Phase 2 | bicycle | 局部区域诊断：RGB broad fixed mask 下比较 RGB/DINO/DINO-only/intersection 区域 | `output/0003/diagnostics/bicycle_local_regions_rgb_broad_ref_l025_l010` | DINO-only top25 L1 上升、PSNR 下降；收益主要来自 RGB 高误差候选轨迹 |
 | 2026-05-12 | Phase 2 | bicycle | final-topm 容量锁定实现、620-step smoke 和 30k 判别 | `output/0003/dino_rgb_rerank_finaltopm_l{025,010}_*`；`output/0003/diagnostics/bicycle_local_regions_rgb_broad_ref_finaltopm` | 容量锁定有效，但全图收益很薄，DINO-only top25 仍退化 |
-| 2026-05-13 | Phase 3 | bicycle | DINO prune-protect only 设计与配置 | `configs/experiments/0003_dino_descriptor_prune_protect_only.yaml` | 待跑；DINO 只保护 RGB high-prune candidate，不参与 densify 或主动 pruning |
+| 2026-05-13 | Phase 3 | bicycle | DINO prune-protect only 设计与配置 | `configs/experiments/0003_dino_descriptor_prune_protect_only.yaml` | 已提交；DINO 只保护 RGB high-prune candidate，不参与 densify 或主动 pruning |
+| 2026-05-13 | Phase 3 | bicycle | prune-protect 620-step preflight smoke | `output/0003/dino_pruneprotect_only_bicycle_620_r_auto` | train/render/metrics 完成；只验证配置和 cache preflight |
+| 2026-05-13 | Phase 3 | bicycle | prune-protect 18.1k prune-path smoke | `output/0003/dino_pruneprotect_only_bicycle_18100_r_auto` | train/render/metrics 完成；iteration 18000 打出 protection 日志，链路真实触发 |
 
 ## 2026-05-12 Phase 0：训练时同款 DINO Descriptor Residual 诊断
 
@@ -272,10 +274,21 @@ vfm_prune_protect_power = 2.0
 - `rgb_prune_candidate` 只在 `rgb_pruning >= 0.90` 的候选中允许 DINO 保护，避免 DINO 对全局 pruning score 产生无锚点扰动。
 - 第一轮对照 high-res `bicycle` 的 5090 FastGS big baseline：25.2569 / 0.7553 / 0.2450，1,560,209 个 Gaussians，输出位于 `output/0002/phase0_5090_fastgs_big_baseline_fix1/mipnerf360_single_gpu0/bicycle/fastgs_big_densify100_30k_r_auto`。
 
-待跑顺序：
+执行状态：
 
-1. 620-step preflight smoke：只验证配置和 cache preflight，不触发 DINO protection。
-2. 18.1k prune-path smoke：触发 iteration 18000 的 final pruning，确认 `rgb_prune_candidate` protection 分支真实运行。
-3. 30k pilot：与 high-res FastGS big bicycle baseline 对比 PSNR/SSIM/LPIPS、Gaussian count 和日志中的 pruning 行为。
+| Run | 目的 | SSIM | PSNR | LPIPS | Gaussians | 关键日志 | 输出 |
+|---|---|---:|---:|---:|---:|---|---|
+| prune-protect 620 | preflight smoke，只验证配置和 cache preflight | 0.4003 | 19.3464 | 0.6293 | 66,232 | 未触发 final pruning，符合预期 | `output/0003/dino_pruneprotect_only_bicycle_620_r_auto` |
+| prune-protect 18.1k | prune-path smoke，触发 iteration 18000 final pruning | 0.7510 | 25.0803 | 0.2504 | 1,586,344 | `[VFM PRUNE PROTECT] iter=18000 ... protected=1 rgb_candidates=1 max=0.132225` | `output/0003/dino_pruneprotect_only_bicycle_18100_r_auto` |
+
+判断：
+
+- 620-step smoke 通过，说明配置解析、cache preflight、DINOv2 repo 加载入口和 high-res 1.6K 口径没有问题。
+- 18.1k smoke 在 iteration 18000 真实触发 DINO protection 分支，证明 `vfm_active_from_iter=15001` 与 `rgb_prune_candidate` 的后期 pruning-only 链路可运行。
+- 保护候选极少：`protected=1 / rgb_candidates=1`。这说明当前 `rgb_pruning >= 0.90` 约束非常保守，30k 正式 pilot 可能接近 no-op；但它仍是正确的第一轮安全判别。
+
+待跑：
+
+1. 30k pilot：与 high-res FastGS big bicycle baseline 对比 PSNR/SSIM/LPIPS、Gaussian count 和 18k/21k/24k/27k 的 protection 日志。
 
 成功标准：相对 FastGS big baseline 至少 SSIM/LPIPS 不退，PSNR 不明显下降，Gaussian count 不显著增加；若只增加点数或保护导致剪不动但质量不升，则 prune-protect 分支收束为负结果。

@@ -75,3 +75,5 @@ RGB/SSIM broad candidate -> DINO rerank/protect -> densify
 暂停扩多场景，也暂停相邻 lambda/start_iter 扫描。局部指标已经显示 DINO-only 区域退化，因此最后保留一个关键判别实验：显式 final top-m，让 DINO rerank 只改变候选排序但不增加最终 densification 容量。该实现、620-step smoke 和 30k 双卡判别已完成。final-topm 确实把点数压回接近 RGB broad control，但全图只有弱混合信号，DINO-only top25 仍然退化。0003 的 DINO rerank 训练分支应暂时收束为“当前 DINO descriptor residual 不适合作为 FastGS RGB 瓶颈 selector”。
 
 Phase 3 转向 DINO prune-protect only。新增 `configs/experiments/0003_dino_descriptor_prune_protect_only.yaml`，使用 `vfm_importance_mode=rgb_only`、`vfm_weight=0.0`、`vfm_active_from_iter=15001`，保证 DINO 不参与 15k 前 densification，只在后期 final pruning 中保护 `rgb_pruning >= 0.90` 的候选。这个实验回答的问题更窄：DINO 能否减少 RGB final pruning 的误删，而不是 DINO 能否发现应该删除或应该增长的位置。若该分支仍只带来点数增加、质量不升，DINOv2 descriptor 就不适合作为当前 FastGS per-Gaussian lifecycle signal。
+
+首轮 smoke 已完成：620-step preflight 跑通 train/render/metrics，18.1k prune-path 在 iteration 18000 打出 `[VFM PRUNE PROTECT]`，说明 DINO protection 分支真实进入 final pruning score。但日志中只有 `protected=1 / rgb_candidates=1`，这意味着当前 `rgb_pruning >= 0.90` 的 candidate gate 极窄，30k 正式结果可能接近 no-op。这个现象本身也有诊断价值：FastGS final-prune 的高分候选很少，DINO protect 在最安全约束下可能没有足够作用空间。
