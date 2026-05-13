@@ -84,6 +84,8 @@ Phase 3 prune-protect only 已完成 620-step preflight、18.1k prune-path smoke
 
 已新增 `rgb_prune_topk` proposal mode，并完成 high-res `bicycle` 18.1k 双卡 smoke。top-0.1% RGB pruning proposal 产生 `rgb_candidates=1786`、`protected=1682`，指标为 25.0515 / 0.7500 / 0.2513、1,587,362 点；top-1.0% 产生 `rgb_candidates=17813`、`protected=15446`，指标为 25.0689 / 0.7502 / 0.2515、1,584,250 点。这个结果把 Phase 3 的状态从“候选不足导致 no-op”推进到“候选足够，但正向收益未证明”。
 
+top-k 30k pilot 随后完成。topk001 为 25.2618 / 0.7555 / 0.2446、1,555,131 点，相对 FastGS big baseline +0.0049 PSNR、+0.00025 SSIM、LPIPS -0.00035、少 5,078 点；topk010 为 25.2761 / 0.7562 / 0.2445、1,553,872 点，相对 +0.0192 PSNR、+0.00090 SSIM、LPIPS -0.00045、少 6,337 点。四次 pruning step 均有足量保护，topk010 每步保护约 12k-15k 个 GS。
+
 ## Phase 3 结论
 
 当前 prune-protect 不是负向崩坏，而是近 no-op：
@@ -94,12 +96,13 @@ Phase 3 prune-protect only 已完成 620-step preflight、18.1k prune-path smoke
 - threshold 放宽无效：0.80/0.70 仍然各只有 1 个 18k candidate。
 - top-k proposal 有效扩大候选：top-0.1%/top-1.0% 分别有 1,786 / 17,813 个 18k candidate，DINO 保护 1,682 / 15,446 个。
 - top-k 18.1k 质量未崩但也未证明正向：topk010 的 PSNR 略高于 threshold gate 复核，SSIM/LPIPS 仍基本贴近同口径 18.1k smoke。
+- top-k 30k 在 `bicycle` 单场景弱正向：topk010 三项质量均略高于 FastGS big baseline，并且点数更少。
 
-因此这条分支目前仍不能作为“DINOv2 可辅助 pruning”的正证据。更准确的判断是：绝对阈值 gate 下 DINOv2 descriptor 没有足够决策权；top-k gate 能给它决策权，但需要 30k pilot 才能判断这个决策权是否有质量价值。
+因此这条分支现在有一个窄正证据：在 `bicycle` 上，`RGB pruning top-1% proposal -> DINO protect` 比 FastGS big baseline 和绝对阈值 protect 更好。但幅度很小，且 Phase 0/2 仍说明 DINO descriptor 与 RGB 瓶颈错位明显；不能据此直接扩全数据集或宣称 DINOv2 pruning 已成立。
 
 后续若继续 pruning 方向，应该先做候选空间诊断，而不是直接跑全数据集：
 
-- 放宽 RGB pruning proposal 时不要再扫绝对阈值；0.80/0.70 已经没有扩大候选。下一步应基于已实现的 `rgb_prune_topk` 跑 topk001/topk010 30k pilot。
+- 放宽 RGB pruning proposal 时不要再扫绝对阈值；0.80/0.70 已经没有扩大候选。下一步应基于 topk010 跑 1-2 个异质场景，例如 `stump` 或 `garden` 代表高容量/遮挡，`bonsai` 或 `room` 代表室内结构。
 - 保持 DINO 只做保护，不做主动删除。DINO-only densify 已显示错位，主动 prune 的风险更高。
 - 增加 per-view/区域可视化：检查被保护 GS 投影到哪些图像区域，是否落在边界、遮挡、细结构或 DINO/RGB 交集区域。
 - 若放宽后候选足够但指标仍贴 baseline，应把 DINOv2 descriptor 从 GS lifecycle signal 中移出，只保留为离线诊断或语义可视化工具。
