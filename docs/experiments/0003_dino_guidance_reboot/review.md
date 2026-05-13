@@ -82,6 +82,8 @@ Phase 3 prune-protect only 已完成 620-step preflight、18.1k prune-path smoke
 
 随后完成的 threshold gate 复核进一步排除了一个简单修复：把 `vfm_prune_protect_rgb_min_score` 从 0.90 放宽到 0.80/0.70 后，18.1k prune-path smoke 仍然只有 `protected=1 / rgb_candidates=1`。这说明 RGB pruning score 在当前实现中并不是一个适合用绝对阈值切 proposal 的连续空间；至少在 `bicycle` 18k，threshold gate 放宽不会带来更多候选。
 
+已新增 `rgb_prune_topk` proposal mode，并完成 high-res `bicycle` 18.1k 双卡 smoke。top-0.1% RGB pruning proposal 产生 `rgb_candidates=1786`、`protected=1682`，指标为 25.0515 / 0.7500 / 0.2513、1,587,362 点；top-1.0% 产生 `rgb_candidates=17813`、`protected=15446`，指标为 25.0689 / 0.7502 / 0.2515、1,584,250 点。这个结果把 Phase 3 的状态从“候选不足导致 no-op”推进到“候选足够，但正向收益未证明”。
+
 ## Phase 3 结论
 
 当前 prune-protect 不是负向崩坏，而是近 no-op：
@@ -90,12 +92,14 @@ Phase 3 prune-protect only 已完成 620-step preflight、18.1k prune-path smoke
 - 它没有显著改变质量：PSNR -0.0050，SSIM +0.0002，LPIPS -0.0000。
 - 它没有足够候选：18k/21k/24k/27k 的 RGB high-prune candidate 总数只有 5 个。
 - threshold 放宽无效：0.80/0.70 仍然各只有 1 个 18k candidate。
+- top-k proposal 有效扩大候选：top-0.1%/top-1.0% 分别有 1,786 / 17,813 个 18k candidate，DINO 保护 1,682 / 15,446 个。
+- top-k 18.1k 质量未崩但也未证明正向：topk010 的 PSNR 略高于 threshold gate 复核，SSIM/LPIPS 仍基本贴近同口径 18.1k smoke。
 
-因此这条分支不能作为“DINOv2 可辅助 pruning”的正证据。更准确的判断是：在最保守的 RGB proposal gate 下，DINOv2 descriptor 的保护信号无法获得足够决策权。
+因此这条分支目前仍不能作为“DINOv2 可辅助 pruning”的正证据。更准确的判断是：绝对阈值 gate 下 DINOv2 descriptor 没有足够决策权；top-k gate 能给它决策权，但需要 30k pilot 才能判断这个决策权是否有质量价值。
 
 后续若继续 pruning 方向，应该先做候选空间诊断，而不是直接跑全数据集：
 
-- 放宽 RGB pruning proposal 时不要再扫绝对阈值；0.80/0.70 已经没有扩大候选。下一步应改成每个 pruning step 固定 top-k/top-p RGB pruning candidate。
+- 放宽 RGB pruning proposal 时不要再扫绝对阈值；0.80/0.70 已经没有扩大候选。下一步应基于已实现的 `rgb_prune_topk` 跑 topk001/topk010 30k pilot。
 - 保持 DINO 只做保护，不做主动删除。DINO-only densify 已显示错位，主动 prune 的风险更高。
 - 增加 per-view/区域可视化：检查被保护 GS 投影到哪些图像区域，是否落在边界、遮挡、细结构或 DINO/RGB 交集区域。
 - 若放宽后候选足够但指标仍贴 baseline，应把 DINOv2 descriptor 从 GS lifecycle signal 中移出，只保留为离线诊断或语义可视化工具。

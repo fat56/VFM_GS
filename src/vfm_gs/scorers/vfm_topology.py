@@ -471,6 +471,40 @@ def _normalize_vfm_counts_by_support(vfm_counts, support_counts, args):
     return vfm_counts.to(torch.float32) * hit_ratio
 
 
+def _rgb_prune_topk_candidate(rgb_pruning, args):
+    scores = torch.nan_to_num(rgb_pruning.detach().to(torch.float32).reshape(-1), nan=0.0, posinf=0.0, neginf=0.0)
+    total = scores.numel()
+    candidate = torch.zeros_like(scores, dtype=torch.bool)
+    if total == 0:
+        return candidate.reshape_as(rgb_pruning).to(device=rgb_pruning.device)
+
+    topk = float(getattr(args, "vfm_prune_protect_rgb_topk", 0.001) or 0.0)
+    if topk <= 0.0:
+        return candidate.reshape_as(rgb_pruning).to(device=rgb_pruning.device)
+    if topk <= 1.0:
+        count = int(math.ceil(total * topk))
+    else:
+        count = int(round(topk))
+    count = max(1, min(total, count))
+
+    if count >= total:
+        candidate[:] = True
+    else:
+        selected = torch.topk(scores, count, largest=True).indices
+        candidate[selected] = True
+    return candidate.reshape_as(rgb_pruning).to(device=rgb_pruning.device)
+
+
+def _rgb_prune_candidate_mask(rgb_pruning, args, mode=None):
+    selected_mode = str(mode or getattr(args, "vfm_prune_protect_mode", "vfm") or "vfm").lower()
+    if selected_mode == "rgb_prune_candidate":
+        min_score = float(getattr(args, "vfm_prune_protect_rgb_min_score", 0.9) or 0.0)
+        return rgb_pruning.to(torch.float32) >= min_score
+    if selected_mode == "rgb_prune_topk":
+        return _rgb_prune_topk_candidate(rgb_pruning, args)
+    return None
+
+
 def _build_prune_protection(vfm_counts, rgb_pruning, args):
     weight = max(0.0, float(getattr(args, "vfm_prune_protect_weight", 0.0) or 0.0))
     if weight <= 0.0:
@@ -491,12 +525,13 @@ def _build_prune_protection(vfm_counts, rgb_pruning, args):
         return protect, weight
     if mode == "rgb_aware":
         return protect * (1.0 - rgb_pruning.to(torch.float32)), weight
-    if mode == "rgb_prune_candidate":
-        min_score = float(getattr(args, "vfm_prune_protect_rgb_min_score", 0.9) or 0.0)
-        rgb_candidate = rgb_pruning.to(torch.float32) >= min_score
+    if mode in ("rgb_prune_candidate", "rgb_prune_topk"):
+        rgb_candidate = _rgb_prune_candidate_mask(rgb_pruning, args, mode)
         return protect * rgb_candidate.to(torch.float32), weight
     raise ValueError(
-        "Unsupported vfm_prune_protect_mode {!r}. Available: vfm, rgb_aware, rgb_prune_candidate.".format(mode)
+        "Unsupported vfm_prune_protect_mode {!r}. Available: vfm, rgb_aware, rgb_prune_candidate, rgb_prune_topk.".format(
+            mode
+        )
     )
 
 
@@ -692,11 +727,8 @@ def compute_gaussian_score_fastgs_with_vfm(camlist, gaussians, pipe, bg, args, D
     if protection is not None:
         if not DENSIFY:
             protected = int((protection > 0).sum().item())
-            rgb_candidates = int(
-                (rgb_pruning.to(torch.float32) >= float(getattr(args, "vfm_prune_protect_rgb_min_score", 0.9) or 0.0))
-                .sum()
-                .item()
-            )
+            rgb_candidate_mask = _rgb_prune_candidate_mask(rgb_pruning, args)
+            rgb_candidates = int(rgb_candidate_mask.sum().item()) if rgb_candidate_mask is not None else 0
             print(
                 "[VFM PRUNE PROTECT] iter={} mode={} weight={:.4f} protected={} rgb_candidates={} mean={:.6f} max={:.6f}".format(
                     int(getattr(args, "current_iteration", 0) or 0),

@@ -612,6 +612,51 @@ CUDA_VISIBLE_DEVICES=1 python -m vfm_gs.cli.train \
 
 结论：把 `rgb_min_score` 从 0.90 放宽到 0.80/0.70 没有扩大 RGB pruning proposal。下一步应新增 top-k/top-p proposal mode，而不是继续扫绝对阈值。
 
+RGB top-k proposal 复核：
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0003_dino_descriptor_prune_protect_topk001.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0003/dino_pruneprotect_topk001_bicycle_18100_r_auto \
+  --eval \
+  --iterations 18100 \
+  --test_iterations 18100 \
+  --save_iterations 18100 \
+  --checkpoint_iterations 18100 \
+  -r -1
+
+CUDA_VISIBLE_DEVICES=1 python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0003_dino_descriptor_prune_protect_topk010.yaml \
+  -s datasets/mipnerf360/bicycle \
+  -i images \
+  -m output/0003/dino_pruneprotect_topk010_bicycle_18100_r_auto \
+  --eval \
+  --iterations 18100 \
+  --test_iterations 18100 \
+  --save_iterations 18100 \
+  --checkpoint_iterations 18100 \
+  -r -1
+```
+
+本轮实际使用 detached 双卡 wrapper：
+
+```bash
+setsid bash -lc 'cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && export PYTHONPATH="${PYTHONPATH:-}:$(pwd)/src" && CUDA_VISIBLE_DEVICES=0 python -m vfm_gs.cli.train --variant fastgs_big --config configs/experiments/0003_dino_descriptor_prune_protect_topk001.yaml -s datasets/mipnerf360/bicycle -i images -m output/0003/dino_pruneprotect_topk001_bicycle_18100_r_auto --eval --iterations 18100 --test_iterations 18100 --save_iterations 18100 --checkpoint_iterations 18100 -r -1 > output/0003/logs/dino_pruneprotect_topk001_bicycle_18100_r_auto.train.log 2>&1 && CUDA_VISIBLE_DEVICES=0 python -m vfm_gs.cli.render -m output/0003/dino_pruneprotect_topk001_bicycle_18100_r_auto --iteration -1 --skip_train --quiet > output/0003/logs/dino_pruneprotect_topk001_bicycle_18100_r_auto.render.log 2>&1 && CUDA_VISIBLE_DEVICES=0 python -m vfm_gs.cli.metrics -m output/0003/dino_pruneprotect_topk001_bicycle_18100_r_auto > output/0003/logs/dino_pruneprotect_topk001_bicycle_18100_r_auto.metrics.log 2>&1' > output/0003/logs/dino_pruneprotect_topk001_bicycle_18100_r_auto.driver.log 2>&1 < /dev/null &
+
+setsid bash -lc 'cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && export PYTHONPATH="${PYTHONPATH:-}:$(pwd)/src" && CUDA_VISIBLE_DEVICES=1 python -m vfm_gs.cli.train --variant fastgs_big --config configs/experiments/0003_dino_descriptor_prune_protect_topk010.yaml -s datasets/mipnerf360/bicycle -i images -m output/0003/dino_pruneprotect_topk010_bicycle_18100_r_auto --eval --iterations 18100 --test_iterations 18100 --save_iterations 18100 --checkpoint_iterations 18100 -r -1 > output/0003/logs/dino_pruneprotect_topk010_bicycle_18100_r_auto.train.log 2>&1 && CUDA_VISIBLE_DEVICES=1 python -m vfm_gs.cli.render -m output/0003/dino_pruneprotect_topk010_bicycle_18100_r_auto --iteration -1 --skip_train --quiet > output/0003/logs/dino_pruneprotect_topk010_bicycle_18100_r_auto.render.log 2>&1 && CUDA_VISIBLE_DEVICES=1 python -m vfm_gs.cli.metrics -m output/0003/dino_pruneprotect_topk010_bicycle_18100_r_auto > output/0003/logs/dino_pruneprotect_topk010_bicycle_18100_r_auto.metrics.log 2>&1' > output/0003/logs/dino_pruneprotect_topk010_bicycle_18100_r_auto.driver.log 2>&1 < /dev/null &
+```
+
+结果：
+
+- topk001：`output/0003/dino_pruneprotect_topk001_bicycle_18100_r_auto`，25.0515 / 0.7500 / 0.2513，1,587,362 GS。日志为 `protected=1682 / rgb_candidates=1786`。
+- topk010：`output/0003/dino_pruneprotect_topk010_bicycle_18100_r_auto`，25.0689 / 0.7502 / 0.2515，1,584,250 GS。日志为 `protected=15446 / rgb_candidates=17813`。
+
+结论：`rgb_prune_topk` 能稳定扩大 RGB pruning proposal，解决 threshold gate 的 no-op 问题。18.1k 指标没有崩坏，但也没有证明 DINO protect 的正向质量价值；下一轮应只做 topk001/topk010 的 30k pilot，不直接扩多场景。
+
 2026-05-13 smoke 结果：
 
 - 620 preflight：`output/0003/dino_pruneprotect_only_bicycle_620_r_auto`，19.3464 / 0.4003 / 0.6293，66,232 GS。只验证配置与 cache preflight，不触发 final pruning。
