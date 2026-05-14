@@ -55,7 +55,26 @@ DB/Tandt baseline 也已完成。DB 均值为 30.2331 / 0.9111 / 0.2397、646,60
 
 direct relative depth cache 与 30k pilot 也已完成。cache 为 `output/0002/vfm_cache/bicycle_depth_anything_v2s_depth`，194 entries，46.21MB，feature 为 `depth_anything_relative_depth`，validate 通过。Depth Anything V2-S direct depth prior 30k 为 25.1415 / 0.7434 / 0.2689、1,005,953 个 Gaussians、训练 128.82s。相对同 recipe matched baseline，这是 +0.0628 PSNR、+0.0063 SSIM、LPIPS -0.0090，Gaussian 数 -17,959，QCGI 约 +0.2345。
 
-当前决策：`depth_anything_depth_prior` 明显优于 depth-edge prior，成为 0002 当前主线。它已经在 `bicycle` 上给出三项质量正向且更少点数的信号；下一步扩到 `stump/bonsai/playroom/truck` 四个 pilot 场景。只有 direct depth 在多数 pilot 场景继续正向后，才进入全数据集训练验证；否则再回头考虑 `fastgs_big` recipe matched 接入、在线 render-depth residual 或局部 depth 区域指标。
+当前决策：`depth_anything_depth_prior` 明显优于 depth-edge prior，成为 0002 当前主线。它已经在 `bicycle` 上给出三项质量正向且更少点数的信号。2026-05-14 进一步确认：在 `fastgs_big + scene overrides` 下，`stump` 是有效正例，`bonsai` 是 PSNR 微负但 SSIM/LPIPS 正向的边界样本。必须注意，所有 fastgs_big prior 都要显式复用 phase 0 的 per-scene overrides；不带 overrides 的 run 会混入 recipe mismatch，不能作为方法负例。
+
+## 2026-05-14 fastgs_big direct depth prior 复验
+
+本轮先踩到了一个有价值的陷阱：直接用 `--variant fastgs_big` 跑 `stump/bonsai`，并不会自动带上 `scripts/run_0001_fastgs_big_eval.py` 中的场景超参。第一次 run 的 `stump` 使用了 `dense=0.001`、`grad_abs_thresh=0.0008`，而 phase 0 baseline 是 `dense=0.004`、`grad_abs_thresh=0.001`；`bonsai` 使用了 `highfeature_lr=0.005`、`grad_abs_thresh=0.0008`，而 phase 0 baseline 是 `highfeature_lr=0.02`、`grad_abs_thresh=0.0002`。这导致首次结果尤其是 bonsai 出现严重退化，必须标记为无效诊断。
+
+对齐 scene overrides 后，`depth_anything_depth_prior` 的 fastgs_big 结果变成：
+
+- `stump`: 27.1939 / 0.7895 / 0.2321、1,086,229 点；相对 phase 0 为 +0.0155 PSNR、+0.0027 SSIM、LPIPS -0.0072，GS +21,369，QCGI +0.0835。
+- `bonsai`: 33.0734 / 0.9546 / 0.1564、931,574 点；相对 phase 0 为 -0.0113 PSNR、+0.0008 SSIM、LPIPS -0.0034，GS +87,481，QCGI -0.0651。
+
+这改变了上一轮“fastgs_big 复现失败”的判断。更准确的说法是：Depth Anything direct depth 在 fastgs_big 下有弱正向信号，但收益不稳定。`stump` 的三项质量成立且 QCGI 为正；`bonsai` 只是感知/结构指标正向，PSNR 微负且容量增加接近 0.09M，QCGI 为负，不足以支持直接全数据集扩展。
+
+overlap 诊断也支持这个分层判断：
+
+- `stump` top-25% prior 区域 baseline L1 为 0.034971，高于非 prior 的 0.029035；candidate 全图 L1 改善 -0.000144，prior top-k 改善 -0.000280，大于非 prior 的 -0.000099。说明 `stump` 的收益确实更集中在 Depth Anything 关心的区域。
+- `bonsai` top-25% prior 区域也更难，0.016605 vs 0.011675；但 candidate L1 为 +0.000117，prior top-k 也是 +0.000106。也就是说，bonsai 的 SSIM/LPIPS 正向没有对应到 RGB L1 改善，应视为边界样本。
+- 两个场景的 prior/RGB 高误差 IoU 仍低：top-25% 为 0.1790/0.2030，top-10% 为 0.0818/0.0978。Depth Anything dense depth prior 比 DINO token-edge 更贴近几何难区，但仍不是 RGB loss 的直接替代信号。
+
+当前下一步不应直接跑全数据集。更合理的是补 `playroom/truck` 两个跨数据集场景，用同样的 scene override 纪律和 overlap 诊断判断是否存在室内/道路场景互补。如果 `playroom/truck` 至少一个清晰正向，0002 再考虑扩展；如果二者都只是薄收益或负向，应暂停 direct prior 主线，转向在线 depth residual 或 RGB-gated depth prior。
 
 ## 2026-05-12 指标瓶颈诊断
 
@@ -86,4 +105,4 @@ direct relative depth cache 与 30k pilot 也已完成。cache 为 `output/0002/
 
 ## 下一步
 
-扩展 direct relative depth prior 到 `stump/bonsai/playroom/truck` 四个 high-res 30k pilot 场景，但每个场景必须同步跑 `diagnose_prior_overlap.py`。如果 direct depth 在某场景全图指标正向，同时 prior top-k 区域更难且改善集中在 prior 区域，再进入下一轮；如果全图正向但 prior 区域不对应，先把它记录为训练轨迹偶然收益，不急着扩全数据集。长任务继续用 detached 方式运行；每轮实验完成后更新文档、commit 并 push；当前只有本服务器改动，按用户要求不再强制先 `git pull`。
+补 `playroom/truck` 两个 high-res 30k pilot，并严格带上 phase 0 runner 的 scene overrides。每个场景必须同步跑 `diagnose_prior_overlap.py`。如果 direct depth 在某场景全图指标正向，同时 prior top-k 区域更难且改善集中在 prior 区域，再进入下一轮；如果全图正向但 prior 区域不对应，先把它记录为训练轨迹偶然收益，不急着扩全数据集。长任务继续用 detached 方式运行；每轮实验完成后更新文档、commit 并 push；当前只有本服务器改动，按用户要求不再强制先 `git pull`。

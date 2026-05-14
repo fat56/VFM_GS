@@ -485,7 +485,7 @@ python -m vfm_gs.cli.metrics \
 
 2026-05-11 direct relative depth prior `bicycle` 30k 结果：25.1415 / 0.7434 / 0.2689、1,005,953 个 Gaussians、训练 128.82s；相对 matched baseline 为 +0.0628 PSNR、+0.0063 SSIM、LPIPS -0.0090，Gaussian 数 -17,959。该变体成为 0002 当前主线。
 
-后续 pilot 场景按同一模板替换 dataset/output/cache 路径：
+后续 pilot 场景按同一模板替换 dataset/output/cache 路径。注意：如果对照对象是 Phase 0 FastGS big baseline，必须同时复制 `scripts/run_0001_fastgs_big_eval.py` 中的 per-scene overrides；只写 `--variant fastgs_big` 不会自动带上这些场景超参。
 
 ```bash
 HF_HUB_DISABLE_XET=1 python -m vfm_gs.cli.build_vfm_cache \
@@ -505,18 +505,52 @@ python -m vfm_gs.cli.validate_vfm_cache \
   --backend depth_anything_v2
 
 setsid bash -lc 'cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && CUDA_VISIBLE_DEVICES=0 python -m vfm_gs.cli.train \
-  --variant fastgs_baseline \
+  --variant fastgs_big \
   --config configs/experiments/0002_depth_anything_depth_prior_densify_only_topk025_weighted_i050.yaml \
   -s datasets/mipnerf360/stump \
   -i images \
-  -m output/0002/depth_anything_depth_prior_stump_30k_r_auto \
+  -m output/0002/depth_anything_depth_prior_fastgs_big_stump_30k_scene_override_r_auto \
   --eval \
   --iterations 30000 \
   --test_iterations 30000 \
   --save_iterations 30000 \
   --checkpoint_iterations 30000 \
   --vfm_cache_dir output/0002/vfm_cache/stump_depth_anything_v2s_depth \
-  -r -1' > output/0002/debug_logs/depth_anything_depth_prior_stump_30k_train.log 2>&1 < /dev/null &
+  --dense 0.004 \
+  --grad_abs_thresh 0.001 \
+  -r -1' > output/0002/debug_logs/depth_anything_depth_prior_fastgs_big_stump_30k_scene_override_train.log 2>&1 < /dev/null &
+```
+
+已验证的 MipNeRF360 scene overrides：
+
+| 场景 | 必须附加参数 |
+|---|---|
+| stump | `--dense 0.004 --grad_abs_thresh 0.001` |
+| bonsai | `--highfeature_lr 0.02 --grad_abs_thresh 0.0002` |
+
+2026-05-14 的有效 fastgs_big direct depth prior 输出：
+
+- `stump`: `output/0002/depth_anything_depth_prior_fastgs_big_stump_30k_scene_override_r_auto`
+- `bonsai`: `output/0002/depth_anything_depth_prior_fastgs_big_bonsai_30k_scene_override_r_auto`
+
+对应 overlap 诊断：
+
+```bash
+.venv/bin/python scripts/diagnose_prior_overlap.py \
+  --baseline-model output/0002/phase0_5090_fastgs_big_baseline_fix1/mipnerf360_gpu0/stump/fastgs_big_densify100_30k_r_auto \
+  --candidate-model output/0002/depth_anything_depth_prior_fastgs_big_stump_30k_scene_override_r_auto \
+  --prior-cache output/0002/vfm_cache/stump_depth_anything_v2s_depth \
+  --output-dir output/0002/diagnostics/stump_depth_prior_fastgs_big_scene_override_overlap \
+  --topk 0.25 \
+  --rgb-topk 0.25
+
+.venv/bin/python scripts/diagnose_prior_overlap.py \
+  --baseline-model output/0002/phase0_5090_fastgs_big_baseline_fix1/mipnerf360_gpu1/bonsai/fastgs_big_densify100_30k_r_auto \
+  --candidate-model output/0002/depth_anything_depth_prior_fastgs_big_bonsai_30k_scene_override_r_auto \
+  --prior-cache output/0002/vfm_cache/bonsai_depth_anything_v2s_depth \
+  --output-dir output/0002/diagnostics/bonsai_depth_prior_fastgs_big_scene_override_overlap \
+  --topk 0.25 \
+  --rgb-topk 0.25
 ```
 
 必须对照：

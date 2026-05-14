@@ -6,7 +6,7 @@ Phase 0 已开始。首次双卡 high-res FastGS big baseline 在 MipNeRF360 首
 
 已完成第一轮 rasterizer 修补、5000-step debug 验证、MipNeRF360 `bicycle` 单场景 30k 验收，以及 MipNeRF360/DB/Tandt 三个公开数据集全 13 场景 high-res FastGS big train/render/metrics。三数据集结果与 0001/4090D 同口径 high-res FastGS big baseline 基本贴合。当前结论：5090 环境 Phase 0 通过。
 
-Depth Anything V2-S dense depth cache/backend 已完成最小接入，并通过 high-res `bicycle` 620-step smoke、depth-edge 30k pilot 和 direct relative depth 30k pilot。30k matched `fastgs_baseline + densify100` 对照下，depth-edge prior 是弱混合信号；direct relative depth prior 则三项质量正向且 Gaussian 数更少。当前结论：0002 暂以 `depth_anything_depth_prior` 作为主线，下一步扩展到 `stump/bonsai/playroom/truck` pilot。
+Depth Anything V2-S dense depth cache/backend 已完成最小接入，并通过 high-res `bicycle` 620-step smoke、depth-edge 30k pilot、direct relative depth 30k pilot，以及 `fastgs_big + scene overrides` 下的 `stump/bonsai` 复验。30k matched `fastgs_baseline + densify100` 对照下，depth-edge prior 是弱混合信号；direct relative depth prior 在 `bicycle` 上三项质量正向且 Gaussian 数更少。`fastgs_big` 对齐场景超参后，`stump` 三项质量正向、点数小幅增加，`bonsai` PSNR 微负但 SSIM/LPIPS 正向、点数增加。当前结论：`depth_anything_depth_prior` 仍保留为 0002 主线，但必须严格复用 phase 0 的 per-scene overrides；下一步扩展到 `playroom/truck` 之前继续同步做 overlap 诊断。
 
 ## Phase 0：5090 FastGS Big Baseline 复核
 
@@ -159,6 +159,67 @@ Smoke 与 matched baseline：
 
 判断：`depth_anything_depth_prior` 成为 0002 当前主线。下一步扩到 `stump/bonsai/playroom/truck` 四个 pilot 场景，先验证 direct depth 是否跨场景成立；如果至少多数场景相对 matched baseline 正向，再进入三个公开数据集全场景训练验证。
 
+### 2026-05-14 Depth Anything V2-S direct depth fastgs_big stump/bonsai pilot
+
+本轮目标是把 `depth_anything_depth_prior` 从 `fastgs_baseline + densify100` matched recipe 推到用户要求的 `fastgs_big + 1.6K` 正式口径。这里有一个重要修正：第一次直接用 `--variant fastgs_big` 调度 `stump/bonsai` 时没有带上 phase 0 runner 的 per-scene overrides，因此该结果只作为无效诊断，不进入方法结论。有效复验必须显式对齐：
+
+- `stump`: `--dense 0.004 --grad_abs_thresh 0.001`
+- `bonsai`: `--highfeature_lr 0.02 --grad_abs_thresh 0.0002`
+
+Cache 状态：
+
+| 场景 | cache | entries | 体积 | validate |
+|---|---|---:|---:|---|
+| stump | `output/0002/vfm_cache/stump_depth_anything_v2s_depth` | 125 | 31MB | 通过 |
+| bonsai | `output/0002/vfm_cache/bonsai_depth_anything_v2s_depth` | 292 | 55MB | 通过 |
+
+主结果：
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数 | 训练时间 | 相对 phase 0 | QCGI | 输出路径 |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---|
+| stump | Phase 0 FastGS big | 27.1784 | 0.7868 | 0.2393 | 1,064,860 | 131.01s | - | - | `output/0002/phase0_5090_fastgs_big_baseline_fix1/mipnerf360_gpu0/stump/fastgs_big_densify100_30k_r_auto` |
+| stump | Depth Anything direct depth prior, scene override | 27.1939 | 0.7895 | 0.2321 | 1,086,229 | 137.45s | +0.0155 / +0.0027 / -0.0072, GS +21,369 | +0.0835 | `output/0002/depth_anything_depth_prior_fastgs_big_stump_30k_scene_override_r_auto` |
+| bonsai | Phase 0 FastGS big | 33.0846 | 0.9538 | 0.1598 | 844,093 | 145.59s | - | - | `output/0002/phase0_5090_fastgs_big_baseline_fix1/mipnerf360_gpu1/bonsai/fastgs_big_densify100_30k_r_auto` |
+| bonsai | Depth Anything direct depth prior, scene override | 33.0734 | 0.9546 | 0.1564 | 931,574 | 159.83s | -0.0113 / +0.0008 / -0.0034, GS +87,481 | -0.0651 | `output/0002/depth_anything_depth_prior_fastgs_big_bonsai_30k_scene_override_r_auto` |
+
+无效诊断记录：
+
+| 场景 | 无效原因 | PSNR | SSIM | LPIPS | Gaussian 数 | 输出路径 |
+|---|---|---:|---:|---:|---:|---|
+| stump | 未带 phase 0 `stump` overrides；`dense=0.001`、`grad_abs_thresh=0.0008` 与 baseline 不一致 | 27.0123 | 0.7805 | 0.2424 | 1,038,269 | `output/0002/depth_anything_depth_prior_fastgs_big_stump_30k_r_auto` |
+| bonsai | 未带 phase 0 `bonsai` overrides；`highfeature_lr=0.005`、`grad_abs_thresh=0.0008` 与 baseline 不一致 | 31.8038 | 0.9438 | 0.1847 | 341,303 | `output/0002/depth_anything_depth_prior_fastgs_big_bonsai_30k_r_auto` |
+
+判断：对齐 scene overrides 后，`stump` 从“负结果”恢复为小幅正向，说明上一轮失败主要混入了 recipe mismatch。`bonsai` 不是清晰正例：PSNR 微负，SSIM/LPIPS 正向，点数增加 87,481，QCGI 为负。当前不能直接扩全数据集；下一步应先补 `playroom/truck` 两个跨数据集场景，且每个场景必须同时报告 overlap 诊断。
+
+### 2026-05-14 fastgs_big stump/bonsai prior-overlap 诊断
+
+诊断对象为对齐 scene overrides 后的 `stump/bonsai` direct depth prior。输出：
+
+- `output/0002/diagnostics/stump_depth_prior_fastgs_big_scene_override_overlap`
+- `output/0002/diagnostics/stump_depth_prior_fastgs_big_scene_override_overlap_topk10`
+- `output/0002/diagnostics/bonsai_depth_prior_fastgs_big_scene_override_overlap`
+- `output/0002/diagnostics/bonsai_depth_prior_fastgs_big_scene_override_overlap_topk10`
+
+Top-k 25%：
+
+| 场景 | baseline L1 | prior top-k L1 | non-prior L1 | prior/RGB IoU | prior/RGB recall | candidate ΔL1 | prior top-k ΔL1 | non-prior ΔL1 | 结论 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| stump | 0.030519 | 0.034971 | 0.029035 | 0.1790 | 0.3009 | -0.000144 | -0.000280 | -0.000099 | prior 区域更难，改善更集中在 prior top-k |
+| bonsai | 0.012907 | 0.016605 | 0.011675 | 0.2030 | 0.3328 | +0.000117 | +0.000106 | +0.000121 | prior 区域更难，但 RGB L1 没改善；全图正向主要来自 SSIM/LPIPS |
+
+Top-k 10%：
+
+| 场景 | prior top-k L1 | non-prior L1 | prior/RGB IoU | prior/RGB recall | candidate ΔL1 | prior top-k ΔL1 | non-prior ΔL1 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| stump | 0.037759 | 0.029715 | 0.0818 | 0.1502 | -0.000144 | -0.000256 | -0.000132 |
+| bonsai | 0.016663 | 0.012490 | 0.0978 | 0.1733 | +0.000117 | +0.000043 | +0.000125 |
+
+判断：
+
+- Depth Anything direct depth top-k 在两个场景上都覆盖更难区域，但与 RGB 高误差区域的 IoU 仍不高；它更像“几何难区 prior”，不是直接的 RGB loss surrogate。
+- `stump` 的质量正向与 L1 诊断一致，prior top-k 区域改善更大。
+- `bonsai` 的 SSIM/LPIPS 改善没有对应到 L1 改善，且点数增加明显；应作为边界样本，而不是 0002 成功证据。
+
 ### 2026-05-12 Prior/RGB 瓶颈重叠诊断
 
 为避免继续盲目扩展 prior，新增 `scripts/diagnose_prior_overlap.py`，直接读取已有 render/gt、`cameras.json` 和 VFM cache，检查 prior top-k 区域是否也是 baseline RGB 高误差区域，并统计候选方法的 L1 改善是否集中在 prior 区域。该脚本不依赖 CUDA，可作为每个新 prior 的轻量体检；但它对 DINO descriptor cache 不能直接复现训练时的 render-vs-GT cosine residual，DINO token-edge 行只能作为 2D prior 对照。
@@ -202,8 +263,8 @@ Top-k 10% 结果：
 | 2026-05-11 | MipNeRF360 | bicycle | FastGS matched 30k, `fastgs_baseline + densify100` | 25.0787 | 0.7370 | 0.2779 | 1,023,912 | 124.78s | `output/0002/fastgs_baseline_bicycle_30k_densify100_r_auto` | Depth Anything edge-prior 的公平对照 |
 | 2026-05-11 | MipNeRF360 | bicycle | Depth Anything V2-S depth-edge prior 30k | 25.0764 | 0.7387 | 0.2744 | 1,063,311 | 131.21s | `output/0002/depth_anything_edge_prior_bicycle_30k_r_auto` | 弱混合信号：SSIM/LPIPS 小幅正向，PSNR 微负，点数 +39,399 |
 | 2026-05-11 | MipNeRF360 | bicycle | Depth Anything V2-S direct depth prior 30k | 25.1415 | 0.7434 | 0.2689 | 1,005,953 | 128.82s | `output/0002/depth_anything_depth_prior_bicycle_30k_r_auto` | 当前主线：三项质量正向，且点数少于 matched baseline |
-| TBD | MipNeRF360 | stump | Depth Anything dense prior | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| TBD | MipNeRF360 | bonsai | Depth Anything dense prior | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| 2026-05-14 | MipNeRF360 | stump | Depth Anything V2-S direct depth prior, `fastgs_big + scene override` | 27.1939 | 0.7895 | 0.2321 | 1,086,229 | 137.45s | `output/0002/depth_anything_depth_prior_fastgs_big_stump_30k_scene_override_r_auto` | 相对 Phase 0 三项正向，GS +21,369；有效 fastgs_big 正例 |
+| 2026-05-14 | MipNeRF360 | bonsai | Depth Anything V2-S direct depth prior, `fastgs_big + scene override` | 33.0734 | 0.9546 | 0.1564 | 931,574 | 159.83s | `output/0002/depth_anything_depth_prior_fastgs_big_bonsai_30k_scene_override_r_auto` | PSNR 微负、SSIM/LPIPS 正向，GS +87,481；边界样本 |
 | TBD | DB | playroom | Depth Anything dense prior | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 | TBD | Tandt | truck | Depth Anything dense prior | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 
@@ -236,3 +297,4 @@ Top-k 10% 结果：
 | 2026-05-11 | rasterizer fix1 debug 验证 | MipNeRF360 `bicycle` high-res FastGS big | 原失败点已通过 5000-step debug 验证；未产出 render/metrics | 继续正常 30k baseline；若通过再恢复双卡/全数据集 baseline |
 | 2026-05-11 | rasterizer fix1 30k 单场景验收 | MipNeRF360 `bicycle` high-res FastGS big | 训练、渲染、指标全部完成，且与 0001 high-res bicycle baseline 基本一致 | 恢复 MipNeRF360 双卡全场景 baseline；Depth Anything 仍等待全场景 Phase 0 |
 | 2026-05-11 | 非 detached 补跑中断 | MipNeRF360 `treehill` / `bonsai` | `treehill` 训练目录存在但 PLY 截断，render 报 `early end-of-file`；`bonsai` 训练停在半程，无 30000 checkpoint | 将不完整目录归档到 `output/0002/debug_artifacts/interrupted_mipnerf360_20260511_200949/`，改用 `setsid/nohup` detached 补跑并通过 |
+| 2026-05-14 | fastgs_big direct depth prior 首次扩场景 | MipNeRF360 `stump` / `bonsai` | 直接 `--variant fastgs_big` 未带 phase 0 runner 的 per-scene overrides，导致 `stump`/`bonsai` 与 baseline recipe 不一致，指标不可用于方法结论 | 已用 scene overrides 重新补跑并写入正式结果；后续所有 fastgs_big prior 必须显式复用 `scripts/run_0001_fastgs_big_eval.py` 的场景超参 |

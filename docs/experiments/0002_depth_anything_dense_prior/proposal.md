@@ -31,7 +31,7 @@ Depth Anything 这类 dense monocular depth prior 能提供比 COLMAP sparse edg
 - 打分器：`vfm_topology_scorer`
 - 新后端候选：
   - `depth_anything_depth_edge_prior`：已实现并通过 high-res `bicycle` 620-step smoke 与 30k pilot；30k matched 对照为弱混合信号。
-  - `depth_anything_depth_prior`：已实现并完成 high-res `bicycle` 30k，三项质量正向且点数少于 matched baseline；当前作为 0002 主线。
+  - `depth_anything_depth_prior`：已实现并完成 high-res `bicycle` 30k，三项质量正向且点数少于 matched baseline；`fastgs_big + scene overrides` 下 `stump` 为三项质量正向，`bonsai` 为 PSNR 微负但 SSIM/LPIPS 正向的边界样本；当前作为 0002 主线，但不直接扩全数据集。
   - `depth_anything_depth_residual` / `depth_anything_depth_edge_residual`：保留为在线 residual 后续方向，尚未实现。
 - 0001 对照：
   - `dinov2_descriptor_cosine + top-k25 + weighted i0.50 + vfm_weight=0.0`
@@ -47,7 +47,7 @@ Depth Anything 这类 dense monocular depth prior 能提供比 COLMAP sparse edg
 - `configs/experiments/0002_depth_anything_depth_edge_prior_densify_only_topk025_weighted_i050.yaml`
 - `configs/experiments/0002_depth_anything_depth_prior_densify_only_topk025_weighted_i050.yaml`
 
-当前优先验证 depth-edge prior，因为它能离线缓存并直接复用现有 prior-style scorer，变量少于在线 depth residual。
+当前优先级已转为 direct relative depth prior。depth-edge prior 只保留为弱混合信号对照，不继续扩展。
 
 ## Phase 0：5090 FastGS Big Baseline 复核
 
@@ -76,8 +76,8 @@ Phase 0 覆盖三个公开数据集所有场景：
 |---|---|---|---|---|
 | phase 0 | MipNeRF360/DB/Tandt | 全场景 | 原图，`-r -1`，1.6K 自动缩放 | 5090 FastGS big baseline 复核 |
 | smoke | MipNeRF360 | bicycle | 原图，`-r -1`，620 step | 验证 cache/build/train/render/metrics 链路 |
-| pilot | MipNeRF360 | bicycle/stump/bonsai | 原图，`-r -1`，30k | 覆盖常规、几何收益和容量压力场景 |
-| pilot | DB/Tandt | playroom/truck | 原图，`-r -1`，30k | 检查 dense depth 是否在室内和 Tandt 负例上互补 |
+| pilot | MipNeRF360 | bicycle/stump/bonsai | 原图，`-r -1`，30k | 已完成；stump 有效正向，bonsai 边界正向 |
+| pilot | DB/Tandt | playroom/truck | 原图，`-r -1`，30k | 下一轮；检查 dense depth 是否在室内和 Tandt 负例上互补 |
 | full | MipNeRF360/DB/Tandt | 全场景 | 原图，`-r -1`，30k | 仅在 pilot 多场景有效后推进 |
 
 ## 指标
@@ -192,8 +192,10 @@ Depth Anything 第一阶段成功标准：
 
 2026-05-11：`depth_anything_depth_prior` high-res `bicycle` 30k pilot 完成。相对 matched `fastgs_baseline + densify100` baseline，结果为 +0.0628 PSNR、+0.0063 SSIM、LPIPS -0.0090，Gaussian 数 -17,959；这是 0002 首个明确正向 direct depth signal。
 
+2026-05-14：`depth_anything_depth_prior` 在 `fastgs_big + scene overrides` 下完成 `stump/bonsai` 复验。`stump` 相对 phase 0 为 +0.0155 PSNR、+0.0027 SSIM、LPIPS -0.0072，GS +21,369；`bonsai` 为 -0.0113 PSNR、+0.0008 SSIM、LPIPS -0.0034，GS +87,481。该结果保留 direct depth 主线，但不支持直接全数据集扩展。所有后续 fastgs_big prior 必须显式带上 phase 0 scene overrides。
+
 初始决策：0002 只推进 dense depth prior，不再扩展 COLMAP sparse depth-edge proxy。
 
 ## 下一步
 
-扩展 `depth_anything_depth_prior` 到 `stump/bonsai/playroom/truck` 四个 high-res 30k pilot 场景。若多数 pilot 场景相对 matched baseline 正向，再推进三个公开数据集全场景；若失败，再考虑 `fastgs_big` recipe 下的 matched 接入或在线 depth residual。长任务继续使用 detached 方式运行；每轮完成后更新文档、commit 并 push。
+扩展 `depth_anything_depth_prior` 到 `playroom/truck` 两个 high-res 30k pilot 场景，并同步跑 prior/RGB overlap 诊断。若跨数据集场景继续出现清晰正向，再推进更大范围验证；若只剩薄收益或负向，再考虑 RGB-gated depth prior、在线 depth residual 或暂停 0002 主线。长任务继续使用 detached 方式运行；每轮完成后更新文档、commit 并 push。
