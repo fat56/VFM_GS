@@ -532,6 +532,8 @@ setsid bash -lc 'cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && C
 
 - `stump`: `output/0002/depth_anything_depth_prior_fastgs_big_stump_30k_scene_override_r_auto`
 - `bonsai`: `output/0002/depth_anything_depth_prior_fastgs_big_bonsai_30k_scene_override_r_auto`
+- `playroom`: `output/0002/depth_anything_depth_prior_fastgs_big_playroom_30k_scene_override_r_auto`
+- `truck`: `output/0002/depth_anything_depth_prior_fastgs_big_truck_30k_scene_override_r_auto`
 
 对应 overlap 诊断：
 
@@ -551,6 +553,72 @@ setsid bash -lc 'cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && C
   --output-dir output/0002/diagnostics/bonsai_depth_prior_fastgs_big_scene_override_overlap \
   --topk 0.25 \
   --rgb-topk 0.25
+```
+
+DB/Tandt scene overrides：
+
+| 场景 | 必须附加参数 |
+|---|---|
+| playroom | `--highfeature_lr 0.0015 --dense 0.003 --mult 0.7 --grad_abs_thresh 0.0005` |
+| truck | `--highfeature_lr 0.04 --grad_abs_thresh 0.0004 --mult 0.7` |
+
+`playroom/truck` cache 与训练命令：
+
+```bash
+HF_HUB_DISABLE_XET=1 CUDA_VISIBLE_DEVICES=0 python -m vfm_gs.cli.build_vfm_cache \
+  -s datasets/tandt_db/db/playroom \
+  -i images \
+  -o output/0002/vfm_cache/playroom_depth_anything_v2s_depth \
+  --backend depth_anything_v2 \
+  --max_width 1600 \
+  --device cuda \
+  --depth_anything_feature depth \
+  --storage npz_uint8
+
+setsid bash -lc 'cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && CUDA_VISIBLE_DEVICES=0 python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0002_depth_anything_depth_prior_densify_only_topk025_weighted_i050.yaml \
+  -s datasets/tandt_db/db/playroom \
+  -i images \
+  -m output/0002/depth_anything_depth_prior_fastgs_big_playroom_30k_scene_override_r_auto \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0002/vfm_cache/playroom_depth_anything_v2s_depth \
+  --highfeature_lr 0.0015 \
+  --dense 0.003 \
+  --mult 0.7 \
+  --grad_abs_thresh 0.0005 \
+  -r -1' > output/0002/debug_logs/depth_anything_depth_prior_fastgs_big_playroom_30k_scene_override_train.log 2>&1 < /dev/null &
+
+HF_HUB_DISABLE_XET=1 CUDA_VISIBLE_DEVICES=1 python -m vfm_gs.cli.build_vfm_cache \
+  -s datasets/tandt_db/tandt/truck \
+  -i images \
+  -o output/0002/vfm_cache/truck_depth_anything_v2s_depth \
+  --backend depth_anything_v2 \
+  --max_width 1600 \
+  --device cuda \
+  --depth_anything_feature depth \
+  --storage npz_uint8
+
+setsid bash -lc 'cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && CUDA_VISIBLE_DEVICES=1 python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0002_depth_anything_depth_prior_densify_only_topk025_weighted_i050.yaml \
+  -s datasets/tandt_db/tandt/truck \
+  -i images \
+  -m output/0002/depth_anything_depth_prior_fastgs_big_truck_30k_scene_override_r_auto \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0002/vfm_cache/truck_depth_anything_v2s_depth \
+  --highfeature_lr 0.04 \
+  --grad_abs_thresh 0.0004 \
+  --mult 0.7 \
+  -r -1' > output/0002/debug_logs/depth_anything_depth_prior_fastgs_big_truck_30k_scene_override_train.log 2>&1 < /dev/null &
 ```
 
 必须对照：

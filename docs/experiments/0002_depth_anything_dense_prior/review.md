@@ -76,6 +76,21 @@ overlap 诊断也支持这个分层判断：
 
 当前下一步不应直接跑全数据集。更合理的是补 `playroom/truck` 两个跨数据集场景，用同样的 scene override 纪律和 overlap 诊断判断是否存在室内/道路场景互补。如果 `playroom/truck` 至少一个清晰正向，0002 再考虑扩展；如果二者都只是薄收益或负向，应暂停 direct prior 主线，转向在线 depth residual 或 RGB-gated depth prior。
 
+## 2026-05-14 playroom/truck 跨数据集 pilot
+
+跨数据集补验已完成，仍然严格使用 phase 0 scene overrides。
+
+`playroom` direct depth prior 为 30.8242 / 0.9144 / 0.2331、606,454 点，训练 100.72s。相对 phase 0 FastGS big 的 30.7181 / 0.9148 / 0.2357、589,253 点，是 +0.1061 PSNR、-0.0004 SSIM、LPIPS -0.0026，GS +17,201，QCGI +0.0936。它是薄正例：PSNR/LPIPS 与 QCGI 成立，但 SSIM 没有转正。
+
+`truck` direct depth prior 为 25.9496 / 0.8870 / 0.1405、523,809 点，训练 107.51s。相对 phase 0 FastGS big 的 26.0998 / 0.8896 / 0.1385、625,803 点，是 -0.1502 PSNR、-0.0026 SSIM、LPIPS +0.0021，GS -101,994，QCGI -0.2124。它是明确负例，少点不能弥补质量下降。
+
+overlap 诊断进一步解释了分裂：
+
+- `playroom` 的 prior top-k 区域确实更难：top-25% L1 0.024015 vs non-prior 0.017727；但 candidate 的 L1 改善更偏非-prior，prior top-k 为 -0.000093，non-prior 为 -0.000168。它说明 playroom 收益不完全来自精确命中 depth top-k 区域，更像 densification 轨迹扰动带来的薄收益。
+- `truck` 的 prior top-k 区域不是 RGB 高误差区域：top-25% prior L1 0.022478 低于 non-prior 0.030195；top-10 prior/RGB IoU 只有 0.0391，recall 0.0741。candidate 全图 L1 变差 +0.000730，top-10 prior 区域还变差 +0.000946。这个结果和全图指标负向一致。
+
+至此，direct depth prior 的 pilot 结论是局部成立但不稳：`bicycle/stump/playroom` 有正向或薄正向信号，`bonsai/truck` 是边界或负例。它不满足“多场景稳定后扩全数据集”的标准。下一步如果继续 0002，不应继续同配置铺全场景，而应改策略：优先考虑 RGB-gated depth prior，只在 RGB 高误差候选区域内用 Depth Anything 做二次权重；或者做在线 render-vs-GT depth residual，让 prior 直接对应当前重建误差，而不是离线 GT depth top-k prior。
+
 ## 2026-05-12 指标瓶颈诊断
 
 为回应“这些 prior 是否真的命中当前重建瓶颈”的问题，新增 `scripts/diagnose_prior_overlap.py` 并先在 high-res `bicycle` 上补充验证。该诊断不重新训练，只读取已有 baseline/candidate render、GT、`cameras.json` 和 VFM cache，比较 prior top-k 与 RGB 高误差 top-k 的重叠，并看候选方法的 L1 改善是否真的落在 prior 区域。DINO token-edge 行只是 2D prior 对照，不能替代 0001 真实 descriptor residual 诊断。
@@ -105,4 +120,4 @@ overlap 诊断也支持这个分层判断：
 
 ## 下一步
 
-补 `playroom/truck` 两个 high-res 30k pilot，并严格带上 phase 0 runner 的 scene overrides。每个场景必须同步跑 `diagnose_prior_overlap.py`。如果 direct depth 在某场景全图指标正向，同时 prior top-k 区域更难且改善集中在 prior 区域，再进入下一轮；如果全图正向但 prior 区域不对应，先把它记录为训练轨迹偶然收益，不急着扩全数据集。长任务继续用 detached 方式运行；每轮实验完成后更新文档、commit 并 push；当前只有本服务器改动，按用户要求不再强制先 `git pull`。
+暂停同配置 direct depth prior 的全数据集扩展。下一步若继续 0002，应先设计 RGB-gated depth prior 或在线 depth residual 的小实验，并选择 `stump/playroom/truck` 作为三点诊断：`stump` 检查是否保住有效正例，`playroom` 检查薄收益是否更集中到 prior 区域，`truck` 检查是否能避免把 depth prior 放到非 RGB 瓶颈区域。长任务继续用 detached 方式运行；每轮实验完成后更新文档、commit 并 push；当前只有本服务器改动，按用户要求不再强制先 `git pull`。

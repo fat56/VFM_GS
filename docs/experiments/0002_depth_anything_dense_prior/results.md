@@ -6,7 +6,7 @@ Phase 0 已开始。首次双卡 high-res FastGS big baseline 在 MipNeRF360 首
 
 已完成第一轮 rasterizer 修补、5000-step debug 验证、MipNeRF360 `bicycle` 单场景 30k 验收，以及 MipNeRF360/DB/Tandt 三个公开数据集全 13 场景 high-res FastGS big train/render/metrics。三数据集结果与 0001/4090D 同口径 high-res FastGS big baseline 基本贴合。当前结论：5090 环境 Phase 0 通过。
 
-Depth Anything V2-S dense depth cache/backend 已完成最小接入，并通过 high-res `bicycle` 620-step smoke、depth-edge 30k pilot、direct relative depth 30k pilot，以及 `fastgs_big + scene overrides` 下的 `stump/bonsai` 复验。30k matched `fastgs_baseline + densify100` 对照下，depth-edge prior 是弱混合信号；direct relative depth prior 在 `bicycle` 上三项质量正向且 Gaussian 数更少。`fastgs_big` 对齐场景超参后，`stump` 三项质量正向、点数小幅增加，`bonsai` PSNR 微负但 SSIM/LPIPS 正向、点数增加。当前结论：`depth_anything_depth_prior` 仍保留为 0002 主线，但必须严格复用 phase 0 的 per-scene overrides；下一步扩展到 `playroom/truck` 之前继续同步做 overlap 诊断。
+Depth Anything V2-S dense depth cache/backend 已完成最小接入，并通过 high-res `bicycle` 620-step smoke、depth-edge 30k pilot、direct relative depth 30k pilot，以及 `fastgs_big + scene overrides` 下的 `stump/bonsai/playroom/truck` pilot。30k matched `fastgs_baseline + densify100` 对照下，depth-edge prior 是弱混合信号；direct relative depth prior 在 `bicycle` 上三项质量正向且 Gaussian 数更少。`fastgs_big` 对齐场景超参后，`stump` 三项质量正向，`playroom` PSNR/LPIPS 正向但 SSIM 微负，`bonsai` PSNR 微负但 SSIM/LPIPS 正向且 QCGI 为负，`truck` 三项质量负向。当前结论：`depth_anything_depth_prior` 有局部互补信号，但不支持直接扩全数据集；若继续，应转向 RGB-gated depth prior 或在线 depth residual，而不是继续同配置铺场景。
 
 ## Phase 0：5090 FastGS Big Baseline 复核
 
@@ -220,6 +220,40 @@ Top-k 10%：
 - `stump` 的质量正向与 L1 诊断一致，prior top-k 区域改善更大。
 - `bonsai` 的 SSIM/LPIPS 改善没有对应到 L1 改善，且点数增加明显；应作为边界样本，而不是 0002 成功证据。
 
+### 2026-05-14 Depth Anything V2-S direct depth playroom/truck pilot
+
+本轮补齐跨数据集 pilot，并继续使用 `fastgs_big + scene overrides`：
+
+- `playroom`: `--highfeature_lr 0.0015 --dense 0.003 --mult 0.7 --grad_abs_thresh 0.0005`
+- `truck`: `--highfeature_lr 0.04 --grad_abs_thresh 0.0004 --mult 0.7`
+
+Cache 状态：
+
+| 场景 | cache | entries | validate |
+|---|---|---:|---|
+| playroom | `output/0002/vfm_cache/playroom_depth_anything_v2s_depth` | 225 | 通过 |
+| truck | `output/0002/vfm_cache/truck_depth_anything_v2s_depth` | 251 | 通过 |
+
+主结果：
+
+| 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数 | 训练时间 | 相对 phase 0 | QCGI | 输出路径 |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---|
+| playroom | Phase 0 FastGS big | 30.7181 | 0.9148 | 0.2357 | 589,253 | 96.09s | - | - | `output/0002/phase0_5090_fastgs_big_baseline_fix1/db/playroom/fastgs_big_densify100_30k_r_auto` |
+| playroom | Depth Anything direct depth prior, scene override | 30.8242 | 0.9144 | 0.2331 | 606,454 | 100.72s | +0.1061 / -0.0004 / -0.0026, GS +17,201 | +0.0936 | `output/0002/depth_anything_depth_prior_fastgs_big_playroom_30k_scene_override_r_auto` |
+| truck | Phase 0 FastGS big | 26.0998 | 0.8896 | 0.1385 | 625,803 | 108.74s | - | - | `output/0002/phase0_5090_fastgs_big_baseline_fix1/tandt/truck/fastgs_big_densify100_30k_r_auto` |
+| truck | Depth Anything direct depth prior, scene override | 25.9496 | 0.8870 | 0.1405 | 523,809 | 107.51s | -0.1502 / -0.0026 / +0.0021, GS -101,994 | -0.2124 | `output/0002/depth_anything_depth_prior_fastgs_big_truck_30k_scene_override_r_auto` |
+
+Overlap 诊断：
+
+| 场景 | top-k | baseline L1 | prior top-k L1 | non-prior L1 | prior/RGB IoU | prior/RGB recall | candidate ΔL1 | prior top-k ΔL1 | non-prior ΔL1 | 结论 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| playroom | 25% | 0.019299 | 0.024015 | 0.017727 | 0.2149 | 0.3473 | -0.000150 | -0.000093 | -0.000168 | prior 区域更难，但 L1 改善更偏非-prior |
+| playroom | 10% | 0.019299 | 0.027192 | 0.018422 | 0.1132 | 0.1987 | -0.000150 | -0.000071 | -0.000158 | top-10 同样不是改善集中区 |
+| truck | 25% | 0.028265 | 0.022478 | 0.030195 | 0.1108 | 0.1970 | +0.000730 | +0.000587 | +0.000777 | prior 区域反而更容易，全图变差 |
+| truck | 10% | 0.028265 | 0.024621 | 0.028670 | 0.0391 | 0.0741 | +0.000730 | +0.000946 | +0.000706 | prior/RGB 错位严重，prior top-k 变差更大 |
+
+判断：`playroom` 是可保留的跨数据集薄正例，但它的 L1 改善没有集中在 Depth Anything top-k 区域，收益可能来自 densification 轨迹扰动而非精确命中几何 prior。`truck` 是明确负例：Depth Anything top-k 甚至不是 RGB 高误差区，top-10 IoU 只有 0.039，candidate 还在 prior top-k 区域变差更多。至此，direct depth prior 在 `bicycle/stump/playroom` 上有信号，在 `bonsai/truck` 上不稳或负向；不建议进入全数据集训练验证。
+
 ### 2026-05-12 Prior/RGB 瓶颈重叠诊断
 
 为避免继续盲目扩展 prior，新增 `scripts/diagnose_prior_overlap.py`，直接读取已有 render/gt、`cameras.json` 和 VFM cache，检查 prior top-k 区域是否也是 baseline RGB 高误差区域，并统计候选方法的 L1 改善是否集中在 prior 区域。该脚本不依赖 CUDA，可作为每个新 prior 的轻量体检；但它对 DINO descriptor cache 不能直接复现训练时的 render-vs-GT cosine residual，DINO token-edge 行只能作为 2D prior 对照。
@@ -265,8 +299,8 @@ Top-k 10% 结果：
 | 2026-05-11 | MipNeRF360 | bicycle | Depth Anything V2-S direct depth prior 30k | 25.1415 | 0.7434 | 0.2689 | 1,005,953 | 128.82s | `output/0002/depth_anything_depth_prior_bicycle_30k_r_auto` | 当前主线：三项质量正向，且点数少于 matched baseline |
 | 2026-05-14 | MipNeRF360 | stump | Depth Anything V2-S direct depth prior, `fastgs_big + scene override` | 27.1939 | 0.7895 | 0.2321 | 1,086,229 | 137.45s | `output/0002/depth_anything_depth_prior_fastgs_big_stump_30k_scene_override_r_auto` | 相对 Phase 0 三项正向，GS +21,369；有效 fastgs_big 正例 |
 | 2026-05-14 | MipNeRF360 | bonsai | Depth Anything V2-S direct depth prior, `fastgs_big + scene override` | 33.0734 | 0.9546 | 0.1564 | 931,574 | 159.83s | `output/0002/depth_anything_depth_prior_fastgs_big_bonsai_30k_scene_override_r_auto` | PSNR 微负、SSIM/LPIPS 正向，GS +87,481；边界样本 |
-| TBD | DB | playroom | Depth Anything dense prior | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| TBD | Tandt | truck | Depth Anything dense prior | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| 2026-05-14 | DB | playroom | Depth Anything V2-S direct depth prior, `fastgs_big + scene override` | 30.8242 | 0.9144 | 0.2331 | 606,454 | 100.72s | `output/0002/depth_anything_depth_prior_fastgs_big_playroom_30k_scene_override_r_auto` | PSNR/LPIPS 正向，SSIM 微负，GS +17,201；薄正例 |
+| 2026-05-14 | Tandt | truck | Depth Anything V2-S direct depth prior, `fastgs_big + scene override` | 25.9496 | 0.8870 | 0.1405 | 523,809 | 107.51s | `output/0002/depth_anything_depth_prior_fastgs_big_truck_30k_scene_override_r_auto` | 三项质量负向，虽少 101,994 点；明确负例 |
 
 ## 结果表
 
