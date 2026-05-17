@@ -621,6 +621,61 @@ setsid bash -lc 'cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && C
   -r -1' > output/0002/debug_logs/depth_anything_depth_prior_fastgs_big_truck_30k_scene_override_train.log 2>&1 < /dev/null &
 ```
 
+RGB-gated depth rerank pilot（l0.25，已完成，下一轮建议把 `vfm_dino_rerank_lambda` 降到 0.10）：
+
+```bash
+setsid bash -lc 'cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && CUDA_VISIBLE_DEVICES=0 python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0002_depth_anything_depth_prior_rgb_rerank_final_topm_l025.yaml \
+  -s datasets/mipnerf360/stump \
+  -i images \
+  -m output/0002/depth_anything_depth_prior_rgb_rerank_final_topm_l025_fastgs_big_stump_30k_scene_override_r_auto \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0002/vfm_cache/stump_depth_anything_v2s_depth \
+  --dense 0.004 \
+  --grad_abs_thresh 0.001 \
+  -r -1' > output/0002/debug_logs/depth_anything_depth_prior_rgb_rerank_final_topm_l025_fastgs_big_stump_30k_scene_override_train.log 2>&1 < /dev/null &
+
+setsid bash -lc 'cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && CUDA_VISIBLE_DEVICES=1 python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0002_depth_anything_depth_prior_rgb_rerank_final_topm_l025.yaml \
+  -s datasets/tandt_db/tandt/truck \
+  -i images \
+  -m output/0002/depth_anything_depth_prior_rgb_rerank_final_topm_l025_fastgs_big_truck_30k_scene_override_r_auto \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0002/vfm_cache/truck_depth_anything_v2s_depth \
+  --highfeature_lr 0.04 \
+  --grad_abs_thresh 0.0004 \
+  --mult 0.7 \
+  -r -1' > output/0002/debug_logs/depth_anything_depth_prior_rgb_rerank_final_topm_l025_fastgs_big_truck_30k_scene_override_train.log 2>&1 < /dev/null &
+
+setsid bash -lc 'cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && CUDA_VISIBLE_DEVICES=1 python -m vfm_gs.cli.train \
+  --variant fastgs_big \
+  --config configs/experiments/0002_depth_anything_depth_prior_rgb_rerank_final_topm_l025.yaml \
+  -s datasets/tandt_db/db/playroom \
+  -i images \
+  -m output/0002/depth_anything_depth_prior_rgb_rerank_final_topm_l025_fastgs_big_playroom_30k_scene_override_r_auto \
+  --eval \
+  --iterations 30000 \
+  --test_iterations 30000 \
+  --save_iterations 30000 \
+  --checkpoint_iterations 30000 \
+  --vfm_cache_dir output/0002/vfm_cache/playroom_depth_anything_v2s_depth \
+  --highfeature_lr 0.0015 \
+  --dense 0.003 \
+  --mult 0.7 \
+  --grad_abs_thresh 0.0005 \
+  -r -1' > output/0002/debug_logs/depth_anything_depth_prior_rgb_rerank_final_topm_l025_fastgs_big_playroom_30k_scene_override_train.log 2>&1 < /dev/null &
+```
+
 必须对照：
 
 - Phase 0 FastGS big baseline。
