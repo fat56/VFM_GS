@@ -133,6 +133,14 @@ overlap 诊断进一步解释了分裂：
 
 分场景看，`playroom` 和 `truck` 是正例：`playroom` 为 +0.0472 PSNR、+0.00017 SSIM、LPIPS +0.00028、GS -1,184，QCGI +0.0492；`truck` 为 +0.0120 PSNR、-0.00009 SSIM、LPIPS +0.00085、GS -2,016，QCGI +0.0060。`stump` 仍是负例：PSNR -0.0324、SSIM -0.0011、LPIPS +0.0013、GS -12,558，QCGI -0.0607。这个结果说明 prune-side auxiliary 比 RGB rerank 稳得多，确实能把一部分场景拉回正向，同时不再制造大规模增点；但它还不是全局稳定解，下一步应继续收紧 protect weight / RGB topk，再决定是否扩场景。
 
+## 2026-05-18 prune-protect weight015 sweep
+
+这一轮只收紧 `vfm_prune_protect_weight` 到 0.15，保持 `rgb_prune_topk=0.010` 不变，目的是判断问题到底在保护强度，还是在 proposal 空间。
+
+结果是：`stump` 比 `topk010` 更接近 baseline 但仍未转正，`playroom` 明显退化，`truck` 基本持平但 LPIPS 变差。三场景平均为 27.9508 / 0.8634 / 0.2054、758,336 点，相对 Phase 0 为 -0.0480 PSNR、-0.0004 SSIM、LPIPS +0.00095、GS -1,636，平均 QCGI -0.0601。相比上一轮 `topk010`，这是更差的均值，说明单纯降权重不是解法。
+
+更重要的是，`stump` 的改进和 `playroom` 的退化方向完全相反，说明当前主要矛盾更像是 proposal 分布，而不是保护强度本身。下一步应该优先改 `rgb_prune_topk`，而不是继续下调 `vfm_prune_protect_weight`。
+
 ## 2026-05-12 指标瓶颈诊断
 
 为回应“这些 prior 是否真的命中当前重建瓶颈”的问题，新增 `scripts/diagnose_prior_overlap.py` 并先在 high-res `bicycle` 上补充验证。该诊断不重新训练，只读取已有 baseline/candidate render、GT、`cameras.json` 和 VFM cache，比较 prior top-k 与 RGB 高误差 top-k 的重叠，并看候选方法的 L1 改善是否真的落在 prior 区域。DINO token-edge 行只是 2D prior 对照，不能替代 0001 真实 descriptor residual 诊断。
@@ -162,4 +170,4 @@ overlap 诊断进一步解释了分裂：
 
 ## 下一步
 
-暂停同配置 direct depth prior、top50 RGB-gated depth rerank、broad035 和 start9000 方案的继续扩展。当前最值得继续的是 prune-protect-only 的细扫：更窄的 protect weight / RGB topk，再视结果决定是否扩到更多场景。长任务继续用 tmux/detached 方式运行；每轮实验完成后更新文档、commit 并 push；当前只有本服务器改动，按用户要求不再强制先 `git pull`。
+暂停同配置 direct depth prior、top50 RGB-gated depth rerank、broad035 和 start9000 方案的继续扩展。当前最值得继续的是 prune-protect-only 的细扫：`weight015` 已证明单独降权重不够，下一步应优先做更窄的 RGB top-k，再视结果决定是否扩到更多场景。长任务继续用 tmux/detached 方式运行；每轮实验完成后更新文档、commit 并 push；当前只有本服务器改动，按用户要求不再强制先 `git pull`。

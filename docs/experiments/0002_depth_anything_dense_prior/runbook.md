@@ -953,3 +953,62 @@ tmux new-session -d -s 0002pp_truck bash -lc 'cd /home/m/project/ltm/VFM_GS && s
   --config configs/experiments/0002_depth_anything_depth_prior_prune_protect_topk010.yaml \
   --vfm-cache-template output/0002/vfm_cache/{scene}_depth_anything_v2s_depth'
 ```
+
+## Depth Anything prune-protect weight015 sweep
+
+前一轮 prune-side auxiliary 已经证明后期辅助裁剪比 rerank 稳得多，但 stump 仍是负例。下一轮只收紧保护强度，不改 proposal 入口：
+
+- `vfm_prune_protect_weight = 0.15`
+- `vfm_prune_protect_mode = rgb_prune_topk`
+- `vfm_prune_protect_rgb_topk = 0.010`
+- `vfm_prune_protect_min_count = 5`
+- `vfm_prune_protect_power = 2.0`
+
+配置：`configs/experiments/0002_depth_anything_depth_prior_prune_protect_weight015_topk010.yaml`
+
+```bash
+tmux new-session -d -s 0002pp_w015_stump bash -lc 'cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && CUDA_VISIBLE_DEVICES=0 python scripts/run_0001_fastgs_big_eval.py \
+  --dataset-name mipnerf360 \
+  --dataset-root datasets/mipnerf360 \
+  --output-root output/0002/depth_anything_depth_prior_prune_protect_weight015_topk010/mipnerf360 \
+  --scenes stump \
+  --train-images images \
+  --iterations 30000 \
+  --resolution -1 \
+  --variant fastgs_big \
+  --densification-interval 100 \
+  --method-name depth_anything_depth_prior_prune_protect_weight015_topk010 \
+  --run-name fastgs_big_30k_scene_override_r_auto \
+  --config configs/experiments/0002_depth_anything_depth_prior_prune_protect_weight015_topk010.yaml \
+  --vfm-cache-template output/0002/vfm_cache/{scene}_depth_anything_v2s_depth'
+
+tmux new-session -d -s 0002pp_w015_playroom bash -lc 'cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && CUDA_VISIBLE_DEVICES=1 python scripts/run_0001_fastgs_big_eval.py \
+  --dataset-name db \
+  --dataset-root datasets/tandt_db/db \
+  --output-root output/0002/depth_anything_depth_prior_prune_protect_weight015_topk010/db \
+  --scenes playroom \
+  --train-images images \
+  --iterations 30000 \
+  --resolution -1 \
+  --variant fastgs_big \
+  --densification-interval 100 \
+  --method-name depth_anything_depth_prior_prune_protect_weight015_topk010 \
+  --run-name fastgs_big_30k_scene_override_r_auto \
+  --config configs/experiments/0002_depth_anything_depth_prior_prune_protect_weight015_topk010.yaml \
+  --vfm-cache-template output/0002/vfm_cache/{scene}_depth_anything_v2s_depth'
+
+tmux new-session -d -s 0002pp_w015_truck bash -lc 'cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && CUDA_VISIBLE_DEVICES=0 python scripts/run_0001_fastgs_big_eval.py \
+  --dataset-name tandt \
+  --dataset-root datasets/tandt_db/tandt \
+  --output-root output/0002/depth_anything_depth_prior_prune_protect_weight015_topk010/tandt \
+  --scenes truck \
+  --train-images images \
+  --iterations 30000 \
+  --resolution -1 \
+  --variant fastgs_big \
+  --densification-interval 100 \
+  --method-name depth_anything_depth_prior_prune_protect_weight015_topk010 \
+  --run-name fastgs_big_30k_scene_override_r_auto \
+  --config configs/experiments/0002_depth_anything_depth_prior_prune_protect_weight015_topk010.yaml \
+  --vfm-cache-template output/0002/vfm_cache/{scene}_depth_anything_v2s_depth'
+```
