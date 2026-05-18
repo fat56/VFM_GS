@@ -49,8 +49,9 @@ Depth Anything 这类 dense monocular depth prior 能提供比 COLMAP sparse edg
 - `configs/experiments/0002_depth_anything_depth_prior_rgb_rerank_final_topm_l025.yaml`
 - `configs/experiments/0002_depth_anything_depth_prior_rgb_rerank_final_topm_l010.yaml`
 - `configs/experiments/0002_depth_anything_depth_prior_rgb_rerank_final_topm_l005.yaml`
+- `configs/experiments/0002_depth_anything_depth_prior_rgb_rerank_final_topm_l010_broad035.yaml`
 
-当前优先级已转为 direct relative depth prior，并在此基础上继续尝试 RGB-gated rerank 的保守扫描。depth-edge prior 只保留为弱混合信号对照，不继续扩展。
+当前优先级已转为 direct relative depth prior，并在此基础上尝试 RGB-gated rerank 的保守扫描。depth-edge prior 只保留为弱混合信号对照，不继续扩展。2026-05-18 的 `l0.10 + broad035` 说明缩小 RGB broad candidate 能压低部分容量代价，但仍不能让 `stump/playroom/truck` 同时稳定正向，也不能解决 `truck` depth prior 与 RGB 瓶颈错位。
 
 ## Phase 0：5090 FastGS Big Baseline 复核
 
@@ -205,8 +206,10 @@ Depth Anything 第一阶段成功标准：
 
 2026-05-17：`RGB broad candidate -> depth prior rerank -> final-topm` l0.05 pilot 完成。`playroom` 从 l0.10 的 PSNR 负向翻回正向，但 `truck` 再次 PSNR 负向，且三场景 QCGI 仍为负；单纯继续降低 rerank strength 不能解决 broad candidate 与 depth prior 错位问题。
 
+2026-05-18：`RGB broad candidate -> depth prior rerank -> final-topm` l0.10 broad035 pilot 完成。相对 top50 broad，`stump` 继续三项质量正向且 Gaussian 增量从约 +323k 降到 +256k，`playroom/truck` 的 Gaussian 增量也略降；但 `playroom` PSNR/SSIM 轻微负向，`truck` PSNR 负向，三场景 QCGI 仍为负。缩窄 candidate 入口只能缓和容量问题，不能把 depth prior 变成稳定的 RGB residual surrogate。
+
 初始决策：0002 只推进 dense depth prior，不再扩展 COLMAP sparse depth-edge proxy。
 
 ## 下一步
 
-暂停同配置 `depth_anything_depth_prior` 和当前 `RGB broad top50 -> depth rerank -> final-topm` 的全数据集扩展。若继续 0002，优先缩小 `vfm_rgb_broad_topk`、延后 depth prior 介入，或转向在线 depth residual / 后期辅助裁剪，用 `stump/playroom/truck` 三个场景做小规模验证。长任务继续使用 detached 方式运行；每轮完成后更新文档、commit 并 push。
+暂停同配置 `depth_anything_depth_prior`、`RGB broad top50 -> depth rerank -> final-topm` 和当前 `broad035` 的全数据集扩展。若继续 0002，优先做延后 depth prior 介入、在线 render-vs-prior depth residual，或后期辅助裁剪；继续用 `stump/playroom/truck` 三个场景做小规模验证。长任务继续使用 detached 方式运行；每轮完成后更新文档、commit 并 push。

@@ -793,6 +793,13 @@ setsid bash -lc 'cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && C
 - `truck`: 26.0655 / 0.8900 / 0.1328、850,023 GS、129.97s，QCGI -0.5939。
 - 结论：l0.05 让 `playroom` PSNR 翻正，但 `truck` 再次 PSNR 负向；下一步应改扫更窄 `vfm_rgb_broad_topk` 或后期介入，不继续单纯降 lambda。
 
+`l0.10 broad035` 结果摘要：
+
+- `stump`: 27.2526 / 0.7917 / 0.2301、1,321,343 GS、127.29s，QCGI -0.5075。
+- `playroom`: 30.7168 / 0.9144 / 0.2313、734,580 GS、110.58s，QCGI -0.2691。
+- `truck`: 26.0930 / 0.8900 / 0.1331、838,229 GS、127.29s，QCGI -0.5211。
+- 结论：比 top50 更像节流阀，但还是不能让三场景同时稳定正向。
+
 必须对照：
 
 - Phase 0 FastGS big baseline。
