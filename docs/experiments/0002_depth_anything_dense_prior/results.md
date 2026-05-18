@@ -6,7 +6,7 @@ Phase 0 已开始。首次双卡 high-res FastGS big baseline 在 MipNeRF360 首
 
 已完成第一轮 rasterizer 修补、5000-step debug 验证、MipNeRF360 `bicycle` 单场景 30k 验收，以及 MipNeRF360/DB/Tandt 三个公开数据集全 13 场景 high-res FastGS big train/render/metrics。三数据集结果与 0001/4090D 同口径 high-res FastGS big baseline 基本贴合。当前结论：5090 环境 Phase 0 通过。
 
-Depth Anything V2-S dense depth cache/backend 已完成最小接入，并通过 high-res `bicycle` 620-step smoke、depth-edge 30k pilot、direct relative depth 30k pilot，以及 `fastgs_big + scene overrides` 下的 `stump/bonsai/playroom/truck` pilot。30k matched `fastgs_baseline + densify100` 对照下，depth-edge prior 是弱混合信号；direct relative depth prior 在 `bicycle` 上三项质量正向且 Gaussian 数更少。`fastgs_big` 对齐场景超参后，`stump` 三项质量正向，`playroom` PSNR/LPIPS 正向但 SSIM 微负，`bonsai` PSNR 微负但 SSIM/LPIPS 正向且 QCGI 为负，`truck` 三项质量负向。2026-05-17 新增 RGB-gated depth rerank final-topm l0.25：它把 `truck` 从 direct depth 的明确负例翻成三项质量正向，但三场景 QCGI 均为负，且 `stump/playroom` 退化为混合或负向。当前结论：`depth_anything_depth_prior` 有局部互补信号，但不支持直接扩全数据集；RGB-gated 方向值得继续做更保守权重扫描，不能直接作为默认方案。
+Depth Anything V2-S dense depth cache/backend 已完成最小接入，并通过 high-res `bicycle` 620-step smoke、depth-edge 30k pilot、direct relative depth 30k pilot，以及 `fastgs_big + scene overrides` 下的 `stump/bonsai/playroom/truck` pilot。30k matched `fastgs_baseline + densify100` 对照下，depth-edge prior 是弱混合信号；direct relative depth prior 在 `bicycle` 上三项质量正向且 Gaussian 数更少。`fastgs_big` 对齐场景超参后，`stump` 三项质量正向，`playroom` PSNR/LPIPS 正向但 SSIM 微负，`bonsai` PSNR 微负但 SSIM/LPIPS 正向且 QCGI 为负，`truck` 三项质量负向。2026-05-17 的 RGB-gated depth rerank 完成 l0.25/l0.10/l0.05：l0.25 把 `truck` 从 direct depth 的明确负例翻成三项质量正向，但三场景 QCGI 均为负；l0.10 把 `stump/truck` 拉回三项质量正向，但 `playroom` 仍负向；l0.05 让 `playroom` PSNR 转正，但 `truck` 又回到 PSNR 负向。当前结论：`depth_anything_depth_prior` 有局部互补信号，但不支持直接扩全数据集；当前 top50 RGB-gated depth rerank 也不能直接作为默认方案，下一步应改入口而不是继续单纯降 lambda。
 
 ## Phase 0：5090 FastGS Big Baseline 复核
 
@@ -286,6 +286,66 @@ Top-k 10% prior-overlap 诊断：
 
 判断：RGB-gated rerank 确实修复了 `truck` 的 direct depth 错位：全图指标三项正向，L1 也从 direct depth 的 +0.000730 变为 -0.000399。但它并没有成为稳定方案。`stump` 的 prior top-k 区域改善仍在，但非 prior 区域变差更大，导致 PSNR 和全图 L1 退化；`playroom` 的 prior top-k 区域明显变差，说明 l0.25 rerank 改坏了原本的薄正例。三场景 Gaussian 都明显增加，QCGI 全负。下一轮应优先把 rerank 权重降到 l0.10，必要时再缩小 RGB broad top-k 或延后 `vfm_active_from_iter`，目标是保留 `truck` 修复而不过度改写 `stump/playroom` 的增长轨迹。
 
+### 2026-05-17 RGB-gated depth rerank final-topm l0.10 pilot
+
+这一轮把同一机制收紧到 `vfm_dino_rerank_lambda=0.10`。结果说明，降低权重确实把 `stump` 拉回到三项质量正向，也让 `truck` 维持三项质量正向，但对 `playroom` 还不够，且容量代价仍然太高。
+
+正式三场景结果：
+
+| 场景 | Phase 0 FastGS big | RGB-gated depth rerank final-topm l0.10 | ΔPSNR / ΔSSIM / ΔLPIPS / ΔGS | QCGI | 输出 |
+|---|---:|---:|---:|---:|---|
+| stump | 27.1784 / 0.7868 / 0.2393, 1,064,860 GS | 27.2355 / 0.7923 / 0.2258, 1,387,811 GS, 153.56s | +0.0571 / +0.0055 / -0.0135 / +322,951 | -0.7581 | `output/0002/depth_anything_depth_prior_rgb_rerank_final_topm_l010_fastgs_big_stump_30k_scene_override_r_auto` |
+| playroom | 30.7181 / 0.9148 / 0.2357, 589,253 GS | 30.5282 / 0.9142 / 0.2326, 746,312 GS, 113.08s | -0.1899 / -0.0006 / -0.0031 / +157,059 | -0.5136 | `output/0002/depth_anything_depth_prior_rgb_rerank_final_topm_l010_fastgs_big_playroom_30k_scene_override_r_auto` |
+| truck | 26.0998 / 0.8896 / 0.1385, 625,803 GS | 26.1558 / 0.8916 / 0.1313, 842,083 GS, 129.17s | +0.0560 / +0.0020 / -0.0072 / +216,280 | -0.4325 | `output/0002/depth_anything_depth_prior_rgb_rerank_final_topm_l010_fastgs_big_truck_30k_scene_override_r_auto` |
+
+Top-k 25% prior-overlap 诊断：
+
+| 场景 | baseline L1 | prior top-k L1 | non-prior L1 | prior/RGB IoU | prior/RGB recall | candidate ΔL1 | prior top-k ΔL1 | non-prior ΔL1 | 输出 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| stump | 0.030519 | 0.034971 | 0.029035 | 0.1790 | 0.3009 | -0.000320 | -0.000480 | -0.000267 | `output/0002/diagnostics/stump_depth_prior_rgb_rerank_final_topm_l010_overlap` |
+| playroom | 0.019299 | 0.024015 | 0.017727 | 0.2149 | 0.3473 | +0.000529 | +0.000431 | +0.000561 | `output/0002/diagnostics/playroom_depth_prior_rgb_rerank_final_topm_l010_overlap` |
+| truck | 0.028265 | 0.022478 | 0.030195 | 0.1108 | 0.1970 | -0.000284 | -0.000087 | -0.000349 | `output/0002/diagnostics/truck_depth_prior_rgb_rerank_final_topm_l010_overlap` |
+
+Top-k 10% prior-overlap 诊断：
+
+| 场景 | prior top-k L1 | non-prior L1 | prior/RGB IoU | prior/RGB recall | candidate ΔL1 | prior top-k ΔL1 | non-prior ΔL1 | 输出 |
+|---|---:|---:|---:|---:|---:|---:|---:|---|
+| stump | 0.037759 | 0.029715 | 0.0818 | 0.1502 | -0.000320 | -0.000394 | -0.000312 | `output/0002/diagnostics/stump_depth_prior_rgb_rerank_final_topm_l010_overlap_topk10` |
+| playroom | 0.027192 | 0.018422 | 0.1132 | 0.1987 | +0.000529 | +0.000150 | +0.000571 | `output/0002/diagnostics/playroom_depth_prior_rgb_rerank_final_topm_l010_overlap_topk10` |
+| truck | 0.024621 | 0.028670 | 0.0391 | 0.0741 | -0.000284 | +0.000241 | -0.000342 | `output/0002/diagnostics/truck_depth_prior_rgb_rerank_final_topm_l010_overlap_topk10` |
+
+判断：`lambda 0.10` 比 `0.25` 更像一个可用边界上的收缩版。`stump` 和 `truck` 的全图质量都回到了三项正向，但 `playroom` 仍然 PSNR 负向，且三场景 QCGI 依旧为负，说明容量代价没有被真正压住。`truck` 的 prior top-10 仍只有 0.039 的 IoU，错位问题没有消失，只是方向没有再被放大。下一轮如果继续，应该再试 `0.05`，或者保持 `0.10` 但缩小 `vfm_rgb_broad_topk`。
+
+### 2026-05-17 RGB-gated depth rerank final-topm l0.05 pilot
+
+`lambda 0.05` 进一步收缩后，`stump` 依旧保住三项质量正向，`playroom` 也从 l0.10 的 PSNR 负向翻回正向，但 `truck` 再次掉回 PSNR 负向。三场景 QCGI 仍然全负，说明单纯继续降 lambda 已经进入收益递减区，错位主要还在 broad candidate 入口，而不是 rerank 强度本身。
+
+正式三场景结果：
+
+| 场景 | Phase 0 FastGS big | RGB-gated depth rerank final-topm l0.05 | ΔPSNR / ΔSSIM / ΔLPIPS / ΔGS | QCGI | 输出 |
+|---|---:|---:|---:|---:|---|
+| stump | 27.1784 / 0.7868 / 0.2393, 1,064,860 GS | 27.2379 / 0.7923 / 0.2258, 1,388,153 GS, 153.55s | +0.0595 / +0.0055 / -0.0135 / +323,293 | -0.7570 | `output/0002/depth_anything_depth_prior_rgb_rerank_final_topm_l005_fastgs_big_stump_30k_scene_override_r_auto` |
+| playroom | 30.7181 / 0.9148 / 0.2357, 589,253 GS | 30.8380 / 0.9147 / 0.2309, 746,168 GS, 112.77s | +0.1199 / -0.0001 / -0.0048 / +156,915 | -0.1863 | `output/0002/depth_anything_depth_prior_rgb_rerank_final_topm_l005_fastgs_big_playroom_30k_scene_override_r_auto` |
+| truck | 26.0998 / 0.8896 / 0.1385, 625,803 GS | 26.0655 / 0.8900 / 0.1328, 850,023 GS, 129.97s | -0.0343 / +0.0004 / -0.0057 / +224,220 | -0.5939 | `output/0002/depth_anything_depth_prior_rgb_rerank_final_topm_l005_fastgs_big_truck_30k_scene_override_r_auto` |
+
+Top-k 25% prior-overlap 诊断：
+
+| 场景 | baseline L1 | prior top-k L1 | non-prior L1 | prior/RGB IoU | prior/RGB recall | candidate ΔL1 | prior top-k ΔL1 | non-prior ΔL1 | 输出 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| stump | 0.030519 | 0.034971 | 0.029035 | 0.1790 | 0.3009 | -0.000386 | -0.000441 | -0.000368 | `output/0002/diagnostics/stump_depth_prior_rgb_rerank_final_topm_l005_overlap` |
+| playroom | 0.019299 | 0.024015 | 0.017727 | 0.2149 | 0.3473 | -0.000179 | +0.000205 | -0.000306 | `output/0002/diagnostics/playroom_depth_prior_rgb_rerank_final_topm_l005_overlap` |
+| truck | 0.028265 | 0.022478 | 0.030195 | 0.1108 | 0.1970 | +0.000352 | +0.000651 | +0.000252 | `output/0002/diagnostics/truck_depth_prior_rgb_rerank_final_topm_l005_overlap` |
+
+Top-k 10% prior-overlap 诊断：
+
+| 场景 | prior top-k L1 | non-prior L1 | prior/RGB IoU | prior/RGB recall | candidate ΔL1 | prior top-k ΔL1 | non-prior ΔL1 | 输出 |
+|---|---:|---:|---:|---:|---:|---:|---:|---|
+| stump | 0.037759 | 0.029715 | 0.0818 | 0.1502 | -0.000386 | -0.000381 | -0.000387 | `output/0002/diagnostics/stump_depth_prior_rgb_rerank_final_topm_l005_overlap_topk10` |
+| playroom | 0.027192 | 0.018422 | 0.1132 | 0.1987 | -0.000179 | +0.000638 | -0.000269 | `output/0002/diagnostics/playroom_depth_prior_rgb_rerank_final_topm_l005_overlap_topk10` |
+| truck | 0.024621 | 0.028670 | 0.0391 | 0.0741 | +0.000352 | +0.001177 | +0.000260 | `output/0002/diagnostics/truck_depth_prior_rgb_rerank_final_topm_l005_overlap_topk10` |
+
+判断：l0.05 比 l0.10 更接近“保守修正”，但仍没有把三场景同时推到可扩全数据集的状态。`playroom` 只是在全图 PSNR 上翻正，prior top-k 仍然变差；`truck` 重新负向，且 top-10 IoU 仍只有 0.039。下一步如果继续 0002，优先缩小 `vfm_rgb_broad_topk`，或者把 depth prior 改成更后期的辅助裁剪，而不是继续单纯扫 lambda。
+
 ### 2026-05-12 Prior/RGB 瓶颈重叠诊断
 
 为避免继续盲目扩展 prior，新增 `scripts/diagnose_prior_overlap.py`，直接读取已有 render/gt、`cameras.json` 和 VFM cache，检查 prior top-k 区域是否也是 baseline RGB 高误差区域，并统计候选方法的 L1 改善是否集中在 prior 区域。该脚本不依赖 CUDA，可作为每个新 prior 的轻量体检；但它对 DINO descriptor cache 不能直接复现训练时的 render-vs-GT cosine residual，DINO token-edge 行只能作为 2D prior 对照。
@@ -336,12 +396,20 @@ Top-k 10% 结果：
 | 2026-05-17 | MipNeRF360 | stump | Depth Anything RGB-gated rerank final-topm l0.25, `fastgs_big + scene override` | 27.1267 | 0.7922 | 0.2265 | 1,388,160 | 154.22s | `output/0002/depth_anything_depth_prior_rgb_rerank_final_topm_l025_fastgs_big_stump_30k_scene_override_r_auto` | SSIM/LPIPS 正向但 PSNR 负向，GS +323,300，QCGI -0.8724 |
 | 2026-05-17 | DB | playroom | Depth Anything RGB-gated rerank final-topm l0.25, `fastgs_big + scene override` | 30.6396 | 0.9143 | 0.2329 | 746,231 | 113.16s | `output/0002/depth_anything_depth_prior_rgb_rerank_final_topm_l025_fastgs_big_playroom_30k_scene_override_r_auto` | LPIPS 正向但 PSNR/SSIM 负向，GS +156,978，QCGI -0.4021 |
 | 2026-05-17 | Tandt | truck | Depth Anything RGB-gated rerank final-topm l0.25, `fastgs_big + scene override` | 26.2003 | 0.8918 | 0.1317 | 845,866 | 129.50s | `output/0002/depth_anything_depth_prior_rgb_rerank_final_topm_l025_fastgs_big_truck_30k_scene_override_r_auto` | 从 direct depth 负例变为三项质量正向，但 GS +220,063，QCGI -0.4017 |
+| 2026-05-17 | MipNeRF360 | stump | Depth Anything RGB-gated rerank final-topm l0.10, `fastgs_big + scene override` | 27.2355 | 0.7923 | 0.2258 | 1,387,811 | 153.56s | `output/0002/depth_anything_depth_prior_rgb_rerank_final_topm_l010_fastgs_big_stump_30k_scene_override_r_auto` | 三项质量正向，但 GS +322,951，QCGI -0.7581 |
+| 2026-05-17 | DB | playroom | Depth Anything RGB-gated rerank final-topm l0.10, `fastgs_big + scene override` | 30.5282 | 0.9142 | 0.2326 | 746,312 | 113.08s | `output/0002/depth_anything_depth_prior_rgb_rerank_final_topm_l010_fastgs_big_playroom_30k_scene_override_r_auto` | PSNR/SSIM 负向，GS +157,059，QCGI -0.5136 |
+| 2026-05-17 | Tandt | truck | Depth Anything RGB-gated rerank final-topm l0.10, `fastgs_big + scene override` | 26.1558 | 0.8916 | 0.1313 | 842,083 | 129.17s | `output/0002/depth_anything_depth_prior_rgb_rerank_final_topm_l010_fastgs_big_truck_30k_scene_override_r_auto` | 保住三项质量正向，但 GS +216,280，QCGI -0.4325 |
+| 2026-05-17 | MipNeRF360 | stump | Depth Anything RGB-gated rerank final-topm l0.05, `fastgs_big + scene override` | 27.2379 | 0.7923 | 0.2258 | 1,388,153 | 153.55s | `output/0002/depth_anything_depth_prior_rgb_rerank_final_topm_l005_fastgs_big_stump_30k_scene_override_r_auto` | 三项质量正向，但 GS +323,293，QCGI -0.7570 |
+| 2026-05-17 | DB | playroom | Depth Anything RGB-gated rerank final-topm l0.05, `fastgs_big + scene override` | 30.8380 | 0.9147 | 0.2309 | 746,168 | 112.77s | `output/0002/depth_anything_depth_prior_rgb_rerank_final_topm_l005_fastgs_big_playroom_30k_scene_override_r_auto` | PSNR 正向但 SSIM 轻微负向，GS +156,915，QCGI -0.1863 |
+| 2026-05-17 | Tandt | truck | Depth Anything RGB-gated rerank final-topm l0.05, `fastgs_big + scene override` | 26.0655 | 0.8900 | 0.1328 | 850,023 | 129.97s | `output/0002/depth_anything_depth_prior_rgb_rerank_final_topm_l005_fastgs_big_truck_30k_scene_override_r_auto` | PSNR 负向，GS +224,220，QCGI -0.5939 |
 
 ## 结果表
 
 | 日期 | 数据集 | 场景 | 方法 | PSNR | SSIM | LPIPS | Gaussian 数 | 训练时间 | 输出路径 | 结论 |
 |---|---|---|---|---:|---:|---:|---:|---:|---|---|
-| TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| 2026-05-17 | MipNeRF360 | stump | Depth Anything RGB-gated rerank final-topm l0.05, `fastgs_big + scene override` | 27.2379 | 0.7923 | 0.2258 | 1,388,153 | 153.55s | `output/0002/depth_anything_depth_prior_rgb_rerank_final_topm_l005_fastgs_big_stump_30k_scene_override_r_auto` | 三项质量正向，但 GS +323,293，QCGI -0.7570 |
+| 2026-05-17 | DB | playroom | Depth Anything RGB-gated rerank final-topm l0.05, `fastgs_big + scene override` | 30.8380 | 0.9147 | 0.2309 | 746,168 | 112.77s | `output/0002/depth_anything_depth_prior_rgb_rerank_final_topm_l005_fastgs_big_playroom_30k_scene_override_r_auto` | PSNR 正向但 SSIM 轻微负向，GS +156,915，QCGI -0.1863 |
+| 2026-05-17 | Tandt | truck | Depth Anything RGB-gated rerank final-topm l0.05, `fastgs_big + scene override` | 26.0655 | 0.8900 | 0.1328 | 850,023 | 129.97s | `output/0002/depth_anything_depth_prior_rgb_rerank_final_topm_l005_fastgs_big_truck_30k_scene_override_r_auto` | PSNR 负向，GS +224,220，QCGI -0.5939 |
 
 ## 对照表
 

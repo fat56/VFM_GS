@@ -1,0 +1,22 @@
+name: 0002_depth_anything_depth_prior_rgb_rerank_final_topm_l005
+extends: fastgs_big
+scorer: vfm_topology_scorer
+training_args:
+  densification_interval: 100
+  loss_thresh: 0.05
+  vfm_enable: true
+  vfm_backend: depth_anything_depth_prior
+  vfm_cache_dir: output/0002/vfm_cache/bicycle_depth_anything_v2s_depth
+  vfm_metric_map_mode: topk
+  vfm_metric_topk: 0.25
+  vfm_weight: 0.0
+  vfm_importance_mode: rgb_rerank
+  vfm_rgb_broad_topk: 0.50
+  vfm_rgb_broad_gate: true
+  vfm_dino_rerank_lambda: 0.05
+  vfm_rgb_rerank_final_topm: true
+  vfm_use_albedo_sh0: true
+experiment:
+  status: depth_anything_rgb_gated_rerank_probe
+  proposal: docs/experiments/0002_depth_anything_dense_prior/proposal.md
+  note: More conservative RGB-gated rerank probe; keep RGB broad + final-topm, but lower rerank strength to 0.05.
