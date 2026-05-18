@@ -217,4 +217,6 @@ Depth Anything 第一阶段成功标准：
 
 ## 下一步
 
-暂停同配置 `depth_anything_depth_prior`、`RGB broad top50 -> depth rerank -> final-topm`、`broad035` 和 `start9000` 的继续扩展。若继续 0002，优先做在线 render-vs-prior depth residual 或后期辅助裁剪；继续用 `stump/playroom/truck` 三个场景做小规模验证。长任务继续使用 tmux/detached 方式运行；每轮完成后更新文档、commit 并 push。
+暂停同配置 `depth_anything_depth_prior`、`RGB broad top50 -> depth rerank -> final-topm`、`broad035` 和 `start9000` 的继续扩展。若继续 0002，Depth Anything 应继续往后期辅助裁剪信号收缩，而不是再做 densify 主信号。
+
+已完成的最小轮次是 `prune-protect-only`：FastGS/RGB 继续决定 densification，Depth Anything 只在 densification 结束后保护 RGB 高 pruning-score 候选。`stump/playroom/truck` 的三场景平均几乎持平，说明这条路比 RGB rerank 更像“轻量后验修正”，但还不是稳定默认解。若继续，下一步应做更窄的 protect weight / RGB top-k 扫描，再决定是否扩到更多场景。长任务继续使用 tmux/detached 方式运行；每轮完成后更新文档、commit 并 push。

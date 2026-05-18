@@ -898,3 +898,58 @@ git push origin main
 - `docs/experiments/0002_depth_anything_dense_prior/review.md`
 - `docs/roadmap.md`
 - `docs/experiments/index.md`，如果实验状态发生阶段变化
+
+## Depth Anything prune-protect only pilot
+
+这轮用 `depth_anything_depth_prior` 做后期辅助裁剪信号：FastGS/RGB 继续决定 densification，Depth Anything 只在 densification 结束后保护 RGB 高 pruning-score 候选。
+
+配置：`configs/experiments/0002_depth_anything_depth_prior_prune_protect_topk010.yaml`
+
+建议先跑 `stump / playroom / truck` 三个诊断场景，均复用已有 `output/0002/vfm_cache/{scene}_depth_anything_v2s_depth`。
+
+```bash
+tmux new-session -d -s 0002pp_stump bash -lc 'cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && CUDA_VISIBLE_DEVICES=0 python scripts/run_0001_fastgs_big_eval.py \
+  --dataset-name mipnerf360 \
+  --dataset-root datasets/mipnerf360 \
+  --output-root output/0002/depth_anything_depth_prior_prune_protect_topk010/mipnerf360 \
+  --scenes stump \
+  --train-images images \
+  --iterations 30000 \
+  --resolution -1 \
+  --variant fastgs_big \
+  --densification-interval 100 \
+  --method-name depth_anything_depth_prior_prune_protect_topk010 \
+  --run-name fastgs_big_30k_scene_override_r_auto \
+  --config configs/experiments/0002_depth_anything_depth_prior_prune_protect_topk010.yaml \
+  --vfm-cache-template output/0002/vfm_cache/{scene}_depth_anything_v2s_depth'
+
+tmux new-session -d -s 0002pp_playroom bash -lc 'cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && CUDA_VISIBLE_DEVICES=1 python scripts/run_0001_fastgs_big_eval.py \
+  --dataset-name db \
+  --dataset-root datasets/tandt_db/db \
+  --output-root output/0002/depth_anything_depth_prior_prune_protect_topk010/db \
+  --scenes playroom \
+  --train-images images \
+  --iterations 30000 \
+  --resolution -1 \
+  --variant fastgs_big \
+  --densification-interval 100 \
+  --method-name depth_anything_depth_prior_prune_protect_topk010 \
+  --run-name fastgs_big_30k_scene_override_r_auto \
+  --config configs/experiments/0002_depth_anything_depth_prior_prune_protect_topk010.yaml \
+  --vfm-cache-template output/0002/vfm_cache/{scene}_depth_anything_v2s_depth'
+
+tmux new-session -d -s 0002pp_truck bash -lc 'cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && CUDA_VISIBLE_DEVICES=0 python scripts/run_0001_fastgs_big_eval.py \
+  --dataset-name tandt \
+  --dataset-root datasets/tandt_db/tandt \
+  --output-root output/0002/depth_anything_depth_prior_prune_protect_topk010/tandt \
+  --scenes truck \
+  --train-images images \
+  --iterations 30000 \
+  --resolution -1 \
+  --variant fastgs_big \
+  --densification-interval 100 \
+  --method-name depth_anything_depth_prior_prune_protect_topk010 \
+  --run-name fastgs_big_30k_scene_override_r_auto \
+  --config configs/experiments/0002_depth_anything_depth_prior_prune_protect_topk010.yaml \
+  --vfm-cache-template output/0002/vfm_cache/{scene}_depth_anything_v2s_depth'
+```

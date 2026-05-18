@@ -127,6 +127,12 @@ overlap 诊断进一步解释了分裂：
 
 工程层面也补充了一条运行约束：Depth Anything cache build 仍可能受 HuggingFace 临时连接失败影响；`treehill` 首次 cache build 失败后，使用本地已缓存权重配合 `HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1` 成功补跑。后续批量 cache 构建应优先复用本地 cache，长任务继续放在 tmux。
 
+## 2026-05-18 prune-protect-only pilot
+
+`prune-protect-only` 把 Depth Anything 从 densify 主信号挪到后期辅助裁剪：FastGS/RGB 继续决定 densification，Depth Anything 只在 densification 结束后保护 RGB 高 pruning-score 候选。`stump/playroom/truck` 三场景已完成，平均为 28.0077 / 0.8634 / 0.2053、754,719 点，相对 Phase 0 FastGS big 是 +0.0089 PSNR、-0.0003 SSIM、LPIPS +0.0008、GS -5,253，平均 QCGI -0.0018，接近持平但略偏负。
+
+分场景看，`playroom` 和 `truck` 是正例：`playroom` 为 +0.0472 PSNR、+0.00017 SSIM、LPIPS +0.00028、GS -1,184，QCGI +0.0492；`truck` 为 +0.0120 PSNR、-0.00009 SSIM、LPIPS +0.00085、GS -2,016，QCGI +0.0060。`stump` 仍是负例：PSNR -0.0324、SSIM -0.0011、LPIPS +0.0013、GS -12,558，QCGI -0.0607。这个结果说明 prune-side auxiliary 比 RGB rerank 稳得多，确实能把一部分场景拉回正向，同时不再制造大规模增点；但它还不是全局稳定解，下一步应继续收紧 protect weight / RGB topk，再决定是否扩场景。
+
 ## 2026-05-12 指标瓶颈诊断
 
 为回应“这些 prior 是否真的命中当前重建瓶颈”的问题，新增 `scripts/diagnose_prior_overlap.py` 并先在 high-res `bicycle` 上补充验证。该诊断不重新训练，只读取已有 baseline/candidate render、GT、`cameras.json` 和 VFM cache，比较 prior top-k 与 RGB 高误差 top-k 的重叠，并看候选方法的 L1 改善是否真的落在 prior 区域。DINO token-edge 行只是 2D prior 对照，不能替代 0001 真实 descriptor residual 诊断。
@@ -156,4 +162,4 @@ overlap 诊断进一步解释了分裂：
 
 ## 下一步
 
-暂停同配置 direct depth prior、top50 RGB-gated depth rerank、broad035 和 start9000 方案的继续扩展。下一步若继续 0002，应优先改成在线 depth residual，或把 depth prior 改成后期辅助裁剪/诊断信号，并继续用 `stump/playroom/truck` 作为三点诊断。长任务继续用 tmux/detached 方式运行；每轮实验完成后更新文档、commit 并 push；当前只有本服务器改动，按用户要求不再强制先 `git pull`。
+暂停同配置 direct depth prior、top50 RGB-gated depth rerank、broad035 和 start9000 方案的继续扩展。当前最值得继续的是 prune-protect-only 的细扫：更窄的 protect weight / RGB topk，再视结果决定是否扩到更多场景。长任务继续用 tmux/detached 方式运行；每轮实验完成后更新文档、commit 并 push；当前只有本服务器改动，按用户要求不再强制先 `git pull`。
