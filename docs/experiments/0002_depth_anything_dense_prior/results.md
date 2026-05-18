@@ -6,7 +6,7 @@ Phase 0 已开始。首次双卡 high-res FastGS big baseline 在 MipNeRF360 首
 
 已完成第一轮 rasterizer 修补、5000-step debug 验证、MipNeRF360 `bicycle` 单场景 30k 验收，以及 MipNeRF360/DB/Tandt 三个公开数据集全 13 场景 high-res FastGS big train/render/metrics。三数据集结果与 0001/4090D 同口径 high-res FastGS big baseline 基本贴合。当前结论：5090 环境 Phase 0 通过。
 
-Depth Anything V2-S dense depth cache/backend 已完成最小接入，并通过 high-res `bicycle` 620-step smoke、depth-edge 30k pilot、direct relative depth 30k pilot，以及 `fastgs_big + scene overrides` 下的 `stump/bonsai/playroom/truck` pilot。30k matched `fastgs_baseline + densify100` 对照下，depth-edge prior 是弱混合信号；direct relative depth prior 在 `bicycle` 上三项质量正向且 Gaussian 数更少。`fastgs_big` 对齐场景超参后，`stump` 三项质量正向，`playroom` PSNR/LPIPS 正向但 SSIM 微负，`bonsai` PSNR 微负但 SSIM/LPIPS 正向且 QCGI 为负，`truck` 三项质量负向。2026-05-17 的 RGB-gated depth rerank 完成 l0.25/l0.10/l0.05：l0.25 把 `truck` 从 direct depth 的明确负例翻成三项质量正向，但三场景 QCGI 均为负；l0.10 把 `stump/truck` 拉回三项质量正向，但 `playroom` 仍负向；l0.05 让 `playroom` PSNR 转正，但 `truck` 又回到 PSNR 负向。2026-05-18 的 `l0.10 broad035` 继续保住 `stump`，但 `playroom/truck` 仍然没有稳定正向；`start9000` 能改善 `playroom`，但 `stump` 容量失控、`truck` 仍负向。按用户建议扩展到 MipNeRF360 全 9 场景后，均值为 27.9698 / 0.8238 / 0.2070、1,399,502 GS，相对 Phase 0 是 +0.0107 PSNR、+0.0036 SSIM、LPIPS -0.0087，但平均多 237,716 GS，QCGI 均值 -0.5602 且 9/9 场景 QCGI 为负。2026-05-18 的 `prune-protect-only` 小规模验证则更像后期辅助修正：`stump/playroom/truck` 平均 +0.0089 PSNR、-0.0003 SSIM、LPIPS +0.0008、GS -5,253，QCGI 近乎持平但略负；`playroom` 和 `truck` 是正例，`stump` 仍是负例。`weight015` sweep 平均为 -0.0480 PSNR、-0.0004 SSIM、LPIPS +0.0010、GS -1,636，说明单独降保护权重更差。当前结论：`depth_anything_depth_prior` 的 prune-side auxiliary 比 RGB rerank 稳得多，但仍不是全局稳定解；下一步若继续 0002，应优先扫更窄的 RGB top-k proposal，而不是继续扫 broad/lambda/start iteration 或单独下调 protect weight。
+Depth Anything V2-S dense depth cache/backend 已完成最小接入，并通过 high-res `bicycle` 620-step smoke、depth-edge 30k pilot、direct relative depth 30k pilot，以及 `fastgs_big + scene overrides` 下的 `stump/bonsai/playroom/truck` pilot。30k matched `fastgs_baseline + densify100` 对照下，depth-edge prior 是弱混合信号；direct relative depth prior 在 `bicycle` 上三项质量正向且 Gaussian 数更少。`fastgs_big` 对齐场景超参后，`stump` 三项质量正向，`playroom` PSNR/LPIPS 正向但 SSIM 微负，`bonsai` PSNR 微负但 SSIM/LPIPS 正向且 QCGI 为负，`truck` 三项质量负向。2026-05-17 的 RGB-gated depth rerank 完成 l0.25/l0.10/l0.05：l0.25 把 `truck` 从 direct depth 的明确负例翻成三项质量正向，但三场景 QCGI 均为负；l0.10 把 `stump/truck` 拉回三项质量正向，但 `playroom` 仍负向；l0.05 让 `playroom` PSNR 转正，但 `truck` 又回到 PSNR 负向。2026-05-18 的 `l0.10 broad035` 继续保住 `stump`，但 `playroom/truck` 仍然没有稳定正向；`start9000` 能改善 `playroom`，但 `stump` 容量失控、`truck` 仍负向。按用户建议扩展到 MipNeRF360 全 9 场景后，均值为 27.9698 / 0.8238 / 0.2070、1,399,502 GS，相对 Phase 0 是 +0.0107 PSNR、+0.0036 SSIM、LPIPS -0.0087，但平均多 237,716 GS，QCGI 均值 -0.5602 且 9/9 场景 QCGI 为负。2026-05-18 的 `prune-protect-only` 小规模验证则更像后期辅助修正：`stump/playroom/truck` 平均 +0.0089 PSNR、-0.0003 SSIM、LPIPS +0.0008、GS -5,253，QCGI 近乎持平但略负；`playroom` 和 `truck` 是正例，`stump` 仍是负例。`weight015` sweep 平均为 -0.0480 PSNR、-0.0004 SSIM、LPIPS +0.0010、GS -1,636，说明单独降保护权重更差；`topk005` sweep 平均为 -0.0185 PSNR、-0.0003 SSIM、LPIPS +0.0010、GS -6,755，QCGI -0.0295，说明继续收窄 RGB proposal 也没有成为稳定解。当前结论：`depth_anything_depth_prior` 的 prune-side auxiliary 比 RGB rerank 稳得多，但仍不是全局稳定方案；`topk010` 只是当前最接近中性的对照，下一步不宜继续手工扫相邻 weight/top-k，应转向更多场景复验或场景自适应门控。
 
 ## Phase 0：5090 FastGS Big Baseline 复核
 
@@ -538,6 +538,19 @@ Depth Anything prune-side auxiliary 这轮把 FastGS/RGB 保持为 densification
 | **平均** | **stump/playroom/truck** | **27.9508** | **0.8634** | **0.2054** | **758,336** | **111.58s** | **-0.0480 / -0.0004 / +0.0010, GS -1,636** | **-0.0601** | `output/0002/depth_anything_depth_prior_prune_protect_weight015_topk010/combined` |
 
 相比 `topk010`，这轮只把 stump 拉近了 baseline 一点点，但把 playroom 拉坏了，三场景均值也更差。当前更像是 proposal 空间该继续收，而不是保护权重该继续降。
+
+## 2026-05-18 prune-protect topk005 sweep
+
+这一轮保持保护权重 0.25，只把 RGB pruning proposal 从 top 1.0% 收窄到 top 0.5%。结果比 `weight015` 好，但不如原始 `topk010` 稳：`truck` 明显改善，`stump` 只小幅变好，`playroom` 从正例转为负例。
+
+| 数据集 | 场景 | PSNR | SSIM | LPIPS | Gaussian 数 | 训练时间 | 相对 Phase 0 | QCGI | 输出路径 |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---|
+| MipNeRF360 | stump | 27.1458 | 0.7860 | 0.2407 | 1,048,128 | 128.60s | -0.0327 / -0.0008 / +0.0014, GS -16,732 | -0.0555 | `output/0002/depth_anything_depth_prior_prune_protect_topk005/mipnerf360/stump/fastgs_big_30k_scene_override_r_auto` |
+| DB | playroom | 30.6579 | 0.9146 | 0.2366 | 588,479 | 95.90s | -0.0602 / -0.0002 / +0.0009, GS -774 | -0.0675 | `output/0002/depth_anything_depth_prior_prune_protect_topk005/db/playroom/fastgs_big_30k_scene_override_r_auto` |
+| Tandt | truck | 26.1372 | 0.8896 | 0.1392 | 623,045 | 109.56s | +0.0374 / +0.0000 / +0.0008, GS -2,758 | +0.0345 | `output/0002/depth_anything_depth_prior_prune_protect_topk005/tandt/truck/fastgs_big_30k_scene_override_r_auto` |
+| **平均** | **stump/playroom/truck** | **27.9803** | **0.8634** | **0.2055** | **753,217** | **111.35s** | **-0.0185 / -0.0003 / +0.0010, GS -6,755** | **-0.0295** | `output/0002/depth_anything_depth_prior_prune_protect_topk005/combined` |
+
+判断：`topk005` 没有支持“继续收窄 proposal 就能稳定”的假设。它确实更保护 truck，但 playroom 对过窄 proposal 很敏感；与 `topk010` 的平均 QCGI -0.0018 相比，`topk005` 反而退化到 -0.0295。当前最合理的 prune-protect 结论是：Depth Anything 可作为低成本后验保护信号，但需要场景自适应或更多场景统计，不能靠单一固定 top-k/weight 直接定版。
 
 ## 失败记录
 

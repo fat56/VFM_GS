@@ -1,0 +1,23 @@
+name: 0002_depth_anything_depth_prior_prune_protect_topk005
+extends: fastgs_big
+scorer: vfm_topology_scorer
+training_args:
+  densification_interval: 100
+  vfm_enable: true
+  vfm_backend: depth_anything_depth_prior
+  vfm_cache_dir: output/0002/vfm_cache/bicycle_depth_anything_v2s_depth
+  vfm_metric_map_mode: topk
+  vfm_metric_topk: 0.25
+  vfm_weight: 0.0
+  vfm_importance_mode: rgb_only
+  vfm_prune_protect_weight: 0.25
+  vfm_prune_protect_mode: rgb_prune_topk
+  vfm_prune_protect_rgb_topk: 0.005
+  vfm_prune_protect_min_count: 5
+  vfm_prune_protect_power: 2.0
+  vfm_active_from_iter: 15001
+  vfm_use_albedo_sh0: true
+experiment:
+  status: depth_anything_prune_protect_topk005_probe
+  proposal: docs/experiments/0002_depth_anything_dense_prior/proposal.md
+  note: Depth Anything V2-S prune-side auxiliary probe. FastGS/RGB keeps densification, and Depth Anything only protects the top 0.5% RGB pruning candidates after densification ends.

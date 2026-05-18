@@ -51,9 +51,10 @@ Depth Anything 这类 dense monocular depth prior 能提供比 COLMAP sparse edg
 - `configs/experiments/0002_depth_anything_depth_prior_rgb_rerank_final_topm_l005.yaml`
 - `configs/experiments/0002_depth_anything_depth_prior_rgb_rerank_final_topm_l010_broad035.yaml`
 - `configs/experiments/0002_depth_anything_depth_prior_rgb_rerank_final_topm_l010_broad035_start9000.yaml`
+- `configs/experiments/0002_depth_anything_depth_prior_prune_protect_topk005.yaml`
 - `configs/experiments/0002_depth_anything_depth_prior_prune_protect_weight015_topk010.yaml`
 
-当前优先级已转为 direct relative depth prior，并在此基础上尝试 RGB-gated rerank 的保守扫描。depth-edge prior 只保留为弱混合信号对照，不继续扩展。2026-05-18 的 `l0.10 + broad035` 说明缩小 RGB broad candidate 能压低部分容量代价，但仍不能让 `stump/playroom/truck` 同时稳定正向，也不能解决 `truck` depth prior 与 RGB 瓶颈错位。`start9000` 后期介入能让 `playroom` 回到薄正向，但 `stump` 容量失控、`truck` 仍负向。按用户建议扩展到 MipNeRF360 全 9 场景后，均值质量小幅正向但平均多 237,716 个 Gaussians，9/9 场景 QCGI 为负；该结果不支持继续把当前 RGB-gated depth rerank 作为训练主线。2026-05-18 的 `prune-protect weight015` 说明单独收紧保护权重也不是解法：`stump` 只比 phase 0 更接近一些，但 `playroom` 明显退化，三场景均值反而比 `topk010` 更差。当前更像是 proposal 空间的问题，而不是单纯的保护强度问题。
+当前优先级已转为 direct relative depth prior，并在此基础上尝试 RGB-gated rerank 的保守扫描。depth-edge prior 只保留为弱混合信号对照，不继续扩展。2026-05-18 的 `l0.10 + broad035` 说明缩小 RGB broad candidate 能压低部分容量代价，但仍不能让 `stump/playroom/truck` 同时稳定正向，也不能解决 `truck` depth prior 与 RGB 瓶颈错位。`start9000` 后期介入能让 `playroom` 回到薄正向，但 `stump` 容量失控、`truck` 仍负向。按用户建议扩展到 MipNeRF360 全 9 场景后，均值质量小幅正向但平均多 237,716 个 Gaussians，9/9 场景 QCGI 为负；该结果不支持继续把当前 RGB-gated depth rerank 作为训练主线。2026-05-18 的 prune-protect 分支显示后期辅助裁剪比 densify rerank 稳定得多，但 `topk010`、`weight015`、`topk005` 三轮都没有形成跨场景稳定正收益：`topk010` 三场景平均接近持平，`weight015` 证明单独降保护权重会伤害 playroom，`topk005` 证明继续收窄 RGB proposal 会让 truck 变好但 playroom 变差。当前判断是 Depth Anything prune-side auxiliary 有轻量后验修正价值，但不应直接作为全局默认方案。
 
 ## Phase 0：5090 FastGS Big Baseline 复核
 
@@ -220,4 +221,4 @@ Depth Anything 第一阶段成功标准：
 
 暂停同配置 `depth_anything_depth_prior`、`RGB broad top50 -> depth rerank -> final-topm`、`broad035` 和 `start9000` 的继续扩展。若继续 0002，Depth Anything 应继续往后期辅助裁剪信号收缩，而不是再做 densify 主信号。
 
-已完成的最小轮次是 `prune-protect-only`：FastGS/RGB 继续决定 densification，Depth Anything 只在 densification 结束后保护 RGB 高 pruning-score 候选。`stump/playroom/truck` 的三场景平均几乎持平，说明这条路比 RGB rerank 更像“轻量后验修正”，但还不是稳定默认解。`prune-protect weight015` 已验证单独降权重不够，下一步应优先扫更窄的 RGB top-k，再决定是否扩到更多场景。长任务继续使用 tmux/detached 方式运行；每轮完成后更新文档、commit 并 push。
+已完成的最小轮次是 `prune-protect-only`：FastGS/RGB 继续决定 densification，Depth Anything 只在 densification 结束后保护 RGB 高 pruning-score 候选。`stump/playroom/truck` 的三场景平均几乎持平，说明这条路比 RGB rerank 更像“轻量后验修正”，但还不是稳定默认解。`prune-protect weight015` 已验证单独降权重不够；`topk005` 已验证继续收窄 RGB proposal 也不够，三场景平均为 -0.0185 PSNR、-0.0003 SSIM、LPIPS +0.0010、GS -6,755，QCGI -0.0295。下一步若继续 0002，应把 `topk010` 视为当前最接近中性的 prune-protect 对照，优先考虑更多场景复验或场景自适应门控，而不是继续手工扫相邻 top-k/weight。长任务继续使用 tmux/detached 方式运行；每轮完成后更新文档、commit 并 push。
