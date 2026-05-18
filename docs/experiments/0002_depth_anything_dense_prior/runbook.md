@@ -807,6 +807,66 @@ setsid bash -lc 'cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && C
 - `truck`: 26.0805 / 0.8899 / 0.1330、846,889 GS、128.21s，QCGI -0.5707。
 - 结论：后期介入能帮 `playroom`，但 `stump` 容量失控、`truck` 仍负向；不扩展全数据集。
 
+按用户建议补跑 MipNeRF360 full，用 tmux 双卡场景级并行。`scripts/run_0001_fastgs_big_eval.py` 已支持 `--config`、`--vfm-cache-template`，会在缺 cache 时先 build/validate，再 train/render/metrics：
+
+```bash
+tmux new-session -d -s 0002mip0 bash -lc 'cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && CUDA_VISIBLE_DEVICES=0 python scripts/run_0001_fastgs_big_eval.py \
+  --dataset-name mipnerf360 \
+  --dataset-root datasets/mipnerf360 \
+  --output-root output/0002/depth_anything_depth_prior_rgb_rerank_final_topm_l010_broad035_start9000/mipnerf360_gpu0 \
+  --scenes bicycle flowers garden stump treehill \
+  --train-images images \
+  --iterations 30000 \
+  --resolution -1 \
+  --variant fastgs_big \
+  --densification-interval 100 \
+  --method-name depth_anything_depth_prior_rgb_rerank_final_topm_l010_broad035_start9000 \
+  --run-name fastgs_big_30k_scene_override_r_auto \
+  --config configs/experiments/0002_depth_anything_depth_prior_rgb_rerank_final_topm_l010_broad035_start9000.yaml \
+  --vfm-cache-template output/0002/vfm_cache/{scene}_depth_anything_v2s_depth'
+
+tmux new-session -d -s 0002mip1 bash -lc 'cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && CUDA_VISIBLE_DEVICES=1 python scripts/run_0001_fastgs_big_eval.py \
+  --dataset-name mipnerf360 \
+  --dataset-root datasets/mipnerf360 \
+  --output-root output/0002/depth_anything_depth_prior_rgb_rerank_final_topm_l010_broad035_start9000/mipnerf360_gpu1 \
+  --scenes room counter kitchen bonsai \
+  --train-images images \
+  --iterations 30000 \
+  --resolution -1 \
+  --variant fastgs_big \
+  --densification-interval 100 \
+  --method-name depth_anything_depth_prior_rgb_rerank_final_topm_l010_broad035_start9000 \
+  --run-name fastgs_big_30k_scene_override_r_auto \
+  --config configs/experiments/0002_depth_anything_depth_prior_rgb_rerank_final_topm_l010_broad035_start9000.yaml \
+  --vfm-cache-template output/0002/vfm_cache/{scene}_depth_anything_v2s_depth'
+```
+
+`treehill` 首次 cache build 遇到 HuggingFace 临时连接失败，使用本地 cache 离线补跑：
+
+```bash
+tmux new-session -d -s 0002treehill bash -lc 'cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 CUDA_VISIBLE_DEVICES=0 python scripts/run_0001_fastgs_big_eval.py \
+  --dataset-name mipnerf360 \
+  --dataset-root datasets/mipnerf360 \
+  --output-root output/0002/depth_anything_depth_prior_rgb_rerank_final_topm_l010_broad035_start9000/mipnerf360_treehill \
+  --scenes treehill \
+  --train-images images \
+  --iterations 30000 \
+  --resolution -1 \
+  --variant fastgs_big \
+  --densification-interval 100 \
+  --method-name depth_anything_depth_prior_rgb_rerank_final_topm_l010_broad035_start9000 \
+  --run-name fastgs_big_30k_scene_override_r_auto \
+  --config configs/experiments/0002_depth_anything_depth_prior_rgb_rerank_final_topm_l010_broad035_start9000.yaml \
+  --vfm-cache-template output/0002/vfm_cache/{scene}_depth_anything_v2s_depth'
+```
+
+Full MipNeRF360 结果摘要：
+
+- 平均：27.9698 / 0.8238 / 0.2070、1,399,502 GS、181.20s。
+- 相对 Phase 0：+0.0107 PSNR、+0.0036 SSIM、LPIPS -0.0087、平均 GS +237,716。
+- QCGI：均值 -0.5602，9/9 场景为负。
+- 汇总：`output/0002/depth_anything_depth_prior_rgb_rerank_final_topm_l010_broad035_start9000/mipnerf360_combined/summary.csv`。
+
 必须对照：
 
 - Phase 0 FastGS big baseline。

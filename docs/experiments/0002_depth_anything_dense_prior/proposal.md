@@ -52,7 +52,7 @@ Depth Anything 这类 dense monocular depth prior 能提供比 COLMAP sparse edg
 - `configs/experiments/0002_depth_anything_depth_prior_rgb_rerank_final_topm_l010_broad035.yaml`
 - `configs/experiments/0002_depth_anything_depth_prior_rgb_rerank_final_topm_l010_broad035_start9000.yaml`
 
-当前优先级已转为 direct relative depth prior，并在此基础上尝试 RGB-gated rerank 的保守扫描。depth-edge prior 只保留为弱混合信号对照，不继续扩展。2026-05-18 的 `l0.10 + broad035` 说明缩小 RGB broad candidate 能压低部分容量代价，但仍不能让 `stump/playroom/truck` 同时稳定正向，也不能解决 `truck` depth prior 与 RGB 瓶颈错位。`start9000` 后期介入能让 `playroom` 回到薄正向，但 `stump` 容量失控、`truck` 仍负向，也不适合扩全场景。
+当前优先级已转为 direct relative depth prior，并在此基础上尝试 RGB-gated rerank 的保守扫描。depth-edge prior 只保留为弱混合信号对照，不继续扩展。2026-05-18 的 `l0.10 + broad035` 说明缩小 RGB broad candidate 能压低部分容量代价，但仍不能让 `stump/playroom/truck` 同时稳定正向，也不能解决 `truck` depth prior 与 RGB 瓶颈错位。`start9000` 后期介入能让 `playroom` 回到薄正向，但 `stump` 容量失控、`truck` 仍负向。按用户建议扩展到 MipNeRF360 全 9 场景后，均值质量小幅正向但平均多 237,716 个 Gaussians，9/9 场景 QCGI 为负；该结果不支持继续把当前 RGB-gated depth rerank 作为训练主线。
 
 ## Phase 0：5090 FastGS Big Baseline 复核
 
@@ -211,8 +211,10 @@ Depth Anything 第一阶段成功标准：
 
 2026-05-18：`RGB broad candidate -> depth prior rerank -> final-topm` l0.10 broad035 start9000 pilot 完成。后期介入让 `playroom` 从 broad035 的轻微负向变成 PSNR/LPIPS 正向，但 `stump` Gaussian 增量扩大到 +355,826，`truck` 仍 PSNR 负向，三场景 QCGI 继续为负。单独延后介入不是稳定解。
 
+2026-05-18：按用户建议将 `l0.10 broad035 start9000` 扩展到 MipNeRF360 全 9 场景。全场景均值为 27.9698 / 0.8238 / 0.2070、1,399,502 GS，相对 Phase 0 FastGS big 为 +0.0107 PSNR、+0.0036 SSIM、LPIPS -0.0087，但平均多 237,716 GS，QCGI 均值 -0.5602，且 9/9 场景 QCGI 均为负。结论是该策略有数据集均值质量信号，但容量效率不合格。
+
 初始决策：0002 只推进 dense depth prior，不再扩展 COLMAP sparse depth-edge proxy。
 
 ## 下一步
 
-暂停同配置 `depth_anything_depth_prior`、`RGB broad top50 -> depth rerank -> final-topm`、`broad035` 和 `start9000` 的全数据集扩展。若继续 0002，优先做在线 render-vs-prior depth residual 或后期辅助裁剪；继续用 `stump/playroom/truck` 三个场景做小规模验证。长任务继续使用 detached 方式运行；每轮完成后更新文档、commit 并 push。
+暂停同配置 `depth_anything_depth_prior`、`RGB broad top50 -> depth rerank -> final-topm`、`broad035` 和 `start9000` 的继续扩展。若继续 0002，优先做在线 render-vs-prior depth residual 或后期辅助裁剪；继续用 `stump/playroom/truck` 三个场景做小规模验证。长任务继续使用 tmux/detached 方式运行；每轮完成后更新文档、commit 并 push。

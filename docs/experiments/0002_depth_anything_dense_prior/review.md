@@ -119,6 +119,14 @@ overlap 诊断进一步解释了分裂：
 
 后期介入这轮验证了一个朴素假设：如果早期场景还没重建好，Depth Anything prior 可能太早干扰 densification；那就从 9000 iter 才开启。结果不是稳定解。`playroom` 的确从 broad035 的轻微负向恢复为 PSNR/LPIPS 正向，但它的 L1 改善依旧主要在非-prior 区域；`stump` 容量涨到 1.42M，QCGI 反而更差；`truck` 仍是 PSNR 负向，top-10 prior 区域 L1 继续明显变差。这个结果基本排除了“只靠延后接入”这条小修小补路径。
 
+## 2026-05-18 MipNeRF360 full 扩展
+
+按用户建议，`l0.10 broad035 start9000` 进一步扩展到 MipNeRF360 全 9 场景，目的是确认三场景 pilot 虽然容量效率差，数据集均值是否仍可能成立。结果是典型的“质量有一点，容量太贵”：均值 27.9698 / 0.8238 / 0.2070、1,399,502 点，相对 Phase 0 FastGS big 为 +0.0107 PSNR、+0.0036 SSIM、LPIPS -0.0087，但平均多 237,716 点，QCGI 均值 -0.5602，且 9/9 场景 QCGI 为负。
+
+逐场景看，6/9 场景 PSNR 正向、7/9 场景 SSIM 正向、8/9 场景 LPIPS 正向，说明 depth prior rerank 确实能在数据集均值上制造感知质量改善；但 `bicycle/stump/treehill/bonsai` 都多 0.26M 到 0.36M 点，`bonsai` 还出现 -0.3536 PSNR 的明显质量负例。`garden/room` 点数或感知指标尚可，但 PSNR 也轻微负向。这个 full run 把结论从“三场景不能扩”改成了更具体的边界：当前策略不是完全无信号，而是容量-质量交换率太差，不能作为默认训练主线。
+
+工程层面也补充了一条运行约束：Depth Anything cache build 仍可能受 HuggingFace 临时连接失败影响；`treehill` 首次 cache build 失败后，使用本地已缓存权重配合 `HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1` 成功补跑。后续批量 cache 构建应优先复用本地 cache，长任务继续放在 tmux。
+
 ## 2026-05-12 指标瓶颈诊断
 
 为回应“这些 prior 是否真的命中当前重建瓶颈”的问题，新增 `scripts/diagnose_prior_overlap.py` 并先在 high-res `bicycle` 上补充验证。该诊断不重新训练，只读取已有 baseline/candidate render、GT、`cameras.json` 和 VFM cache，比较 prior top-k 与 RGB 高误差 top-k 的重叠，并看候选方法的 L1 改善是否真的落在 prior 区域。DINO token-edge 行只是 2D prior 对照，不能替代 0001 真实 descriptor residual 诊断。
@@ -148,4 +156,4 @@ overlap 诊断进一步解释了分裂：
 
 ## 下一步
 
-暂停同配置 direct depth prior、top50 RGB-gated depth rerank、broad035 和 start9000 方案的全数据集扩展。下一步若继续 0002，应优先改成在线 depth residual，或把 depth prior 改成后期辅助裁剪/诊断信号，并继续用 `stump/playroom/truck` 作为三点诊断。长任务继续用 detached 方式运行；每轮实验完成后更新文档、commit 并 push；当前只有本服务器改动，按用户要求不再强制先 `git pull`。
+暂停同配置 direct depth prior、top50 RGB-gated depth rerank、broad035 和 start9000 方案的继续扩展。下一步若继续 0002，应优先改成在线 depth residual，或把 depth prior 改成后期辅助裁剪/诊断信号，并继续用 `stump/playroom/truck` 作为三点诊断。长任务继续用 tmux/detached 方式运行；每轮实验完成后更新文档、commit 并 push；当前只有本服务器改动，按用户要求不再强制先 `git pull`。

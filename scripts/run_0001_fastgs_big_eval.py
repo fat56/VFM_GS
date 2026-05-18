@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 import re
 import subprocess
 import sys
@@ -16,6 +17,11 @@ TIME_RE = re.compile(r"Training time:\s*([0-9.]+)")
 
 DEFAULT_METHOD = "large_res_fastgs_big_densify100"
 DEFAULT_RUN_NAME = "fastgs_big_densify100_30k_r_auto"
+DEFAULT_VFM_CACHE_BACKEND = "depth_anything_v2"
+DEFAULT_VFM_CACHE_FEATURE = "depth"
+DEFAULT_VFM_CACHE_STORAGE = "npz_uint8"
+DEFAULT_VFM_CACHE_MAX_WIDTH = 1600
+DEFAULT_VFM_CACHE_DEVICE = "cuda"
 
 MIPNERF360_OVERRIDES = {
     "bicycle": [],
@@ -51,12 +57,16 @@ TANDT_OVERRIDES = {
 }
 
 
-def run_command(cmd: list[str], log_path: Path, cwd: Path) -> int:
+def run_command(cmd: list[str], log_path: Path, cwd: Path, env: dict[str, str] | None = None) -> int:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("w", encoding="utf-8") as handle:
         handle.write("$ {}\n\n".format(" ".join(cmd)))
         handle.flush()
-        proc = subprocess.run(cmd, cwd=cwd, stdout=handle, stderr=subprocess.STDOUT, text=True)
+        proc_env = None
+        if env is not None:
+            proc_env = os.environ.copy()
+            proc_env.update(env)
+        proc = subprocess.run(cmd, cwd=cwd, stdout=handle, stderr=subprocess.STDOUT, text=True, env=proc_env)
     return proc.returncode
 
 
@@ -130,6 +140,62 @@ def scene_overrides(dataset: str, scene: str, enabled: bool) -> list[str]:
     return list(tables.get(dataset, {}).get(scene, []))
 
 
+def build_vfm_cache(scene_path: Path, scene: str, args: argparse.Namespace, repo: Path, log_dir: Path, cache_dir: Path) -> None:
+    manifest_path = cache_dir / "manifest.json"
+    if manifest_path.exists():
+        return
+
+    build_cmd = [
+        "uv",
+        "run",
+        "--active",
+        "python",
+        "-m",
+        "vfm_gs.cli.build_vfm_cache",
+        "-s",
+        str(scene_path),
+        "-i",
+        args.train_images,
+        "-o",
+        str(cache_dir),
+        "--backend",
+        args.vfm_cache_backend,
+        "--max_width",
+        str(args.vfm_cache_max_width),
+        "--device",
+        args.vfm_cache_device,
+        "--depth_anything_feature",
+        args.vfm_cache_feature,
+        "--storage",
+        args.vfm_cache_storage,
+    ]
+    require_success(
+        run_command(build_cmd, log_dir / "build_vfm_cache.log", repo, env={"HF_HUB_DISABLE_XET": "1"}),
+        log_dir / "build_vfm_cache.log",
+    )
+
+    validate_cmd = [
+        "uv",
+        "run",
+        "--active",
+        "python",
+        "-m",
+        "vfm_gs.cli.validate_vfm_cache",
+        "-c",
+        str(cache_dir),
+        "-s",
+        str(scene_path),
+        "-i",
+        args.train_images,
+        "--backend",
+        args.vfm_cache_backend,
+    ]
+    require_success(
+        run_command(validate_cmd, log_dir / "validate_vfm_cache.log", repo, env={"HF_HUB_DISABLE_XET": "1"}),
+        log_dir / "validate_vfm_cache.log",
+    )
+
+
 def option_value(options: list[str], name: str) -> str | None:
     try:
         return options[options.index(name) + 1]
@@ -145,6 +211,7 @@ def train_baseline(
     run_dir: Path,
     log_dir: Path,
     overrides: list[str],
+    cache_dir: Path | None = None,
 ) -> None:
     if run_dir.exists() and latest_point_count(run_dir) is not None:
         return
@@ -157,6 +224,10 @@ def train_baseline(
         "vfm_gs.cli.train",
         "--variant",
         args.variant,
+    ]
+    if args.config is not None:
+        cmd.extend(["--config", args.config])
+    cmd.extend([
         "-s",
         str(scene_path),
         "-i",
@@ -178,7 +249,9 @@ def train_baseline(
         "default",
         "-r",
         str(args.resolution),
-    ]
+    ])
+    if cache_dir is not None:
+        cmd.extend(["--vfm_cache_dir", str(cache_dir)])
     cmd.extend(overrides)
     require_success(run_command(cmd, log_dir / "train.log", repo), log_dir / "train.log")
 
@@ -272,7 +345,7 @@ def write_summary(rows: list[dict[str, object]], output_dir: Path) -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run FastGS big/densify100 baseline evaluation for experiment 0001.")
+    parser = argparse.ArgumentParser(description="Run FastGS scene evaluations and batch experiments.")
     parser.add_argument("--dataset-name", required=True, choices=["mipnerf360", "db", "tandt"])
     parser.add_argument("--dataset-root", type=Path, required=True)
     parser.add_argument("--output-root", type=Path, required=True)
@@ -284,6 +357,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--densification-interval", type=int, default=100)
     parser.add_argument("--method-name", default=DEFAULT_METHOD)
     parser.add_argument("--run-name", default=DEFAULT_RUN_NAME)
+    parser.add_argument("--config", default=None)
+    parser.add_argument("--vfm-cache-template", default=None)
+    parser.add_argument("--vfm-cache-backend", default=DEFAULT_VFM_CACHE_BACKEND)
+    parser.add_argument("--vfm-cache-feature", default=DEFAULT_VFM_CACHE_FEATURE)
+    parser.add_argument("--vfm-cache-storage", default=DEFAULT_VFM_CACHE_STORAGE)
+    parser.add_argument("--vfm-cache-max-width", type=int, default=DEFAULT_VFM_CACHE_MAX_WIDTH)
+    parser.add_argument("--vfm-cache-device", default=DEFAULT_VFM_CACHE_DEVICE)
     parser.add_argument("--no-scene-overrides", action="store_true")
     return parser.parse_args()
 
@@ -301,9 +381,13 @@ def main() -> int:
         overrides = scene_overrides(args.dataset_name, scene, use_overrides)
         run_dir = args.output_root / scene / args.run_name
         log_dir = args.output_root / scene / "logs" / args.run_name
+        cache_dir = None
+        if args.vfm_cache_template:
+            cache_dir = Path(args.vfm_cache_template.format(scene=scene))
+            build_vfm_cache(scene_dir, scene, args, repo, log_dir, cache_dir)
 
         print("[{}] {} train/render/metrics".format(scene, args.method_name), flush=True)
-        train_baseline(scene_dir, scene, args, repo, run_dir, log_dir, overrides)
+        train_baseline(scene_dir, scene, args, repo, run_dir, log_dir, overrides, cache_dir=cache_dir)
         render_and_metrics(run_dir, log_dir, repo, overrides)
         rows.append(collect_row(args.dataset_name, scene, args.method_name, run_dir, log_dir))
         write_summary(rows, args.output_root)
