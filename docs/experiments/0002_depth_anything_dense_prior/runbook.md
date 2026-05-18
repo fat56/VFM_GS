@@ -1073,3 +1073,18 @@ tmux new-session -d -s 0002pp_t005_truck bash -lc 'cd /home/m/project/ltm/VFM_GS
 ```
 
 结果汇总：`output/0002/depth_anything_depth_prior_prune_protect_topk005/combined`。三场景平均为 27.9803 / 0.8634 / 0.2055、753,217 点，相对 Phase 0 为 -0.0185 PSNR、-0.0003 SSIM、LPIPS +0.0010、GS -6,755，QCGI -0.0295。结论：`topk005` 比 `weight015` 好，但仍不如 `topk010` 稳；继续收窄 fixed RGB top-k 不是主解。
+
+## Depth Anything prune-protect topk010 full MipNeRF360 expansion
+
+当前最接近中性的 prune-protect 设定仍是 `topk010`。下一步不再细扫固定超参，而是直接把 `topk010` 扩到 MipNeRF360 全 9 场景，看它是否能在更大范围里保持接近中性的容量-质量交换率。
+
+建议把 9 个场景按双卡分成两组，避免输出目录冲突：
+
+- GPU0: `bicycle flowers garden stump treehill`
+- GPU1: `room counter kitchen bonsai`
+
+```bash
+tmux new-session -d -s 0002pp_t010_full_g0 bash -lc 'cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && CUDA_VISIBLE_DEVICES=0 python scripts/run_0001_fastgs_big_eval.py   --dataset-name mipnerf360   --dataset-root datasets/mipnerf360   --output-root output/0002/depth_anything_depth_prior_prune_protect_topk010_full/mipnerf360_g0   --scenes bicycle flowers garden stump treehill   --train-images images   --iterations 30000   --resolution -1   --variant fastgs_big   --densification-interval 100   --method-name depth_anything_depth_prior_prune_protect_topk010_full   --run-name fastgs_big_30k_scene_override_r_auto   --config configs/experiments/0002_depth_anything_depth_prior_prune_protect_topk010.yaml   --vfm-cache-template output/0002/vfm_cache/{scene}_depth_anything_v2s_depth'
+
+tmux new-session -d -s 0002pp_t010_full_g1 bash -lc 'cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && CUDA_VISIBLE_DEVICES=1 python scripts/run_0001_fastgs_big_eval.py   --dataset-name mipnerf360   --dataset-root datasets/mipnerf360   --output-root output/0002/depth_anything_depth_prior_prune_protect_topk010_full/mipnerf360_g1   --scenes room counter kitchen bonsai   --train-images images   --iterations 30000   --resolution -1   --variant fastgs_big   --densification-interval 100   --method-name depth_anything_depth_prior_prune_protect_topk010_full   --run-name fastgs_big_30k_scene_override_r_auto   --config configs/experiments/0002_depth_anything_depth_prior_prune_protect_topk010.yaml   --vfm-cache-template output/0002/vfm_cache/{scene}_depth_anything_v2s_depth'
+```

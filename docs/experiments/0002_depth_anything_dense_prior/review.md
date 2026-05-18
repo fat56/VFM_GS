@@ -147,7 +147,7 @@ overlap 诊断进一步解释了分裂：
 
 分场景看，`truck` 从 `topk010` 的弱正例变成更清楚的 PSNR 正例：+0.0374 PSNR、SSIM 近似持平、LPIPS +0.0008、少 2,758 点，QCGI +0.0345。`stump` 仍是负例，只是比 `topk010` 稍微少错一点。关键问题是 `playroom`：它从 `topk010` 的 +0.0492 QCGI 变成 -0.0675，说明过窄的 RGB pruning proposal 会漏掉本来需要被保护的候选。
 
-这轮把 prune-protect 分支的判断推进了一步：问题不是单纯“保护太强”或“proposal 太宽”。固定 `topk010` 最接近中性，`weight015` 和 `topk005` 都更差。下一步如果继续 0002，不应继续手工扫相邻固定值，而应做两类更有信息量的实验：一是把当前最接近中性的 `topk010` 扩到更多 MipNeRF360 场景，看它是否在数据集均值上成立；二是设计场景自适应门控，例如根据 pruning-score 分布、受保护候选数量、或验证视角短评估动态决定 protect top-k/weight。
+这轮把 prune-protect 分支的判断推进了一步：问题不是单纯“保护太强”或“proposal 太宽”。固定 `topk010` 最接近中性，`weight015` 和 `topk005` 都更差。下一步如果继续 0002，不应继续手工扫相邻固定值，而应做两类更有信息量的实验：一是把当前最接近中性的 `topk010` 扩到更多 MipNeRF360 场景，看它是否在数据集均值上成立；二是设计场景自适应门控，例如根据 pruning-score 分布、受保护候选数量、或验证视角短评估动态决定 protect top-k/weight。`topk005` 已经说明过窄的 proposal 会漏掉 playroom 这类需要保护的候选。
 
 ## 2026-05-12 指标瓶颈诊断
 
