@@ -800,6 +800,13 @@ setsid bash -lc 'cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && C
 - `truck`: 26.0930 / 0.8900 / 0.1331、838,229 GS、127.29s，QCGI -0.5211。
 - 结论：比 top50 更像节流阀，但还是不能让三场景同时稳定正向。
 
+`l0.10 broad035 start9000` 结果摘要：
+
+- `stump`: 27.2377 / 0.7926 / 0.2243、1,420,686 GS、156.11s，QCGI -0.8732。
+- `playroom`: 30.7635 / 0.9145 / 0.2310、749,458 GS、110.84s，QCGI -0.2774。
+- `truck`: 26.0805 / 0.8899 / 0.1330、846,889 GS、128.21s，QCGI -0.5707。
+- 结论：后期介入能帮 `playroom`，但 `stump` 容量失控、`truck` 仍负向；不扩展全数据集。
+
 必须对照：
 
 - Phase 0 FastGS big baseline。

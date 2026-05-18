@@ -55,7 +55,7 @@ DB/Tandt baseline 也已完成。DB 均值为 30.2331 / 0.9111 / 0.2397、646,60
 
 direct relative depth cache 与 30k pilot 也已完成。cache 为 `output/0002/vfm_cache/bicycle_depth_anything_v2s_depth`，194 entries，46.21MB，feature 为 `depth_anything_relative_depth`，validate 通过。Depth Anything V2-S direct depth prior 30k 为 25.1415 / 0.7434 / 0.2689、1,005,953 个 Gaussians、训练 128.82s。相对同 recipe matched baseline，这是 +0.0628 PSNR、+0.0063 SSIM、LPIPS -0.0090，Gaussian 数 -17,959，QCGI 约 +0.2345。
 
-当前决策：`depth_anything_depth_prior` 明显优于 depth-edge prior，成为 0002 当前主线。它已经在 `bicycle` 上给出三项质量正向且更少点数的信号。2026-05-14 进一步确认：在 `fastgs_big + scene overrides` 下，`stump` 是有效正例，`bonsai` 是 PSNR 微负但 SSIM/LPIPS 正向的边界样本。必须注意，所有 fastgs_big prior 都要显式复用 phase 0 的 per-scene overrides；不带 overrides 的 run 会混入 recipe mismatch，不能作为方法负例。2026-05-17 的 RGB-gated rerank l0.25/l0.10/l0.05 说明两阶段思路可以改变方向，但三场景始终不能同时稳定正向，且 QCGI 全负，因此当前 top50 broad + depth rerank final-topm 不能扩全场景。2026-05-18 的 broad035 只是在节流，不是机制修复。
+当前决策：`depth_anything_depth_prior` 明显优于 depth-edge prior，成为 0002 当前主线。它已经在 `bicycle` 上给出三项质量正向且更少点数的信号。2026-05-14 进一步确认：在 `fastgs_big + scene overrides` 下，`stump` 是有效正例，`bonsai` 是 PSNR 微负但 SSIM/LPIPS 正向的边界样本。必须注意，所有 fastgs_big prior 都要显式复用 phase 0 的 per-scene overrides；不带 overrides 的 run 会混入 recipe mismatch，不能作为方法负例。2026-05-17 的 RGB-gated rerank l0.25/l0.10/l0.05 说明两阶段思路可以改变方向，但三场景始终不能同时稳定正向，且 QCGI 全负，因此当前 top50 broad + depth rerank final-topm 不能扩全场景。2026-05-18 的 broad035 只是在节流，不是机制修复；start9000 后期介入也没有解决 `stump/truck`。
 
 ## 2026-05-14 fastgs_big direct depth prior 复验
 
@@ -115,6 +115,10 @@ overlap 诊断进一步解释了分裂：
 
 `broad035` 进一步证明了入口缩窄只是节流：`stump` 保住三项质量正向，Gaussian 增量从约 +323k 压到 +256k；`playroom` 和 `truck` 的增量也下降。可惜它没有把 prior 对齐成稳定收益，`playroom` 仍然 PSNR/SSIM 轻微负向，`truck` 仍然 PSNR 负向，QCGI 继续全负。它说明我们缩掉了一部分浪费，但没有解决 prior 与 RGB 瓶颈错位。
 
+## 2026-05-18 RGB-gated depth rerank final-topm l0.10 broad035 start9000 pilot
+
+后期介入这轮验证了一个朴素假设：如果早期场景还没重建好，Depth Anything prior 可能太早干扰 densification；那就从 9000 iter 才开启。结果不是稳定解。`playroom` 的确从 broad035 的轻微负向恢复为 PSNR/LPIPS 正向，但它的 L1 改善依旧主要在非-prior 区域；`stump` 容量涨到 1.42M，QCGI 反而更差；`truck` 仍是 PSNR 负向，top-10 prior 区域 L1 继续明显变差。这个结果基本排除了“只靠延后接入”这条小修小补路径。
+
 ## 2026-05-12 指标瓶颈诊断
 
 为回应“这些 prior 是否真的命中当前重建瓶颈”的问题，新增 `scripts/diagnose_prior_overlap.py` 并先在 high-res `bicycle` 上补充验证。该诊断不重新训练，只读取已有 baseline/candidate render、GT、`cameras.json` 和 VFM cache，比较 prior top-k 与 RGB 高误差 top-k 的重叠，并看候选方法的 L1 改善是否真的落在 prior 区域。DINO token-edge 行只是 2D prior 对照，不能替代 0001 真实 descriptor residual 诊断。
@@ -144,4 +148,4 @@ overlap 诊断进一步解释了分裂：
 
 ## 下一步
 
-暂停同配置 direct depth prior、top50 RGB-gated depth rerank 和当前 broad035 方案的全数据集扩展。下一步若继续 0002，应优先改成在线 depth residual、延后 depth prior 介入，或把它改成后期辅助裁剪，并继续用 `stump/playroom/truck` 作为三点诊断。长任务继续用 detached 方式运行；每轮实验完成后更新文档、commit 并 push；当前只有本服务器改动，按用户要求不再强制先 `git pull`。
+暂停同配置 direct depth prior、top50 RGB-gated depth rerank、broad035 和 start9000 方案的全数据集扩展。下一步若继续 0002，应优先改成在线 depth residual，或把 depth prior 改成后期辅助裁剪/诊断信号，并继续用 `stump/playroom/truck` 作为三点诊断。长任务继续用 detached 方式运行；每轮实验完成后更新文档、commit 并 push；当前只有本服务器改动，按用户要求不再强制先 `git pull`。
