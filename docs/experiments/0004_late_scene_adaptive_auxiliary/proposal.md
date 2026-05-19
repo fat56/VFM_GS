@@ -41,6 +41,18 @@ python scripts/run_0001_fastgs_big_eval.py \
 - 场景：先选 `bicycle / stump / room` 做异质 pilot，再决定是否全量
 - 分辨率：原图输入，保持 FastGS 原始 1.6K 自动缩放口径，不再使用 `-r 8`
 
+## Baseline 曲线启发
+
+2026-05-20 已完成 `output/0002/fastgs_big_baseline_checkpoint_curve/mipnerf360/check.md`。MipNeRF360 全 9 场景的 FastGS big baseline 在 16k 后仍有平均收益，但场景差异很大：
+
+- 全 9 场景均值：16k -> 30k 为 +0.3316 PSNR、SSIM +0.0044、LPIPS -0.0083，GS 从 1.37M 降到 1.16M。
+- 20k -> 30k 只剩 +0.1525 PSNR，24k -> 30k 只剩 +0.0630 PSNR，说明后期整体进入较薄收益区。
+- 室内高质量场景仍有明显后期收益：`bonsai` 24k -> 30k 为 +0.2177 PSNR，`counter` +0.1049，`kitchen` +0.0952，`room` +0.1058。
+- 户外/复杂大场景后期收益薄：`flowers` 24k -> 30k +0.0099，`treehill` +0.0055，`garden` +0.0201，`bicycle` +0.0268。
+- `stump` 的 PSNR 最优在 22k，30k 相对 best 为 -0.0243，但 LPIPS 仍继续小幅改善。
+
+因此 0004 的 late auxiliary 不能只用一个固定介入点判断成败。第一轮 pilot 要把 `bicycle / stump / room` 保留下来：`bicycle` 代表后期小幅正收益，`stump` 代表 PSNR 早停/LPIPS 后期改善冲突，`room` 代表室内场景 24k 后仍明显涨。实验判断应同时看 20k/24k/30k 三个窗口，不只看最终 30k。
+
 ## 指标
 
 | 指标 | 基线 | 实验 | 差值 |

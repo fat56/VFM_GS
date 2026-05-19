@@ -38,7 +38,7 @@ source .venv/bin/activate
 
 建议把这些检查结果写成 `output/0004/.../check.md`，方便后面按场景比较曲线。
 
-一个可直接起跑的小 pilot 示例是：
+第一轮建议保留 `bicycle / stump / room`，因为 baseline curve 分别代表三种后期行为：后期小幅稳定收益、PSNR 早停但 LPIPS 后续改善、室内后期仍明显涨。一个可直接起跑的小 pilot 示例是：
 
 ```bash
 source .venv/bin/activate
@@ -51,6 +51,26 @@ CUDA_VISIBLE_DEVICES=0 uv run --active python scripts/run_0001_fastgs_big_eval.p
   --config configs/experiments/0004_late_scene_adaptive_auxiliary.yaml \
   --vfm-cache-template output/0002/vfm_cache/{scene}_depth_anything_v2s_depth \
   --resolution -1
+```
+
+若要和 baseline 曲线严格对齐，使用 checkpoint-curve runner：
+
+```bash
+source .venv/bin/activate
+CUDA_VISIBLE_DEVICES=1 uv run --active python scripts/run_fastgs_big_checkpoint_curve.py \
+  --dataset-name mipnerf360 \
+  --dataset-root datasets/mipnerf360 \
+  --output-root output/0004/late_scene_adaptive_auxiliary/depth_prune_auto_topk_pilot_gpu1 \
+  --scenes bicycle stump room \
+  --iterations 30000 \
+  --checkpoint-interval 2000 \
+  --resolution -1 \
+  --variant fastgs_big \
+  --densification-interval 100 \
+  --method-name depth_prune_auto_topk_late_aux \
+  --run-name depth_prune_auto_topk_late_aux_30k_curve_r_auto \
+  --config configs/experiments/0004_late_scene_adaptive_auxiliary.yaml \
+  --vfm-cache-template output/0002/vfm_cache/{scene}_depth_anything_v2s_depth
 ```
 
 如果后面切到 DINO prune-protect 对照，就复用 `configs/experiments/0003_dino_descriptor_prune_protect_only.yaml` 和 0003 的现成 cache，仍然保持晚期介入和预算约束。
