@@ -1124,3 +1124,20 @@ tmux new-session -d -s 0002pp_auto_cross_tandt 'cd /home/m/project/ltm/VFM_GS &&
 ```
 
 结果汇总：`output/0002/depth_anything_depth_prior_prune_protect_auto_topk_cross/combined`。DB/Tandt 四场景平均为 27.3632 / 0.8847 / 0.2068、593,032 点，相对 Phase 0 为 -0.0011 PSNR、+0.0002 SSIM、LPIPS +0.0002、GS -328，QCGI +0.0007。分数据集看，DB 为 -0.0391 QCGI，Tandt 为 +0.0405 QCGI。结论：`auto-topk` 跨数据集只能视为近中性，不能直接默认化；下一轮补 fixed `topk010` 的 `drjohnson/train` 缺口，建立完整 DB/Tandt 对照。
+
+## Depth Anything prune-protect topk010 DB/Tandt cross validation
+
+为了完整比较 auto-topk 与 fixed `topk010`，补跑 DB/Tandt 的 `drjohnson/train` 缺口。`playroom` 与 `truck` 的旧结果沿用之前的跨场景目录，最终用同一 baseline 口径合成 4 场景对照。
+
+本轮双卡分配：
+
+- GPU0: DB `drjohnson playroom`
+- GPU1: Tandt `train truck`
+
+```bash
+tmux new-session -d -s 0002pp_t010_cross_db 'cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && CUDA_VISIBLE_DEVICES=0 python scripts/run_0001_fastgs_big_eval.py --dataset-name db --dataset-root datasets/tandt_db/db --output-root output/0002/depth_anything_depth_prior_prune_protect_topk010_cross/db --scenes drjohnson playroom --method-name depth_anything_depth_prior_prune_protect_topk010 --run-name fastgs_big_30k_scene_override_r_auto --config configs/experiments/0002_depth_anything_depth_prior_prune_protect_topk010.yaml --vfm-cache-template "output/0002/vfm_cache/{scene}_depth_anything_v2s_depth" --vfm-cache-feature depth'
+
+tmux new-session -d -s 0002pp_t010_cross_tandt 'cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && CUDA_VISIBLE_DEVICES=1 python scripts/run_0001_fastgs_big_eval.py --dataset-name tandt --dataset-root datasets/tandt_db/tandt --output-root output/0002/depth_anything_depth_prior_prune_protect_topk010_cross/tandt --scenes train truck --method-name depth_anything_depth_prior_prune_protect_topk010 --run-name fastgs_big_30k_scene_override_r_auto --config configs/experiments/0002_depth_anything_depth_prior_prune_protect_topk010.yaml --vfm-cache-template "output/0002/vfm_cache/{scene}_depth_anything_v2s_depth" --vfm-cache-feature depth'
+```
+
+结果汇总：`output/0002/depth_anything_depth_prior_prune_protect_topk010_cross/combined`。DB/Tandt 四场景平均为 27.2961 / 0.8849 / 0.2069、593,536 点，相对 Phase 0 为 -0.0682 PSNR、+0.0004 SSIM、LPIPS +0.0002、GS +176，QCGI -0.0629。结论：fixed `topk010` 在完整 DB/Tandt 上是明确负向，不能作为跨数据集备选；后续不要继续扫固定 top-k/weight。

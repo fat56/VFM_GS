@@ -187,6 +187,14 @@ DB/Tandt 全 4 场景验证把 `auto-topk` 的结论拉回了中性。四场景�
 
 当前判断：`auto-topk` 仍是比 fixed `topk010` 更好的 MipNeRF360 配置，但不能直接默认化。下一步不是继续改 clip 范围，而是先补 fixed `topk010` 在 `drjohnson/train` 的缺口，建立完整 DB/Tandt 对照；如果 fixed 在 DB/Tandt 明显更稳，则 0002 prune-side 分支应转向 validation-driven selector，让场景自己选择 baseline/fixed/auto，而不是固定一个规则。
 
+## 2026-05-19 prune-protect topk010 DB/Tandt cross validation
+
+fixed `topk010` 的完整 DB/Tandt 结果把问题说得更直接：它在 4 场景平均上是 -0.0629 QCGI，明显比 auto-topk 的 +0.0007 更差。DB 两场景为 -0.0244，Tandt 两场景为 -0.1014，尤其 `train` 变成 -0.1534 QCGI，说明 fixed pruning 规则在跨数据集上并不更稳。
+
+对比 auto 与 fixed，可以看到它们并不是简单的“一个更宽/一个更窄”关系，而是改变了候选分布本身：`playroom` 上 fixed 稍好，但 `drjohnson/train/truck` 上 auto 更好。这个分裂意味着单一 top-k 规则已经没有继续扫参数的意义；如果还要保留 prune-side 分支，应该让验证信号来决定 baseline / fixed / auto 哪个策略生效，或者直接把它收束为场景自适应辅助，而不是默认训练主链路。
+
+当前建议：停止 fixed/auto top-k 的继续手工扫描，保留这两组结果作为边界证据，下一步若继续 0002，应实现 validation-driven selector 或 online residual，并先在小范围场景上验证 selector 是否比单规则更稳。
+
 ## 2026-05-12 指标瓶颈诊断
 
 为回应“这些 prior 是否真的命中当前重建瓶颈”的问题，新增 `scripts/diagnose_prior_overlap.py` 并先在 high-res `bicycle` 上补充验证。该诊断不重新训练，只读取已有 baseline/candidate render、GT、`cameras.json` 和 VFM cache，比较 prior top-k 与 RGB 高误差 top-k 的重叠，并看候选方法的 L1 改善是否真的落在 prior 区域。DINO token-edge 行只是 2D prior 对照，不能替代 0001 真实 descriptor residual 诊断。
@@ -216,4 +224,4 @@ DB/Tandt 全 4 场景验证把 `auto-topk` 的结论拉回了中性。四场景�
 
 ## 下一步
 
-暂停同配置 direct depth prior、top50 RGB-gated depth rerank、broad035、start9000，以及继续手工扫固定 prune-protect top-k/weight。`auto-topk` 在 MipNeRF360 全 9 场景给出弱正向均值，但 DB/Tandt 四场景只得到近中性并出现 DB/Tandt 分裂。下一步优先补 fixed `topk010` 在 `drjohnson/train` 的缺口，用完整 DB/Tandt 对照判断 fixed/auto 的选择边界；之后再考虑 validation-driven selector 或在线 depth residual。长任务继续用 tmux/detached 方式运行；每轮实验完成后更新文档、commit 并 push；当前只有本服务器改动，按用户要求不再强制先 `git pull`。
+暂停同配置 direct depth prior、top50 RGB-gated depth rerank、broad035、start9000，以及继续手工扫固定 prune-protect top-k/weight。`auto-topk` 在 MipNeRF360 全 9 场景给出弱正向均值，但 DB/Tandt 四场景只得到近中性并出现 DB/Tandt 分裂；补完 fixed `topk010` 后，它在完整 DB/Tandt 上变成明确负向。下一步不再继续扫 top-k，而是转向 validation-driven selector 或 online residual，并先在小范围场景上验证 selector 是否比单规则更稳。长任务继续用 tmux/detached 方式运行；每轮实验完成后更新文档、commit 并 push；当前只有本服务器改动，按用户要求不再强制先 `git pull`。

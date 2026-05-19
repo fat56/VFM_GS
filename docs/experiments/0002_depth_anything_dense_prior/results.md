@@ -631,6 +631,22 @@ Depth Anything prune-side auxiliary 这轮把 FastGS/RGB 保持为 densification
 
 判断：auto-topk 在跨数据集上只能算中性，不足以成为默认策略。Tandt 两场景为正，尤其 `truck` 比 fixed `topk010` 的 +0.0060 QCGI 明显更好；但 DB 两场景为负，`playroom` 从 fixed `topk010` 的 +0.0492 QCGI 退到 -0.0704。下一步应补 fixed `topk010` 在 `drjohnson/train` 的缺口，确认这是 auto-topk 的数据集分裂，还是 fixed top-k 在 DB/Tandt 本来更稳。
 
+## 2026-05-19 prune-protect topk010 DB/Tandt cross validation
+
+把 fixed `topk010` 的 `drjohnson/train` 缺口补完后，完整 4 场景结果比 auto-topk 明显更差，尤其在 Tandt 上退化更大。原始汇总在 `output/0002/depth_anything_depth_prior_prune_protect_topk010_cross/combined/summary.csv`。
+
+| 数据集 | 场景 | PSNR | SSIM | LPIPS | Gaussian 数 | 相对 Phase 0 | QCGI | 输出路径 |
+|---|---|---:|---:|---:|---:|---:|---:|---|
+| DB | drjohnson | 29.7144 | 0.9071 | 0.2439 | 704,884 | -0.0337 / -0.0004 / +0.0002, GS +938 | -0.0428 | `output/0002/depth_anything_depth_prior_prune_protect_topk010_cross/db/drjohnson/fastgs_big_30k_scene_override_r_auto` |
+| DB | playroom | 30.7075 | 0.9152 | 0.2362 | 590,130 | -0.0106 / +0.0004 / +0.0005, GS +877 | -0.0059 | `output/0002/depth_anything_depth_prior_prune_protect_topk010_cross/db/playroom/fastgs_big_30k_scene_override_r_auto` |
+| Tandt | train | 22.7078 | 0.8277 | 0.2081 | 456,467 | -0.1833 / +0.0014 / -0.0006, GS +2,032 | -0.1534 | `output/0002/depth_anything_depth_prior_prune_protect_topk010_cross/tandt/train/fastgs_big_30k_scene_override_r_auto` |
+| Tandt | truck | 26.0547 | 0.8896 | 0.1393 | 622,661 | -0.0452 / +0.0000 / +0.0009, GS -3,142 | -0.0493 | `output/0002/depth_anything_depth_prior_prune_protect_topk010_cross/tandt/truck/fastgs_big_30k_scene_override_r_auto` |
+| **平均** | **DB 2 场景** | **30.2109** | **0.9111** | **0.2400** | **647,507** | **-0.0222 / +0.0000 / +0.0003, GS +908** | **-0.0244** | `output/0002/depth_anything_depth_prior_prune_protect_topk010_cross/db` |
+| **平均** | **Tandt 2 场景** | **24.3812** | **0.8586** | **0.1737** | **539,564** | **-0.1142 / +0.0007 / +0.0001, GS -555** | **-0.1014** | `output/0002/depth_anything_depth_prior_prune_protect_topk010_cross/tandt` |
+| **平均** | **DB/Tandt 4 场景** | **27.2961** | **0.8849** | **0.2069** | **593,536** | **-0.0682 / +0.0004 / +0.0002, GS +176** | **-0.0629** | `output/0002/depth_anything_depth_prior_prune_protect_topk010_cross/combined` |
+
+判断：fixed `topk010` 在完整 DB/Tandt 上是明确负向，尤其 `train` 变成大负例。和 auto-topk 对比，fixed 只在 DB 的 `playroom` 上稍微好一点，但在 `drjohnson/train/truck` 都更差，4 场景平均 QCGI 直接落到 -0.0629。结论进一步收紧：auto-topk 是 MipNeRF360 上的最强候选，但跨数据集并不能默认化；fixed `topk010` 也不是更稳的备选。下一步该转向 validation-driven selector 或在线 residual，而不是继续围着 top-k 旋钮打转。
+
 ## 失败记录
 
 | 日期 | 阶段 | 范围 | 失败 | 后续处理 |
