@@ -129,6 +129,20 @@ def latest_point_count(run_dir: Path) -> int | None:
     return None
 
 
+def point_count_at_iteration(run_dir: Path, iteration: int) -> int | None:
+    ply_path = run_dir / "point_cloud" / "iteration_{}".format(iteration) / "point_cloud.ply"
+    if not ply_path.exists():
+        return None
+    with ply_path.open("rb") as handle:
+        for raw_line in handle:
+            line = raw_line.decode("ascii", errors="ignore").strip()
+            if line.startswith("element vertex "):
+                return int(line.rsplit(" ", 1)[1])
+            if line == "end_header":
+                break
+    return None
+
+
 def scene_overrides(dataset: str, scene: str, enabled: bool) -> list[str]:
     if not enabled:
         return []
@@ -138,6 +152,16 @@ def scene_overrides(dataset: str, scene: str, enabled: bool) -> list[str]:
         "tandt": TANDT_OVERRIDES,
     }
     return list(tables.get(dataset, {}).get(scene, []))
+
+
+def load_metrics_map(run_dir: Path) -> dict[str, dict[str, float]]:
+    results_path = run_dir / "results.json"
+    if not results_path.exists():
+        return {}
+    data = json.loads(results_path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        return {}
+    return data
 
 
 def build_vfm_cache(scene_path: Path, scene: str, args: argparse.Namespace, repo: Path, log_dir: Path, cache_dir: Path) -> None:
@@ -212,9 +236,15 @@ def train_baseline(
     log_dir: Path,
     overrides: list[str],
     cache_dir: Path | None = None,
+    save_iterations: list[int] | None = None,
 ) -> None:
+    save_iterations = sorted({int(value) for value in (save_iterations or [args.iterations]) if int(value) > 0})
+    if args.iterations not in save_iterations:
+        save_iterations.append(args.iterations)
+    save_iterations = sorted(set(save_iterations))
     if run_dir.exists() and latest_point_count(run_dir) is not None:
-        return
+        if all(point_count_at_iteration(run_dir, iteration) is not None for iteration in save_iterations):
+            return
     cmd = [
         "uv",
         "run",
@@ -240,7 +270,9 @@ def train_baseline(
         "--test_iterations",
         str(args.iterations),
         "--save_iterations",
-        str(args.iterations),
+    ])
+    cmd.extend(str(value) for value in save_iterations)
+    cmd.extend([
         "--checkpoint_iterations",
         str(args.iterations),
         "--densification_interval",
@@ -256,38 +288,47 @@ def train_baseline(
     require_success(run_command(cmd, log_dir / "train.log", repo), log_dir / "train.log")
 
 
+def render_iteration(run_dir: Path, log_dir: Path, repo: Path, overrides: list[str], iteration: int) -> None:
+    cmd = [
+        "uv",
+        "run",
+        "--active",
+        "python",
+        "-m",
+        "vfm_gs.cli.render",
+        "-m",
+        str(run_dir),
+        "--iteration",
+        str(iteration),
+        "--skip_train",
+        "--quiet",
+    ]
+    mult = option_value(overrides, "--mult")
+    if mult is not None:
+        cmd.extend(["--mult", mult])
+    require_success(
+        run_command(cmd, log_dir / "render_{}.log".format(iteration), repo),
+        log_dir / "render_{}.log".format(iteration),
+    )
+
+
+def run_metrics(run_dir: Path, log_dir: Path, repo: Path) -> None:
+    cmd = [
+        "uv",
+        "run",
+        "--active",
+        "python",
+        "-m",
+        "vfm_gs.cli.metrics",
+        "-m",
+        str(run_dir),
+    ]
+    require_success(run_command(cmd, log_dir / "metrics.log", repo), log_dir / "metrics.log")
+
+
 def render_and_metrics(run_dir: Path, log_dir: Path, repo: Path, overrides: list[str]) -> None:
-    if not (run_dir / "test").exists():
-        cmd = [
-            "uv",
-            "run",
-            "--active",
-            "python",
-            "-m",
-            "vfm_gs.cli.render",
-            "-m",
-            str(run_dir),
-            "--iteration",
-            "-1",
-            "--skip_train",
-            "--quiet",
-        ]
-        mult = option_value(overrides, "--mult")
-        if mult is not None:
-            cmd.extend(["--mult", mult])
-        require_success(run_command(cmd, log_dir / "render.log", repo), log_dir / "render.log")
-    if not is_metrics_complete(run_dir):
-        cmd = [
-            "uv",
-            "run",
-            "--active",
-            "python",
-            "-m",
-            "vfm_gs.cli.metrics",
-            "-m",
-            str(run_dir),
-        ]
-        require_success(run_command(cmd, log_dir / "metrics.log", repo), log_dir / "metrics.log")
+    render_iteration(run_dir, log_dir, repo, overrides, -1)
+    run_metrics(run_dir, log_dir, repo)
 
 
 def collect_row(dataset: str, scene: str, method: str, run_dir: Path, log_dir: Path) -> dict[str, object]:

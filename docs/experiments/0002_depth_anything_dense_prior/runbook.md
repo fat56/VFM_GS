@@ -1168,3 +1168,46 @@ tmux new-session -d -s 0002pp_selector_tandt 'cd /home/m/project/ltm/VFM_GS && s
 - Tandt：`train_best_psnr` 选 `train -> baseline`、`truck -> baseline`，test 均值与 baseline 一致；`train_qcgi` 选 `train -> auto-topk`、`truck -> baseline`，test 均值为 24.5009 / 0.8584 / 0.1729，只比 baseline 的 24.4955 / 0.8579 / 0.1736 高一点点。
 
 结论：selector 比单一固定规则更会回退，但它还不足以成为默认策略，只能当保守回退器。下一步若继续 0002，应把工作重心放到正式的 validation-driven selector 或 online residual，而不是继续扫 top-k。
+
+## FastGS big baseline checkpoint curve
+
+按用户要求新增 `scripts/run_fastgs_big_checkpoint_curve.py` 和 `scripts/merge_fastgs_big_checkpoint_checks.py`。该入口会在训练时保存 `2000/4000/.../30000` 的 point cloud，训练完成后逐 checkpoint 对 test split 做 render/metrics，并生成：
+
+- `check.csv`
+- `check.json`
+- `check.md`
+- `plots/*.svg`
+
+本轮使用 GPU0 单卡顺序跑三个公开数据集全 13 场景，输出根目录为 `output/0002/fastgs_big_baseline_checkpoint_curve/`。最终合并总表为 `output/0002/fastgs_big_baseline_checkpoint_curve/check.md`。
+
+```bash
+tmux new-session -d -s 0002_fastgs_big_curve_g0 "bash -lc 'cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && set -euo pipefail && { \
+CUDA_VISIBLE_DEVICES=0 python scripts/run_fastgs_big_checkpoint_curve.py --dataset-name mipnerf360 --dataset-root datasets/mipnerf360 --output-root output/0002/fastgs_big_baseline_checkpoint_curve/mipnerf360 --scenes bicycle flowers garden stump treehill room counter kitchen bonsai --train-images images --iterations 30000 --checkpoint-interval 2000 --resolution -1 --variant fastgs_big --densification-interval 100 --method-name fastgs_big_baseline_checkpoint_curve --run-name fastgs_big_30k_curve_r_auto; \
+CUDA_VISIBLE_DEVICES=0 python scripts/run_fastgs_big_checkpoint_curve.py --dataset-name db --dataset-root datasets/tandt_db/db --output-root output/0002/fastgs_big_baseline_checkpoint_curve/db --scenes drjohnson playroom --iterations 30000 --checkpoint-interval 2000 --resolution -1 --variant fastgs_big --densification-interval 100 --method-name fastgs_big_baseline_checkpoint_curve --run-name fastgs_big_30k_curve_r_auto; \
+CUDA_VISIBLE_DEVICES=0 python scripts/run_fastgs_big_checkpoint_curve.py --dataset-name tandt --dataset-root datasets/tandt_db/tandt --output-root output/0002/fastgs_big_baseline_checkpoint_curve/tandt --scenes train truck --iterations 30000 --checkpoint-interval 2000 --resolution -1 --variant fastgs_big --densification-interval 100 --method-name fastgs_big_baseline_checkpoint_curve --run-name fastgs_big_30k_curve_r_auto; \
+python scripts/merge_fastgs_big_checkpoint_checks.py --output-root output/0002/fastgs_big_baseline_checkpoint_curve --dataset-roots output/0002/fastgs_big_baseline_checkpoint_curve/mipnerf360 output/0002/fastgs_big_baseline_checkpoint_curve/db output/0002/fastgs_big_baseline_checkpoint_curve/tandt; \
+} > output/0002/debug_logs/fastgs_big_checkpoint_curve_g0.log 2>&1'"
+```
+
+启动时间：2026-05-19 20:16。当前已确认 `bicycle` checkpoint 正常写出，训练日志位于 `output/0002/fastgs_big_baseline_checkpoint_curve/mipnerf360/bicycle/logs/fastgs_big_30k_curve_r_auto/train.log`。
+
+## Depth Anything prune-protect MipNeRF360 three-method selector probe
+
+在 DB/Tandt selector probe 之后，补做 MipNeRF360 全 9 场景的三方法 selector 复核，把 baseline / auto-topk / fixed topk010 放进同一输入表。该实验不训练新模型，只用 32 个 train-side held-out views 复查候选选择是否比单规则更稳。
+
+输入表：
+
+- `output/0002/depth_anything_depth_prior_prune_protect_selector_probe_mip9_fullmethods/input_summary.csv`
+
+```bash
+tmux new-session -d -s 0002pp_selector_mip9_g1 "bash -lc 'cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && set -euo pipefail && CUDA_VISIBLE_DEVICES=1 python scripts/evaluate_0001_train_selector.py \
+  --input-summary output/0002/depth_anything_depth_prior_prune_protect_selector_probe_mip9_fullmethods/input_summary.csv \
+  --output-dir output/0002/depth_anything_depth_prior_prune_protect_selector_probe_mip9_fullmethods/mipnerf360 \
+  --datasets mipnerf360 \
+  --methods baseline depth_anything_depth_prior_prune_protect_auto_topk depth_anything_depth_prior_prune_protect_topk010 \
+  --max-views 32 \
+  --view-stride 2 \
+  --resume > output/0002/debug_logs/depth_anything_prune_protect_selector_probe_mip9_fullmethods_g1.log 2>&1'"
+```
+
+启动时间：2026-05-19 20:16。该 session 与 baseline curve 并行运行，使用 GPU1。
