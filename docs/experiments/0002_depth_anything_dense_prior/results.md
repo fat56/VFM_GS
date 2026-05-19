@@ -596,6 +596,25 @@ Depth Anything prune-side auxiliary 这轮把 FastGS/RGB 保持为 densification
 
 这轮没有把 auto-topk 推成默认解，但它比 fixed `topk010` 更像一个“减伤器”：`garden` 的退化从 -0.3555 QCGI 收回到近中性，`kitchen` 仍保持正向，`bonsai` 也比 fixed `topk010` 更接近 baseline。四景均值仍略低于 Phase 0，因此它还不能替代 baseline，但已经说明 scene-adaptive candidate sizing 是有价值的方向。
 
+## 2026-05-19 prune-protect auto-topk full MipNeRF360
+
+把同一套 scene-adaptive `rgb_prune_auto_topk` 扩到 MipNeRF360 全 9 场景后，它没有掉回 fixed `topk010` 那种明显负向，而是保持了轻微正向的均值信号。原始汇总在 `output/0002/depth_anything_depth_prior_prune_protect_auto_topk_full/mipnerf360_combined/summary.csv`。
+
+| 数据集 | 场景 | PSNR | SSIM | LPIPS | Gaussian 数 | 相对 Phase 0 | QCGI | 输出路径 |
+|---|---|---:|---:|---:|---:|---:|---:|---|
+| MipNeRF360 | bicycle | 25.2541 | 0.7554 | 0.2447 | 1,566,004 | -0.0028 / +0.0001 / -0.0003, GS +5,795 | -0.0042 | `output/0002/depth_anything_depth_prior_prune_protect_auto_topk_full/mipnerf360_g1/bicycle/fastgs_big_30k_scene_override_r_auto` |
+| MipNeRF360 | flowers | 21.6546 | 0.6030 | 0.3437 | 1,123,280 | +0.0262 / +0.0006 / +0.0033, GS +465 | +0.0220 | `output/0002/depth_anything_depth_prior_prune_protect_auto_topk_full/mipnerf360_g0/flowers/fastgs_big_30k_scene_override_r_auto` |
+| MipNeRF360 | garden | 27.6527 | 0.8645 | 0.1099 | 2,625,292 | +0.0181 / +0.0001 / +0.0002, GS -9,524 | +0.0185 | `output/0002/depth_anything_depth_prior_prune_protect_auto_topk_full/mipnerf360_g0/garden/fastgs_big_30k_scene_override_r_auto` |
+| MipNeRF360 | stump | 27.1438 | 0.7854 | 0.2400 | 1,061,841 | -0.0347 / -0.0015 / +0.0006, GS -3,019 | -0.0674 | `output/0002/depth_anything_depth_prior_prune_protect_auto_topk_full/mipnerf360_g1/stump/fastgs_big_30k_scene_override_r_auto` |
+| MipNeRF360 | treehill | 22.8189 | 0.6324 | 0.3774 | 1,014,629 | -0.0087 / +0.0001 / +0.0005, GS +5,519 | -0.0151 | `output/0002/depth_anything_depth_prior_prune_protect_auto_topk_full/mipnerf360_g1/treehill/fastgs_big_30k_scene_override_r_auto` |
+| MipNeRF360 | room | 32.1445 | 0.9301 | 0.1892 | 571,786 | -0.0691 / -0.0004 / +0.0010, GS +179 | -0.0819 | `output/0002/depth_anything_depth_prior_prune_protect_auto_topk_full/mipnerf360_g1/room/fastgs_big_30k_scene_override_r_auto` |
+| MipNeRF360 | counter | 29.5953 | 0.9183 | 0.1764 | 470,931 | +0.0693 / +0.0002 / -0.0001, GS +354 | +0.0739 | `output/0002/depth_anything_depth_prior_prune_protect_auto_topk_full/mipnerf360_g0/counter/fastgs_big_30k_scene_override_r_auto` |
+| MipNeRF360 | kitchen | 32.4409 | 0.9395 | 0.1042 | 1,180,398 | +0.1599 / +0.0006 / -0.0009, GS +2,410 | +0.1736 | `output/0002/depth_anything_depth_prior_prune_protect_auto_topk_full/mipnerf360_g1/kitchen/fastgs_big_30k_scene_override_r_auto` |
+| MipNeRF360 | bonsai | 33.0459 | 0.9527 | 0.1599 | 844,676 | -0.0387 / -0.0011 / +0.0001, GS +583 | -0.0609 | `output/0002/depth_anything_depth_prior_prune_protect_auto_topk_full/mipnerf360_g0/bonsai/fastgs_big_30k_scene_override_r_auto` |
+| **平均** | **MipNeRF360 9 场景** | **27.9723** | **0.8201** | **0.2162** | **1,162,093** | **+0.0133 / -0.0001 / +0.0005, GS +307** | **+0.0065** | `output/0002/depth_anything_depth_prior_prune_protect_auto_topk_full/mipnerf360_combined` |
+
+相对 baseline，这轮还是很薄，但已经不是纯减伤：4/9 场景 QCGI 为正，平均只比 Phase 0 高一点点 PSNR，SSIM/LPIPS 基本打平。相对 fixed `topk010`，它平均提升 +0.0595 PSNR、+0.0006 SSIM、LPIPS 基本持平，GS 只多 2,642，QCGI 提升 +0.0666。当前可把它视为 prune-side 的最强候选，但还需要 DB/Tandt 的 generalization 验证。
+
 ## 失败记录
 
 | 日期 | 阶段 | 范围 | 失败 | 后续处理 |

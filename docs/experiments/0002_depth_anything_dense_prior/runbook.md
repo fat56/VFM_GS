@@ -1090,3 +1090,20 @@ tmux new-session -d -s 0002pp_t010_full_g1 bash -lc 'cd /home/m/project/ltm/VFM_
 ```
 
 结果汇总：`output/0002/depth_anything_depth_prior_prune_protect_topk010_full/mipnerf360_combined`。全 9 场景平均为 27.9128 / 0.8196 / 0.2162、1,159,451 点，相对 Phase 0 为 -0.0462 PSNR、-0.0007 SSIM、LPIPS +0.0005、GS -2,335，QCGI -0.0643。结论：固定 `topk010` 不能作为 MipNeRF360 默认策略；后续不要继续手工扫相邻 fixed top-k/weight。
+
+## Depth Anything prune-protect auto-topk full MipNeRF360 expansion
+
+`topk010` 全 9 场景为负后，下一轮把 RGB pruning proposal 改成场景自适应：按 RGB pruning score 的均值/方差估计候选规模，再 clip 到 0.1%~1.0%。配置为 `configs/experiments/0002_depth_anything_depth_prior_prune_protect_auto_topk.yaml`。
+
+本轮双卡分配：
+
+- GPU0: `garden flowers counter bonsai`
+- GPU1: `bicycle stump treehill room kitchen`
+
+```bash
+tmux new-session -d -s 0002pp_auto_full_g0 'cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && CUDA_VISIBLE_DEVICES=0 python scripts/run_0001_fastgs_big_eval.py --dataset-name mipnerf360 --dataset-root datasets/mipnerf360 --output-root output/0002/depth_anything_depth_prior_prune_protect_auto_topk_full/mipnerf360_g0 --scenes garden flowers counter bonsai --method-name depth_anything_depth_prior_prune_protect_auto_topk --run-name fastgs_big_30k_scene_override_r_auto --config configs/experiments/0002_depth_anything_depth_prior_prune_protect_auto_topk.yaml --vfm-cache-template "output/0002/vfm_cache/{scene}_depth_anything_v2s_depth" --vfm-cache-feature depth'
+
+tmux new-session -d -s 0002pp_auto_full_g1 'cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && CUDA_VISIBLE_DEVICES=1 python scripts/run_0001_fastgs_big_eval.py --dataset-name mipnerf360 --dataset-root datasets/mipnerf360 --output-root output/0002/depth_anything_depth_prior_prune_protect_auto_topk_full/mipnerf360_g1 --scenes bicycle stump treehill room kitchen --method-name depth_anything_depth_prior_prune_protect_auto_topk --run-name fastgs_big_30k_scene_override_r_auto --config configs/experiments/0002_depth_anything_depth_prior_prune_protect_auto_topk.yaml --vfm-cache-template "output/0002/vfm_cache/{scene}_depth_anything_v2s_depth" --vfm-cache-feature depth'
+```
+
+结果汇总：`output/0002/depth_anything_depth_prior_prune_protect_auto_topk_full/mipnerf360_combined`。全 9 场景平均为 27.9723 / 0.8201 / 0.2162、1,162,093 点，相对 Phase 0 为 +0.0133 PSNR、-0.0001 SSIM、LPIPS +0.0005、GS +307，QCGI +0.0065；相对 fixed `topk010` 平均提升 +0.0595 PSNR、+0.0006 SSIM，QCGI +0.0666。结论：`auto-topk` 是当前 prune-side 最强候选，下一步应做 DB/Tandt 跨数据集验证。

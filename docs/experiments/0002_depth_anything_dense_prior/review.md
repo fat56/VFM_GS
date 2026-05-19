@@ -171,6 +171,14 @@ overlap 诊断进一步解释了分裂：
 
 下一步如果继续 0002，应该继续把候选规模和保护强度拆开看，或者引入更直接的 validation feedback，而不是继续扫固定 top-k。
 
+## 2026-05-19 prune-protect auto-topk full MipNeRF360
+
+`auto-topk` 扩到 MipNeRF360 全 9 场景后，均值为 27.9723 / 0.8201 / 0.2162、1,162,093 点，相对 Phase 0 为 +0.0133 PSNR、-0.0001 SSIM、LPIPS +0.0005、GS +307，平均 QCGI +0.0065。这个结果很薄，但它和 fixed `topk010` 的 -0.0643 QCGI 均值不同，已经从“减伤器”升级为“弱正向候选”。
+
+逐场景看，`flowers/garden/counter/kitchen` 是 QCGI 正例，`stump/room/bonsai` 仍是主要负例。`garden` 从 fixed `topk010` 的严重退化恢复到 +0.0185 QCGI，说明自适应候选规模确实抓住了 fixed top-k 的主要问题；但 `room` 和 `stump` 仍负向，说明只靠 RGB pruning score 分布还不能完成真正的场景选择。
+
+当前判断：`rgb_prune_auto_topk` 是 0002 prune-side 分支迄今最强配置，可以进入 DB/Tandt 跨数据集验证；如果 DB/Tandt 也接近中性或正向，再考虑作为轻量默认候选。若跨数据集失败，下一步应转向 validation-driven selector 或在线 residual，而不是继续手工调 auto-topk clip 范围。
+
 ## 2026-05-12 指标瓶颈诊断
 
 为回应“这些 prior 是否真的命中当前重建瓶颈”的问题，新增 `scripts/diagnose_prior_overlap.py` 并先在 high-res `bicycle` 上补充验证。该诊断不重新训练，只读取已有 baseline/candidate render、GT、`cameras.json` 和 VFM cache，比较 prior top-k 与 RGB 高误差 top-k 的重叠，并看候选方法的 L1 改善是否真的落在 prior 区域。DINO token-edge 行只是 2D prior 对照，不能替代 0001 真实 descriptor residual 诊断。
@@ -200,4 +208,4 @@ overlap 诊断进一步解释了分裂：
 
 ## 下一步
 
-暂停同配置 direct depth prior、top50 RGB-gated depth rerank、broad035、start9000，以及固定 prune-protect top-k/weight 方案的继续扩展。`topk010` 全 9 场景已经证明固定后验保护不是默认解，`auto-topk` 则说明 scene-adaptive candidate sizing 有减伤价值，但还不足以收束成默认策略。下一步若继续 0002，应做场景自适应 protect、在线 depth residual 或 validation-driven selector；否则 0002 可以阶段性收束，把主线让给更直接的误差对齐方案。长任务继续用 tmux/detached 方式运行；每轮实验完成后更新文档、commit 并 push；当前只有本服务器改动，按用户要求不再强制先 `git pull`。
+暂停同配置 direct depth prior、top50 RGB-gated depth rerank、broad035、start9000，以及固定 prune-protect top-k/weight 方案的继续扩展。`topk010` 全 9 场景已经证明固定后验保护不是默认解，`auto-topk` 在 MipNeRF360 全 9 场景给出弱正向均值，是当前 prune-side 最强候选。下一步优先做 DB/Tandt 跨数据集验证；若跨数据集仍成立，再考虑把它作为轻量默认候选，否则转向 validation-driven selector 或在线 depth residual。长任务继续用 tmux/detached 方式运行；每轮实验完成后更新文档、commit 并 push；当前只有本服务器改动，按用户要求不再强制先 `git pull`。
