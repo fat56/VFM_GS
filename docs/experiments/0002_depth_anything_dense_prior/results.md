@@ -573,14 +573,14 @@ Depth Anything prune-side auxiliary 这轮把 FastGS/RGB 保持为 densification
 
 ## 2026-05-19 prune-protect train selector probe
 
-为检验 fixed prune-protect 是否还能靠 train-side 选择器挽回一部分收益，本轮用 `scripts/evaluate_0001_train_selector.py` 在 MipNeRF360 9 个场景上复查 baseline 与 `depth_anything_depth_prior_prune_protect_topk010_full`。`train_best_psnr` 和 `train_qcgi` 的选择完全一致：`bicycle/flowers/garden/stump/treehill/room/counter/bonsai` 都回退 baseline，只有 `kitchen` 选中 depth prior。
+为检验 fixed prune-protect 是否还能靠 train-side 选择器挽回一部分收益，本轮用 `scripts/evaluate_0001_train_selector.py` 在 MipNeRF360 9 个场景上复查 baseline、`depth_anything_depth_prior_prune_protect_auto_topk` 和 `depth_anything_depth_prior_prune_protect_topk010_full`。这轮先修正了输入名里 `_full` 的后缀不匹配，才把 27 条 input rows 全部跑完。
 
-| selector | scene_count | avg_test_psnr | avg_test_ssim | avg_test_lpips | avg_test_gs_num | avg_test_train_time_s |
+| selector | scene_count | picked mix | avg_test_psnr | avg_test_ssim | avg_test_lpips | avg_test_gs_num | avg_test_train_time_s |
 |---|---:|---:|---:|---:|---:|---:|
-| train_best_psnr | 9 | 27.9699 | 0.8203 | 0.2155 | 1,162,654 | 159.73s |
-| train_qcgi | 9 | 27.9699 | 0.8203 | 0.2155 | 1,162,654 | 159.73s |
+| train_best_psnr | 9 | baseline 2, auto-topk 4, topk010_full 3 | 27.9289 | 0.8197 | 0.2161 | 1,161,298 | 159.29s |
+| train_qcgi | 9 | baseline 3, auto-topk 5, topk010_full 1 | 27.9529 | 0.8200 | 0.2160 | 1,161,206 | 159.31s |
 
-相对 baseline，这个混合策略只高约 +0.0109 PSNR、+0.0000 SSIM、LPIPS -0.0001、GS +868；相对 full topk010 则好很多，但仍然只是 kitchen 上的一次 depth 保留。结论是 train-side selector 只能做保守回退，不能把 fixed prune-protect 变成默认策略。
+相对 baseline 27.9590 / 0.8203 / 0.2157 / 1,161,786，这两种 selector 都略低，说明它们只能做保守路由，不能把 fixed prune-protect 变成默认增益策略。
 
 ## 2026-05-19 prune-protect auto-topk pilot
 
