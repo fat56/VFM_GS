@@ -1088,3 +1088,5 @@ tmux new-session -d -s 0002pp_t010_full_g0 bash -lc 'cd /home/m/project/ltm/VFM_
 
 tmux new-session -d -s 0002pp_t010_full_g1 bash -lc 'cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && CUDA_VISIBLE_DEVICES=1 python scripts/run_0001_fastgs_big_eval.py   --dataset-name mipnerf360   --dataset-root datasets/mipnerf360   --output-root output/0002/depth_anything_depth_prior_prune_protect_topk010_full/mipnerf360_g1   --scenes room counter kitchen bonsai   --train-images images   --iterations 30000   --resolution -1   --variant fastgs_big   --densification-interval 100   --method-name depth_anything_depth_prior_prune_protect_topk010_full   --run-name fastgs_big_30k_scene_override_r_auto   --config configs/experiments/0002_depth_anything_depth_prior_prune_protect_topk010.yaml   --vfm-cache-template output/0002/vfm_cache/{scene}_depth_anything_v2s_depth'
 ```
+
+结果汇总：`output/0002/depth_anything_depth_prior_prune_protect_topk010_full/mipnerf360_combined`。全 9 场景平均为 27.9128 / 0.8196 / 0.2162、1,159,451 点，相对 Phase 0 为 -0.0462 PSNR、-0.0007 SSIM、LPIPS +0.0005、GS -2,335，QCGI -0.0643。结论：固定 `topk010` 不能作为 MipNeRF360 默认策略；后续不要继续手工扫相邻 fixed top-k/weight。

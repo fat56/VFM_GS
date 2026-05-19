@@ -149,6 +149,14 @@ overlap 诊断进一步解释了分裂：
 
 这轮把 prune-protect 分支的判断推进了一步：问题不是单纯“保护太强”或“proposal 太宽”。固定 `topk010` 最接近中性，`weight015` 和 `topk005` 都更差。下一步如果继续 0002，不应继续手工扫相邻固定值，而应做两类更有信息量的实验：一是把当前最接近中性的 `topk010` 扩到更多 MipNeRF360 场景，看它是否在数据集均值上成立；二是设计场景自适应门控，例如根据 pruning-score 分布、受保护候选数量、或验证视角短评估动态决定 protect top-k/weight。`topk005` 已经说明过窄的 proposal 会漏掉 playroom 这类需要保护的候选。
 
+## 2026-05-19 prune-protect topk010 full MipNeRF360
+
+`topk010` 扩到 MipNeRF360 全 9 场景后，平均为 27.9128 / 0.8196 / 0.2162、1,159,451 点，相对 Phase 0 为 -0.0462 PSNR、-0.0007 SSIM、LPIPS +0.0005、GS -2,335，平均 QCGI -0.0643。这个结果把 prune-protect 分支从“三场景近中性”推进成了“全场景固定策略负向”。
+
+逐场景看，`treehill/counter/kitchen` 是正例，尤其 `kitchen` 三项质量正向且 QCGI +0.1007；但 `garden/room/bonsai/stump` 明显负向，`garden` 的 -0.2961 PSNR 和 `bonsai` 的 -0.1844 PSNR 是主要风险。平均点数少 2,335 个 Gaussian，但这是质量下降换来的，不是有效容量收益。
+
+因此，Depth Anything prune-side auxiliary 的价值应被限定为“可能有局部后验修正信号”，而不是“可用固定规则”。继续固定 top-k/weight 扫描的边际价值已经很低。下一步若继续 0002，更合理的是做场景自适应 protect、在线 depth residual，或者利用 validation/train-side 短评估决定是否启用 protect。
+
 ## 2026-05-12 指标瓶颈诊断
 
 为回应“这些 prior 是否真的命中当前重建瓶颈”的问题，新增 `scripts/diagnose_prior_overlap.py` 并先在 high-res `bicycle` 上补充验证。该诊断不重新训练，只读取已有 baseline/candidate render、GT、`cameras.json` 和 VFM cache，比较 prior top-k 与 RGB 高误差 top-k 的重叠，并看候选方法的 L1 改善是否真的落在 prior 区域。DINO token-edge 行只是 2D prior 对照，不能替代 0001 真实 descriptor residual 诊断。
@@ -178,4 +186,4 @@ overlap 诊断进一步解释了分裂：
 
 ## 下一步
 
-暂停同配置 direct depth prior、top50 RGB-gated depth rerank、broad035 和 start9000 方案的继续扩展。prune-protect-only 是目前 0002 里最接近可控的方向，但 `weight015` 和 `topk005` 都没有超过 `topk010`。下一步优先把 `topk010` 作为当前中性对照扩到更多 MipNeRF360 场景，或者改成场景自适应 protect，而不是继续手工扫相邻固定 top-k/weight。长任务继续用 tmux/detached 方式运行；每轮实验完成后更新文档、commit 并 push；当前只有本服务器改动，按用户要求不再强制先 `git pull`。
+暂停同配置 direct depth prior、top50 RGB-gated depth rerank、broad035、start9000，以及固定 prune-protect top-k/weight 方案的继续扩展。`topk010` 全 9 场景已经证明固定后验保护不是默认解。下一步若继续 0002，应做场景自适应 protect、在线 depth residual 或 validation-driven selector；否则 0002 可以阶段性收束，把主线让给更直接的误差对齐方案。长任务继续用 tmux/detached 方式运行；每轮实验完成后更新文档、commit 并 push；当前只有本服务器改动，按用户要求不再强制先 `git pull`。
