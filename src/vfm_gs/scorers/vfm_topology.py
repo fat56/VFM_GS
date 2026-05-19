@@ -495,6 +495,43 @@ def _rgb_prune_topk_candidate(rgb_pruning, args):
     return candidate.reshape_as(rgb_pruning).to(device=rgb_pruning.device)
 
 
+def _topk_count(total, topk):
+    if total <= 0 or topk <= 0.0:
+        return 0
+    if topk <= 1.0:
+        count = int(math.ceil(total * topk))
+    else:
+        count = int(round(topk))
+    return max(1, min(total, count))
+
+
+def _rgb_prune_auto_topk_candidate(rgb_pruning, args):
+    scores = torch.nan_to_num(rgb_pruning.detach().to(torch.float32).reshape(-1), nan=0.0, posinf=0.0, neginf=0.0)
+    total = scores.numel()
+    candidate = torch.zeros_like(scores, dtype=torch.bool)
+    if total == 0:
+        return candidate.reshape_as(rgb_pruning).to(device=rgb_pruning.device)
+
+    min_topk = max(0.0, float(getattr(args, "vfm_prune_protect_rgb_auto_min_topk", 0.001) or 0.0))
+    max_topk = max(min_topk, float(getattr(args, "vfm_prune_protect_rgb_auto_max_topk", 0.010) or 0.0))
+    std_scale = max(0.0, float(getattr(args, "vfm_prune_protect_rgb_auto_std_scale", 2.0) or 0.0))
+    min_count = _topk_count(total, min_topk)
+    max_count = _topk_count(total, max_topk)
+    if max_count <= 0:
+        return candidate.reshape_as(rgb_pruning).to(device=rgb_pruning.device)
+
+    threshold = scores.mean() + std_scale * scores.std(unbiased=False)
+    selected = torch.nonzero(scores >= threshold, as_tuple=False).reshape(-1)
+    count = int(selected.numel())
+    count = max(min_count, min(max_count, count))
+    if count >= total:
+        candidate[:] = True
+    elif count > 0:
+        selected = torch.topk(scores, count, largest=True).indices
+        candidate[selected] = True
+    return candidate.reshape_as(rgb_pruning).to(device=rgb_pruning.device)
+
+
 def _rgb_prune_candidate_mask(rgb_pruning, args, mode=None):
     selected_mode = str(mode or getattr(args, "vfm_prune_protect_mode", "vfm") or "vfm").lower()
     if selected_mode == "rgb_prune_candidate":
@@ -502,6 +539,8 @@ def _rgb_prune_candidate_mask(rgb_pruning, args, mode=None):
         return rgb_pruning.to(torch.float32) >= min_score
     if selected_mode == "rgb_prune_topk":
         return _rgb_prune_topk_candidate(rgb_pruning, args)
+    if selected_mode == "rgb_prune_auto_topk":
+        return _rgb_prune_auto_topk_candidate(rgb_pruning, args)
     return None
 
 
@@ -525,11 +564,11 @@ def _build_prune_protection(vfm_counts, rgb_pruning, args):
         return protect, weight
     if mode == "rgb_aware":
         return protect * (1.0 - rgb_pruning.to(torch.float32)), weight
-    if mode in ("rgb_prune_candidate", "rgb_prune_topk"):
+    if mode in ("rgb_prune_candidate", "rgb_prune_topk", "rgb_prune_auto_topk"):
         rgb_candidate = _rgb_prune_candidate_mask(rgb_pruning, args, mode)
         return protect * rgb_candidate.to(torch.float32), weight
     raise ValueError(
-        "Unsupported vfm_prune_protect_mode {!r}. Available: vfm, rgb_aware, rgb_prune_candidate, rgb_prune_topk.".format(
+        "Unsupported vfm_prune_protect_mode {!r}. Available: vfm, rgb_aware, rgb_prune_candidate, rgb_prune_topk, rgb_prune_auto_topk.".format(
             mode
         )
     )

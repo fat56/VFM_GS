@@ -163,6 +163,14 @@ overlap 诊断进一步解释了分裂：
 
 混合策略的 test 均值为 27.9699 / 0.8203 / 0.2155、1,162,654 点、159.73s。它相对 baseline 只高约 +0.0109 PSNR、+0.0000 SSIM、LPIPS -0.0001、GS +868；相对 full topk010 则明显更好，但仍只是 kitchen 的单点保留，不能说明 fixed prune-protect 已经成为可扩展策略。
 
+## 2026-05-19 prune-protect auto-topk pilot
+
+这轮把 prune-protect 的 RGB candidate 从固定 `topk010` 改成 scene-adaptive 版本，按 RGB pruning score 的分布估计候选规模，再 clip 到 0.1%~1.0%。最重要的信号不是它“赢没赢 baseline”，而是它证明 fixed top-k 本身就有问题：`garden` 的大幅退化被明显收回，`bonsai` 也比 fixed `topk010` 更接近 baseline，`kitchen` 继续保持正向，`counter` 则从轻微正向回到轻微负向。
+
+四景均值仍然略低于 baseline，但比 fixed `topk010` 更好，说明当前瓶颈不是 prune-protect 这条路本身，而是候选规模必须场景自适应。换句话说，它更像一个“减伤器”，还不是默认解。
+
+下一步如果继续 0002，应该继续把候选规模和保护强度拆开看，或者引入更直接的 validation feedback，而不是继续扫固定 top-k。
+
 ## 2026-05-12 指标瓶颈诊断
 
 为回应“这些 prior 是否真的命中当前重建瓶颈”的问题，新增 `scripts/diagnose_prior_overlap.py` 并先在 high-res `bicycle` 上补充验证。该诊断不重新训练，只读取已有 baseline/candidate render、GT、`cameras.json` 和 VFM cache，比较 prior top-k 与 RGB 高误差 top-k 的重叠，并看候选方法的 L1 改善是否真的落在 prior 区域。DINO token-edge 行只是 2D prior 对照，不能替代 0001 真实 descriptor residual 诊断。
@@ -192,4 +200,4 @@ overlap 诊断进一步解释了分裂：
 
 ## 下一步
 
-暂停同配置 direct depth prior、top50 RGB-gated depth rerank、broad035、start9000，以及固定 prune-protect top-k/weight 方案的继续扩展。`topk010` 全 9 场景已经证明固定后验保护不是默认解。下一步若继续 0002，应做场景自适应 protect、在线 depth residual 或 validation-driven selector；否则 0002 可以阶段性收束，把主线让给更直接的误差对齐方案。长任务继续用 tmux/detached 方式运行；每轮实验完成后更新文档、commit 并 push；当前只有本服务器改动，按用户要求不再强制先 `git pull`。
+暂停同配置 direct depth prior、top50 RGB-gated depth rerank、broad035、start9000，以及固定 prune-protect top-k/weight 方案的继续扩展。`topk010` 全 9 场景已经证明固定后验保护不是默认解，`auto-topk` 则说明 scene-adaptive candidate sizing 有减伤价值，但还不足以收束成默认策略。下一步若继续 0002，应做场景自适应 protect、在线 depth residual 或 validation-driven selector；否则 0002 可以阶段性收束，把主线让给更直接的误差对齐方案。长任务继续用 tmux/detached 方式运行；每轮实验完成后更新文档、commit 并 push；当前只有本服务器改动，按用户要求不再强制先 `git pull`。

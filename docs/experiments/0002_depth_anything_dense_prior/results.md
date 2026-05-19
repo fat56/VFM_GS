@@ -582,6 +582,20 @@ Depth Anything prune-side auxiliary 这轮把 FastGS/RGB 保持为 densification
 
 相对 baseline，这个混合策略只高约 +0.0109 PSNR、+0.0000 SSIM、LPIPS -0.0001、GS +868；相对 full topk010 则好很多，但仍然只是 kitchen 上的一次 depth 保留。结论是 train-side selector 只能做保守回退，不能把 fixed prune-protect 变成默认策略。
 
+## 2026-05-19 prune-protect auto-topk pilot
+
+为了缓解 fixed `topk010` 在 `garden/bonsai` 上的明显退化，本轮把 RGB pruning candidate 改成场景自适应选择：先按 RGB pruning score 的均值/方差估计候选规模，再把结果 clip 到 0.1%~1.0% 的范围。四个 MipNeRF360 场景沿用 `garden/bonsai/counter/kitchen`，目的是看它能不能保住 fixed `topk010` 的正例，同时收回负例损伤。
+
+| 数据集 | 场景 | PSNR | SSIM | LPIPS | Gaussian 数 | 相对 Phase 0 | 相对 fixed topk010 | QCGI | 输出路径 |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---|
+| MipNeRF360 | garden | 27.6169 | 0.8646 | 0.1097 | 2,637,879 | -0.0177 / +0.0002 / +0.0001, GS +3,063 | +0.2784 / +0.0025 / -0.0023, GS +19,570 | -0.0180 | `output/0002/depth_anything_depth_prior_prune_protect_auto_topk_pilot/mipnerf360_g0/garden/fastgs_big_30k_scene_override_r_auto` |
+| MipNeRF360 | bonsai | 32.9487 | 0.9528 | 0.1599 | 848,303 | -0.1359 / -0.0010 / +0.0001, GS +4,210 | +0.0484 / +0.0019 / +0.0001, GS +399 | -0.1610 | `output/0002/depth_anything_depth_prior_prune_protect_auto_topk_pilot/mipnerf360_g0/bonsai/fastgs_big_30k_scene_override_r_auto` |
+| MipNeRF360 | counter | 29.5224 | 0.9178 | 0.1767 | 470,986 | -0.0035 / -0.0002 / +0.0001, GS +409 | -0.0815 / -0.0002 / -0.0002, GS -631 | -0.0091 | `output/0002/depth_anything_depth_prior_prune_protect_auto_topk_pilot/mipnerf360_g1/counter/fastgs_big_30k_scene_override_r_auto` |
+| MipNeRF360 | kitchen | 32.3796 | 0.9391 | 0.1045 | 1,180,843 | +0.0986 / +0.0001 / -0.0007, GS +2,855 | +0.0007 / -0.0001 / +0.0003, GS -4,958 | +0.1020 | `output/0002/depth_anything_depth_prior_prune_protect_auto_topk_pilot/mipnerf360_g1/kitchen/fastgs_big_30k_scene_override_r_auto` |
+| **平均** | **garden/bonsai/counter/kitchen** | **30.6169** | **0.9186** | **0.1377** | **1,284,503** | **-0.0146 / -0.0002 / -0.0001, GS +2,634** | **+0.0615 / +0.0010 / -0.0005, GS +3,595** | **-0.0215** | `output/0002/depth_anything_depth_prior_prune_protect_auto_topk_pilot/mipnerf360_{g0,g1}` |
+
+这轮没有把 auto-topk 推成默认解，但它比 fixed `topk010` 更像一个“减伤器”：`garden` 的退化从 -0.3555 QCGI 收回到近中性，`kitchen` 仍保持正向，`bonsai` 也比 fixed `topk010` 更接近 baseline。四景均值仍略低于 Phase 0，因此它还不能替代 baseline，但已经说明 scene-adaptive candidate sizing 是有价值的方向。
+
 ## 失败记录
 
 | 日期 | 阶段 | 范围 | 失败 | 后续处理 |

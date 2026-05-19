@@ -140,6 +140,9 @@ class OptimizationParams(ParamGroup):
         self.vfm_prune_protect_power = 1.0
         self.vfm_prune_protect_rgb_min_score = 0.9
         self.vfm_prune_protect_rgb_topk = 0.001
+        self.vfm_prune_protect_rgb_auto_min_topk = 0.001
+        self.vfm_prune_protect_rgb_auto_max_topk = 0.010
+        self.vfm_prune_protect_rgb_auto_std_scale = 2.0
         self.vfm_use_albedo_sh0 = True
         self.vfm_dinov2_repo = ""
         self.vfm_dinov2_device = "cuda"
