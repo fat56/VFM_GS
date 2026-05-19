@@ -155,7 +155,13 @@ overlap 诊断进一步解释了分裂：
 
 逐场景看，`treehill/counter/kitchen` 是正例，尤其 `kitchen` 三项质量正向且 QCGI +0.1007；但 `garden/room/bonsai/stump` 明显负向，`garden` 的 -0.2961 PSNR 和 `bonsai` 的 -0.1844 PSNR 是主要风险。平均点数少 2,335 个 Gaussian，但这是质量下降换来的，不是有效容量收益。
 
-因此，Depth Anything prune-side auxiliary 的价值应被限定为“可能有局部后验修正信号”，而不是“可用固定规则”。继续固定 top-k/weight 扫描的边际价值已经很低。下一步若继续 0002，更合理的是做场景自适应 protect、在线 depth residual，或者利用 validation/train-side 短评估决定是否启用 protect。
+因此，Depth Anything prune-side auxiliary 的价值应被限定为“可能有局部后验修正信号”，而不是“可用固定规则”。继续固定 top-k/weight 扫描的边际价值已经很低。下一步若继续 0002，更合理的是做场景自适应 protect、在线 depth residual，或者利用 validation/train-side 短评估决定是否启用 protect。2026-05-19 的 train-side selector probe 也只是在 9/9 场景里把 `kitchen` 选成 depth，其余 8 个场景都回到 baseline，混合均值只比 baseline 高约 +0.011 PSNR，说明 selector 更像保守回退器，不是默认解。
+
+## 2026-05-19 prune-protect train selector probe
+
+用 `scripts/evaluate_0001_train_selector.py` 在 MipNeRF360 9 场景上复查 baseline 与 `depth_anything_depth_prior_prune_protect_topk010_full`。`train_best_psnr` 和 `train_qcgi` 的选择完全一致：`bicycle/flowers/garden/stump/treehill/room/counter/bonsai` 都回退 baseline，只有 `kitchen` 选中 depth prior。
+
+混合策略的 test 均值为 27.9699 / 0.8203 / 0.2155、1,162,654 点、159.73s。它相对 baseline 只高约 +0.0109 PSNR、+0.0000 SSIM、LPIPS -0.0001、GS +868；相对 full topk010 则明显更好，但仍只是 kitchen 的单点保留，不能说明 fixed prune-protect 已经成为可扩展策略。
 
 ## 2026-05-12 指标瓶颈诊断
 

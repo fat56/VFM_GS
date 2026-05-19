@@ -571,6 +571,17 @@ Depth Anything prune-side auxiliary 这轮把 FastGS/RGB 保持为 densification
 
 判断：`treehill/counter/kitchen` 是正例，但 `garden/room/bonsai/stump` 的退化足以压过这些收益。固定 Depth Anything prune-protect 只能形成局部轻量修正，不能作为 MipNeRF360 默认策略。下一步若继续 0002，应停止固定 top-k/weight 扫描，改为场景自适应 protect 或在线/validation-driven 的误差入口。
 
+## 2026-05-19 prune-protect train selector probe
+
+为检验 fixed prune-protect 是否还能靠 train-side 选择器挽回一部分收益，本轮用 `scripts/evaluate_0001_train_selector.py` 在 MipNeRF360 9 个场景上复查 baseline 与 `depth_anything_depth_prior_prune_protect_topk010_full`。`train_best_psnr` 和 `train_qcgi` 的选择完全一致：`bicycle/flowers/garden/stump/treehill/room/counter/bonsai` 都回退 baseline，只有 `kitchen` 选中 depth prior。
+
+| selector | scene_count | avg_test_psnr | avg_test_ssim | avg_test_lpips | avg_test_gs_num | avg_test_train_time_s |
+|---|---:|---:|---:|---:|---:|---:|
+| train_best_psnr | 9 | 27.9699 | 0.8203 | 0.2155 | 1,162,654 | 159.73s |
+| train_qcgi | 9 | 27.9699 | 0.8203 | 0.2155 | 1,162,654 | 159.73s |
+
+相对 baseline，这个混合策略只高约 +0.0109 PSNR、+0.0000 SSIM、LPIPS -0.0001、GS +868；相对 full topk010 则好很多，但仍然只是 kitchen 上的一次 depth 保留。结论是 train-side selector 只能做保守回退，不能把 fixed prune-protect 变成默认策略。
+
 ## 失败记录
 
 | 日期 | 阶段 | 范围 | 失败 | 后续处理 |
