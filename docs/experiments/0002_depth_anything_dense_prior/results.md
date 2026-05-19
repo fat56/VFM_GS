@@ -647,6 +647,19 @@ Depth Anything prune-side auxiliary 这轮把 FastGS/RGB 保持为 densification
 
 判断：fixed `topk010` 在完整 DB/Tandt 上是明确负向，尤其 `train` 变成大负例。和 auto-topk 对比，fixed 只在 DB 的 `playroom` 上稍微好一点，但在 `drjohnson/train/truck` 都更差，4 场景平均 QCGI 直接落到 -0.0629。结论进一步收紧：auto-topk 是 MipNeRF360 上的最强候选，但跨数据集并不能默认化；fixed `topk010` 也不是更稳的备选。下一步该转向 validation-driven selector 或在线 residual，而不是继续围着 top-k 旋钮打转。
 
+## 2026-05-19 prune-protect DB/Tandt selector probe
+
+把 baseline / auto-topk / fixed topk010 合并后，用 `scripts/evaluate_0001_train_selector.py` 在 DB/Tandt 上做 train-split selector probe。这个 probe 不是找新超参，而是看一个简单的选择器能不能比单规则更稳。
+
+| 数据集 | selector | avg_test_psnr | avg_test_ssim | avg_test_lpips | 选择倾向 |
+|---|---|---:|---:|---:|---|
+| DB | `train_best_psnr` | 30.1838 | 0.9109 | 0.2402 | `drjohnson -> fixed topk010`，`playroom -> auto-topk` |
+| DB | `train_qcgi` | 30.1838 | 0.9109 | 0.2402 | 同上 |
+| Tandt | `train_best_psnr` | 24.4955 | 0.8579 | 0.1736 | `train -> baseline`，`truck -> baseline` |
+| Tandt | `train_qcgi` | 24.5009 | 0.8584 | 0.1729 | `train -> auto-topk`，`truck -> baseline` |
+
+判断：DB 上 selector 低于 baseline 均值 30.2109，说明它没有修复分裂；Tandt 上 `train_qcgi` 只比 baseline 的 24.4955 高一点点，收益太小。selector 确实比单一固定规则更会回退，但它还不足以成为默认策略，只能当保守回退器。当前更合理的下一步仍然是 validation-driven selector 的正式实现，而不是继续扫 top-k。
+
 ## 失败记录
 
 | 日期 | 阶段 | 范围 | 失败 | 后续处理 |

@@ -195,6 +195,12 @@ fixed `topk010` 的完整 DB/Tandt 结果把问题说得更直接：它在 4 场
 
 当前建议：停止 fixed/auto top-k 的继续手工扫描，保留这两组结果作为边界证据，下一步若继续 0002，应实现 validation-driven selector 或 online residual，并先在小范围场景上验证 selector 是否比单规则更稳。
 
+## 2026-05-19 prune-protect DB/Tandt selector probe
+
+selector probe 的结论很克制：DB 的 `train_best_psnr` / `train_qcgi` 都选出 `drjohnson -> fixed topk010`、`playroom -> auto-topk`，但 test 均值 30.1838 低于 baseline 的 30.2109；Tandt 的 `train_qcgi` 只比 baseline 高一点点。它确实能在方法之间切换，但切换出来的收益太小，不足以把 prune-side 变成默认策略。
+
+这意味着问题已经不是“再挑一个更好的 top-k”，而是“如何让选择器在不同数据集里稳定地识别该回退谁”。如果继续 0002，下一步应实现真正的 validation-driven selector，而不是继续人工扫固定/自适应 top-k。
+
 ## 2026-05-12 指标瓶颈诊断
 
 为回应“这些 prior 是否真的命中当前重建瓶颈”的问题，新增 `scripts/diagnose_prior_overlap.py` 并先在 high-res `bicycle` 上补充验证。该诊断不重新训练，只读取已有 baseline/candidate render、GT、`cameras.json` 和 VFM cache，比较 prior top-k 与 RGB 高误差 top-k 的重叠，并看候选方法的 L1 改善是否真的落在 prior 区域。DINO token-edge 行只是 2D prior 对照，不能替代 0001 真实 descriptor residual 诊断。

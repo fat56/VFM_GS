@@ -1141,3 +1141,30 @@ tmux new-session -d -s 0002pp_t010_cross_tandt 'cd /home/m/project/ltm/VFM_GS &&
 ```
 
 结果汇总：`output/0002/depth_anything_depth_prior_prune_protect_topk010_cross/combined`。DB/Tandt 四场景平均为 27.2961 / 0.8849 / 0.2069、593,536 点，相对 Phase 0 为 -0.0682 PSNR、+0.0004 SSIM、LPIPS +0.0002、GS +176，QCGI -0.0629。结论：fixed `topk010` 在完整 DB/Tandt 上是明确负向，不能作为跨数据集备选；后续不要继续扫固定 top-k/weight。
+
+## Depth Anything prune-protect DB/Tandt selector probe
+
+把 baseline / auto-topk / fixed topk010 的 DB/Tandt 结果合并成输入表，再用 `scripts/evaluate_0001_train_selector.py` 在 train split 上做 selector probe。输入表先把 baseline 行的 `method` 重命名为 `baseline`，这样脚本能正确把 baseline 作为 reference。
+
+输入表：
+
+- `output/0002/depth_anything_depth_prior_prune_protect_selector_probe_cross4/db_input_summary.csv`
+- `output/0002/depth_anything_depth_prior_prune_protect_selector_probe_cross4/tandt_input_summary.csv`
+
+本轮双卡分配：
+
+- GPU0: DB selector probe
+- GPU1: Tandt selector probe
+
+```bash
+tmux new-session -d -s 0002pp_selector_db 'cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && CUDA_VISIBLE_DEVICES=0 python scripts/evaluate_0001_train_selector.py --input-summary output/0002/depth_anything_depth_prior_prune_protect_selector_probe_cross4/db_input_summary.csv --output-dir output/0002/depth_anything_depth_prior_prune_protect_selector_probe_cross4/db --datasets db --methods baseline depth_anything_depth_prior_prune_protect_auto_topk depth_anything_depth_prior_prune_protect_topk010'
+
+tmux new-session -d -s 0002pp_selector_tandt 'cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && CUDA_VISIBLE_DEVICES=1 python scripts/evaluate_0001_train_selector.py --input-summary output/0002/depth_anything_depth_prior_prune_protect_selector_probe_cross4/tandt_input_summary.csv --output-dir output/0002/depth_anything_depth_prior_prune_protect_selector_probe_cross4/tandt --datasets tandt --methods baseline depth_anything_depth_prior_prune_protect_auto_topk depth_anything_depth_prior_prune_protect_topk010'
+```
+
+结果汇总：
+
+- DB：`train_best_psnr` 和 `train_qcgi` 都给出 `drjohnson -> fixed topk010`、`playroom -> auto-topk`，但 test 均值只有 30.1838 / 0.9109 / 0.2402，低于 baseline 的 30.2109 / 0.9111 / 0.2400。
+- Tandt：`train_best_psnr` 选 `train -> baseline`、`truck -> baseline`，test 均值与 baseline 一致；`train_qcgi` 选 `train -> auto-topk`、`truck -> baseline`，test 均值为 24.5009 / 0.8584 / 0.1729，只比 baseline 的 24.4955 / 0.8579 / 0.1736 高一点点。
+
+结论：selector 比单一固定规则更会回退，但它还不足以成为默认策略，只能当保守回退器。下一步若继续 0002，应把工作重心放到正式的 validation-driven selector 或 online residual，而不是继续扫 top-k。
