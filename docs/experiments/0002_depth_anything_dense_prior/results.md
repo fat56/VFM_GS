@@ -615,6 +615,22 @@ Depth Anything prune-side auxiliary 这轮把 FastGS/RGB 保持为 densification
 
 相对 baseline，这轮还是很薄，但已经不是纯减伤：4/9 场景 QCGI 为正，平均只比 Phase 0 高一点点 PSNR，SSIM/LPIPS 基本打平。相对 fixed `topk010`，它平均提升 +0.0595 PSNR、+0.0006 SSIM、LPIPS 基本持平，GS 只多 2,642，QCGI 提升 +0.0666。当前可把它视为 prune-side 的最强候选，但还需要 DB/Tandt 的 generalization 验证。
 
+## 2026-05-19 prune-protect auto-topk DB/Tandt cross validation
+
+把 `rgb_prune_auto_topk` 继续扩到 DB 与 Tandt 全 4 场景后，结果没有像 MipNeRF360 那样形成清楚的弱正向，而是近乎打平并出现数据集分裂。原始汇总在 `output/0002/depth_anything_depth_prior_prune_protect_auto_topk_cross/combined/summary.csv`。
+
+| 数据集 | 场景 | PSNR | SSIM | LPIPS | Gaussian 数 | 相对 Phase 0 | QCGI | 输出路径 |
+|---|---|---:|---:|---:|---:|---:|---:|---|
+| DB | drjohnson | 29.7435 | 0.9075 | 0.2441 | 705,492 | -0.0046 / +0.0000 / +0.0004, GS +1,546 | -0.0077 | `output/0002/depth_anything_depth_prior_prune_protect_auto_topk_cross/db/drjohnson/fastgs_big_30k_scene_override_r_auto` |
+| DB | playroom | 30.6532 | 0.9147 | 0.2365 | 588,198 | -0.0649 / -0.0001 / +0.0008, GS -1,055 | -0.0704 | `output/0002/depth_anything_depth_prior_prune_protect_auto_topk_cross/db/playroom/fastgs_big_30k_scene_override_r_auto` |
+| Tandt | train | 22.9021 | 0.8273 | 0.2074 | 453,622 | +0.0110 / +0.0011 / -0.0012, GS -813 | +0.0385 | `output/0002/depth_anything_depth_prior_prune_protect_auto_topk_cross/tandt/train/fastgs_big_30k_scene_override_r_auto` |
+| Tandt | truck | 26.1539 | 0.8892 | 0.1394 | 624,814 | +0.0541 / -0.0003 / +0.0009, GS -989 | +0.0425 | `output/0002/depth_anything_depth_prior_prune_protect_auto_topk_cross/tandt/truck/fastgs_big_30k_scene_override_r_auto` |
+| **平均** | **DB 2 场景** | **30.1984** | **0.9111** | **0.2403** | **646,845** | **-0.0347 / -0.0000 / +0.0006, GS +246** | **-0.0391** | `output/0002/depth_anything_depth_prior_prune_protect_auto_topk_cross/db` |
+| **平均** | **Tandt 2 场景** | **24.5280** | **0.8583** | **0.1734** | **539,218** | **+0.0325 / +0.0004 / -0.0002, GS -901** | **+0.0405** | `output/0002/depth_anything_depth_prior_prune_protect_auto_topk_cross/tandt` |
+| **平均** | **DB/Tandt 4 场景** | **27.3632** | **0.8847** | **0.2068** | **593,032** | **-0.0011 / +0.0002 / +0.0002, GS -328** | **+0.0007** | `output/0002/depth_anything_depth_prior_prune_protect_auto_topk_cross/combined` |
+
+判断：auto-topk 在跨数据集上只能算中性，不足以成为默认策略。Tandt 两场景为正，尤其 `truck` 比 fixed `topk010` 的 +0.0060 QCGI 明显更好；但 DB 两场景为负，`playroom` 从 fixed `topk010` 的 +0.0492 QCGI 退到 -0.0704。下一步应补 fixed `topk010` 在 `drjohnson/train` 的缺口，确认这是 auto-topk 的数据集分裂，还是 fixed top-k 在 DB/Tandt 本来更稳。
+
 ## 失败记录
 
 | 日期 | 阶段 | 范围 | 失败 | 后续处理 |

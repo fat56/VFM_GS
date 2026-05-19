@@ -179,6 +179,14 @@ overlap 诊断进一步解释了分裂：
 
 当前判断：`rgb_prune_auto_topk` 是 0002 prune-side 分支迄今最强配置，可以进入 DB/Tandt 跨数据集验证；如果 DB/Tandt 也接近中性或正向，再考虑作为轻量默认候选。若跨数据集失败，下一步应转向 validation-driven selector 或在线 residual，而不是继续手工调 auto-topk clip 范围。
 
+## 2026-05-19 prune-protect auto-topk DB/Tandt cross validation
+
+DB/Tandt 全 4 场景验证把 `auto-topk` 的结论拉回了中性。四场景平均为 27.3632 / 0.8847 / 0.2068、593,032 点，相对 Phase 0 为 -0.0011 PSNR、+0.0002 SSIM、LPIPS +0.0002、GS -328，平均 QCGI +0.0007。它没有明显伤害容量，但质量收益也几乎不存在。
+
+关键是数据集分裂：Tandt 两场景为正，`train/truck` 分别为 +0.0385 / +0.0425 QCGI；DB 两场景为负，`drjohnson/playroom` 分别为 -0.0077 / -0.0704 QCGI。尤其 `playroom` 值得注意：fixed `topk010` 是 +0.0492 QCGI，而 auto-topk 退成 -0.0704；相反 `truck` 从 fixed `topk010` 的 +0.0060 提升到 +0.0425。这说明自适应候选规模不是单调更好，它改变了 proposal 分布，在不同数据集上会把原本需要保护的候选漏掉或补回来。
+
+当前判断：`auto-topk` 仍是比 fixed `topk010` 更好的 MipNeRF360 配置，但不能直接默认化。下一步不是继续改 clip 范围，而是先补 fixed `topk010` 在 `drjohnson/train` 的缺口，建立完整 DB/Tandt 对照；如果 fixed 在 DB/Tandt 明显更稳，则 0002 prune-side 分支应转向 validation-driven selector，让场景自己选择 baseline/fixed/auto，而不是固定一个规则。
+
 ## 2026-05-12 指标瓶颈诊断
 
 为回应“这些 prior 是否真的命中当前重建瓶颈”的问题，新增 `scripts/diagnose_prior_overlap.py` 并先在 high-res `bicycle` 上补充验证。该诊断不重新训练，只读取已有 baseline/candidate render、GT、`cameras.json` 和 VFM cache，比较 prior top-k 与 RGB 高误差 top-k 的重叠，并看候选方法的 L1 改善是否真的落在 prior 区域。DINO token-edge 行只是 2D prior 对照，不能替代 0001 真实 descriptor residual 诊断。
@@ -208,4 +216,4 @@ overlap 诊断进一步解释了分裂：
 
 ## 下一步
 
-暂停同配置 direct depth prior、top50 RGB-gated depth rerank、broad035、start9000，以及固定 prune-protect top-k/weight 方案的继续扩展。`topk010` 全 9 场景已经证明固定后验保护不是默认解，`auto-topk` 在 MipNeRF360 全 9 场景给出弱正向均值，是当前 prune-side 最强候选。下一步优先做 DB/Tandt 跨数据集验证；若跨数据集仍成立，再考虑把它作为轻量默认候选，否则转向 validation-driven selector 或在线 depth residual。长任务继续用 tmux/detached 方式运行；每轮实验完成后更新文档、commit 并 push；当前只有本服务器改动，按用户要求不再强制先 `git pull`。
+暂停同配置 direct depth prior、top50 RGB-gated depth rerank、broad035、start9000，以及继续手工扫固定 prune-protect top-k/weight。`auto-topk` 在 MipNeRF360 全 9 场景给出弱正向均值，但 DB/Tandt 四场景只得到近中性并出现 DB/Tandt 分裂。下一步优先补 fixed `topk010` 在 `drjohnson/train` 的缺口，用完整 DB/Tandt 对照判断 fixed/auto 的选择边界；之后再考虑 validation-driven selector 或在线 depth residual。长任务继续用 tmux/detached 方式运行；每轮实验完成后更新文档、commit 并 push；当前只有本服务器改动，按用户要求不再强制先 `git pull`。
