@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-已完成前置 baseline curve 诊断和第一轮 6 场景 Depth Anything prune-protect auto-topk pilot。第一轮不是默认正解：它在 `stump/counter/bicycle` 上接近中性或小正向，但 `room` 明显负向，6 场景平均也低于 baseline。
+已完成前置 baseline curve 诊断、第一轮 `start15001` pilot 和第二轮 `start24000` timing 复验。`start24000` 明显修复了 `room` 的 late-window 伤害，但 6 场景 30k 平均仍低于 baseline，Depth Anything prune-protect auto-topk 不能作为默认在线辅助。
 
 ## 前置 Baseline Curve
 
@@ -81,11 +81,49 @@
 
 配置：`configs/experiments/0004_late_scene_adaptive_auxiliary_start24000.yaml`
 
-目的：只改变介入时机，跳过 18k/21k，只在 24k/27k 做 protect。若 `room` 退化显著收窄，同时 `stump/counter` 的小正向还能保留，说明 0004 的关键变量确实是 late timing；若仍不稳，则 prune-protect auto-topk 应收束为近中性诊断工具。
+输出：
+
+- `output/0004/late_scene_adaptive_auxiliary/depth_prune_auto_topk_start24000_pilot_gpu1/check.md`
+- `output/0004/late_scene_adaptive_auxiliary/depth_prune_auto_topk_start24000_indoor_gpu0/check.md`
+- `output/0004/late_scene_adaptive_auxiliary/depth_prune_auto_topk_start24000_comparison.csv`
+
+目的：只改变介入时机，跳过 18k/21k，只在 24k/27k 做 protect。结果说明 timing 是真实变量：`room` 的 24k -> 30k late gain 从 Round 1 的 -0.1589 差值恢复到 -0.0004，30k PSNR 负向也从 -0.2219 收窄到 -0.0498。但这个修复没有让整体变成正解，6 场景平均仍为 -0.0340 PSNR。
+
+30k 相对 baseline：
+
+| 场景 | PSNR | ΔPSNR | ΔSSIM | ΔLPIPS | ΔGS |
+|---|---:|---:|---:|---:|---:|
+| bicycle | 25.2544 | -0.0103 | -0.00005 | -0.00011 | +5,458 |
+| stump | 27.1739 | +0.0357 | -0.00040 | +0.00041 | -259 |
+| room | 32.2509 | -0.0498 | +0.00011 | -0.00009 | +2,042 |
+| bonsai | 32.8333 | -0.1283 | -0.00148 | -0.00006 | +2,972 |
+| counter | 29.5787 | +0.0375 | +0.00031 | -0.00041 | -269 |
+| kitchen | 32.3296 | -0.0887 | -0.00023 | +0.00032 | +101 |
+
+分组均值：
+
+| 分组 | ΔPSNR | ΔSSIM | ΔLPIPS | ΔGS |
+|---|---:|---:|---:|---:|
+| pilot: bicycle/stump/room | -0.0081 | -0.00011 | +0.00007 | +2,414 |
+| indoor: bonsai/counter/kitchen | -0.0598 | -0.00047 | -0.00005 | +935 |
+| all 6 | -0.0340 | -0.00029 | +0.00001 | +1,674 |
+
+窗口增量差值：
+
+| 场景 | 16k -> 30k | 20k -> 30k | 24k -> 30k | 观察 |
+|---|---:|---:|---:|---|
+| bicycle | -0.0013 | -0.0003 | +0.0019 | 中性 |
+| stump | +0.0346 | +0.0242 | +0.0239 | 继续减轻 PSNR 后期回落，但 LPIPS 仍略差 |
+| room | -0.0687 | -0.0037 | -0.0004 | 24k 后窗口基本恢复，说明跳过 18k/21k 有效 |
+| bonsai | +0.0026 | -0.0368 | -0.0385 | 新主要负例，30k 单点和后期窗口都不稳 |
+| counter | +0.0310 | +0.0212 | +0.0116 | 稳定小正向 |
+| kitchen | -0.0314 | -0.0150 | +0.0070 | 24k 后略正，但 30k 单点负 |
+
+结论：`start24000` 验证了 late timing 的重要性，但没有验证出可默认化的在线辅助器。下一步若继续 0004，应只做 final-only 的低成本小扫：例如更低 protect weight 或更窄 auto-topk 上限；若仍不能让 `bonsai/kitchen` 回到 baseline 附近，就把 Depth Anything prune-protect 收束为诊断工具。
 
 ## 记录表
 
 | 场景 / 数据集 | 配置 | PSNR | SSIM | LPIPS | Gaussian 数量 | 备注 |
 |---|---|---:|---:|---:|---:|---|
 | MipNeRF360 6 scenes | `0004_late_scene_adaptive_auxiliary` | mixed | mixed | mixed | +529 avg | 6 场景平均负，见 Round 1 |
-| MipNeRF360 6 scenes | `0004_late_scene_adaptive_auxiliary_start24000` | TBD | TBD | TBD | TBD | 下一轮 |
+| MipNeRF360 6 scenes | `0004_late_scene_adaptive_auxiliary_start24000` | mixed | mixed | mixed | +1,674 avg | room 修复明显，但均值仍负 |

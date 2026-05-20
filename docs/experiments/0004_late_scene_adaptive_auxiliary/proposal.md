@@ -57,11 +57,11 @@ python scripts/run_0001_fastgs_big_eval.py \
 
 | 指标 | 基线 | 实验 | 差值 |
 |---|---:|---:|---:|
-| PSNR | FastGS big curve | Round 1 start15001 | 6 场景平均 -0.0242 |
-| SSIM | FastGS big curve | Round 1 start15001 | 6 场景平均 -0.00014 |
-| LPIPS | FastGS big curve | Round 1 start15001 | 6 场景平均 +0.00014 |
-| 训练时间 | FastGS big curve | Round 1 start15001 | 待汇总 |
-| Gaussian 数量 | FastGS big curve | Round 1 start15001 | 6 场景平均 +529 |
+| PSNR | FastGS big curve | Round 2 start24000 | 6 场景平均 -0.0340 |
+| SSIM | FastGS big curve | Round 2 start24000 | 6 场景平均 -0.00029 |
+| LPIPS | FastGS big curve | Round 2 start24000 | 6 场景平均 +0.00001 |
+| 训练时间 | FastGS big curve | Round 2 start24000 | checkpoint-curve 诊断成本过高，不作常规口径 |
+| Gaussian 数量 | FastGS big curve | Round 2 start24000 | 6 场景平均 +1,674 |
 
 ## 失败记录
 
@@ -71,8 +71,8 @@ python scripts/run_0001_fastgs_big_eval.py \
 
 ## 决策
 
-第一轮 `start15001` 没有通过默认化标准：它更像近中性的减伤器，而不是稳定增益器。下一步只验证一个更窄的问题：把介入推迟到 24k/27k 后，能否保留 `stump/counter` 的小正向并显著减轻 `room` 退化。
+`start24000` 证明了更晚介入能显著减轻 `room` 的 late-window 伤害，但 6 场景平均仍负，`bonsai/kitchen` 不稳。因此 Depth Anything prune-protect auto-topk 不能默认化；若继续，只能作为 final-only 的小范围低强度 sweep。
 
 ## 下一步
 
-运行 `configs/experiments/0004_late_scene_adaptive_auxiliary_start24000.yaml` 的 6 场景复验。这一轮使用 checkpoint curve 是为了验证 24k/27k late-only timing；完成后后续 sweep 和扩场景不再默认每 2k render/metric，改回训练完成后只评测最终 checkpoint。若 start24000 仍不稳，0004 应停止继续扩大 Depth Anything prune-protect，并改向 validation-driven selector 或只保留离线诊断。
+如果继续 0004，改跑 final-only 的低成本四场景小扫：`room/bonsai/counter/kitchen`，优先试更低 protect weight 或更窄 auto-topk 上限。若仍不能让 `bonsai/kitchen` 回到 baseline 附近，0004 应停止继续扩大 Depth Anything prune-protect，并改向 validation-driven selector 或只保留离线诊断。

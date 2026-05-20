@@ -2,7 +2,7 @@
 
 ## 结论
 
-第一轮 0004 结果说明：Depth Anything `rgb_prune_auto_topk` 作为 late prune-protect 辅助器，确实比 0002 早期 densify/rerank 更接近中性，但还不能作为默认策略。6 场景 30k 平均相对 baseline 为 -0.0242 PSNR、-0.00014 SSIM、LPIPS +0.00014、平均多 529 个 Gaussian；其中 `room` 的 -0.2219 PSNR 是明确负例。
+两轮 0004 结果说明：Depth Anything `rgb_prune_auto_topk` 作为 late prune-protect 辅助器，确实比 0002 早期 densify/rerank 更接近中性，但还不能作为默认策略。`start24000` 把 `room` 的 30k 负向从 -0.2219 PSNR 收窄到 -0.0498，并把 24k -> 30k late gain 差值从 -0.1589 修复到 -0.0004；但 6 场景平均仍为 -0.0340 PSNR、-0.00029 SSIM、LPIPS +0.00001，且 `bonsai/kitchen` 是新的主要负例。
 
 ## 目前判断
 
@@ -30,6 +30,17 @@
 
 这轮结果支持一个更窄的假设：辅助器如果要存在，应该更晚、更少次地介入。`room` 在 baseline 里 24k -> 30k 仍有 +0.1058 PSNR，18k/21k 的保护可能过早固定了本该继续被 pruning/重分配的 Gaussian 生命周期。
 
+## 第二轮复盘
+
+`start24000` 只在 24k/27k pruning 中启用 protect，验证了 timing 问题是真实存在的：
+
+- `room` 明显修复：30k 负向从 -0.2219 收窄到 -0.0498 PSNR；24k -> 30k late gain 差值几乎归零。
+- `stump/counter` 继续是小正向：分别 +0.0357 和 +0.0375 PSNR。
+- `bicycle` 近中性：-0.0103 PSNR，LPIPS 略好。
+- `bonsai/kitchen` 变成主要负例：分别 -0.1283 和 -0.0887 PSNR。
+
+因此 `start24000` 不是默认解，而是把问题从“过早介入伤害 room”推进到“prior/protect 排序在部分室内场景仍不可靠”。这说明 late-only 是必要条件，不是充分条件。
+
 ## 风险点
 
 - 辅助信号仍然可能和 RGB 误差错位。
@@ -38,10 +49,11 @@
 
 ## 下一步
 
-下一轮只改 `vfm_active_from_iter`：从 15001 改到 24000，跳过 18k/21k，只在 24k/27k 生效。判断标准：
+下一步如果继续，应只做低成本 final-only 小扫，不再启用 checkpoint curve。优先级：
 
-- 若 `room` 的负向明显收窄，同时 `stump/counter/bicycle` 不丢掉已有小收益，则继续做更轻权重或更窄 top-k 的 late-only sweep。
-- 若 `room` 仍大幅负向，说明 Depth Anything prune-protect 的排序本身仍和 FastGS pruning 目标错位，应停止把它作为在线辅助器。
-- 若平均只在 +/-0.02 PSNR 内波动且 LPIPS/GS 没有同步收益，则默认视为平台期噪声。
+- 更低 protect weight，例如 0.10 或 0.15。
+- 更窄 auto-topk 上限，例如 max 0.005。
+- 只跑 `room/bonsai/counter/kitchen` 这四个最有判别力的场景，训练完只评测 30k。
+- 如果 `bonsai/kitchen` 仍明显负向，就停止 Depth Anything prune-protect 在线方向。
 
 评测方式也要收敛：start24000 这轮保留 checkpoint curve 是为了验证介入时机；后续除非专门做曲线诊断，否则不再每 2k render/metric，统一回到 final-only 评测。
