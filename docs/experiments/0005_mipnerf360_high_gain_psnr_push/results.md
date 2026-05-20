@@ -4,7 +4,7 @@
 
 Round 1 已 early-stop：DINOv2 ViT-L/14 token-edge 1.6K cache 在 4 个已完成场景上 PSNR 均值为 -0.0440，且平均多 195,124 个 Gaussians；虽然 SSIM/LPIPS 有正向，但已不可能达成 MipNeRF360 9 场景平均 PSNR +0.2 的当天目标。
 
-Round 6 准备切到 PSNR-oriented loss：当前 prior、no-prune、60k 长训和 soft-prune 都不能作为全局默认；下一步直接把训练 loss 往 MSE/PSNR 口径靠。
+Round 6 已 early-stop：L2/MSE mix 四场景全部负向，PSNR-oriented loss 不能作为主路。当前 prior、no-prune、60k 长训、soft-prune、L2 mix 都不能作为全局默认。
 
 ## Round 1：token-edge ViT-L/1600 top-k25 max
 
@@ -119,4 +119,14 @@ Round 6 准备切到 PSNR-oriented loss：当前 prior、no-prune、60k 长训�
 - `output/0005/fastgs_big_l2mix050/mipnerf360_g0/summary.csv`
 - `output/0005/fastgs_big_l2mix050/mipnerf360_g1/summary.csv`
 
-先跑 `bicycle/flowers` 与 `room/counter` 四场景 pilot；如果 PSNR 信号足够强，再扩到 9 场景。
+本轮四场景 pilot 后 early-stop。对照为同一 30k baseline。
+
+| 场景 | PSNR | ΔPSNR | SSIM | ΔSSIM | LPIPS | ΔLPIPS | GS | ΔGS |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| bicycle | 25.1778 | -0.0869 | 0.7532 | -0.0023 | 0.2475 | +0.0028 | 1,454,609 | -103,471 |
+| flowers | 21.4677 | -0.1536 | 0.5968 | -0.0054 | 0.3464 | +0.0056 | 1,033,366 | -101,466 |
+| room | 31.9780 | -0.3227 | 0.9306 | -0.0001 | 0.1873 | -0.0008 | 519,698 | -50,492 |
+| counter | 29.4894 | -0.0517 | 0.9178 | -0.0001 | 0.1772 | +0.0007 | 422,156 | -49,102 |
+| **已完成均值** | 27.0282 | -0.1537 | 0.7996 | -0.0020 | 0.2396 | +0.0021 | 857,457 | -76,133 |
+
+判定：停止扩展。`lambda_l2=0.5` 把四场景全部推向负向，说明当前 FastGS 训练中的 L1+DSSIM 组合不能简单替换为 MSE-oriented blend。

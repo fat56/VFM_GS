@@ -18,6 +18,8 @@ Round 5 转向 soft late-prune：保留默认 15k densification，仍在 18k/21k
 
 Round 6 转向 PSNR-oriented loss。当前训练 loss 是 L1 + SSIM，而目标指标 PSNR 本质由 MSE 决定；前面多轮都在改 GS 生命周期，但没直接改变优化目标。下一步用默认关闭的 L2/MSE 混合项做 pilot，判断 loss 口径是否比 prior/prune 更接近当天目标。
 
+Round 6 结果明确负向：`bicycle/flowers/room/counter` 四场景全部退化，均值 -0.1537 PSNR，且平均少 76k GS。`lambda_l2=0.5` 不是 PSNR 的短线答案，反而破坏了当前 FastGS 的训练动态。
+
 ## 风险
 
 - 高增益路线很可能增加 Gaussian 数量和训练时间。
@@ -27,12 +29,14 @@ Round 6 转向 PSNR-oriented loss。当前训练 loss 是 L1 + SSIM，而目标�
 - no-prune 已证明容量不是当天目标的主要瓶颈：点数大幅增加但 PSNR 只有 +0.0280。
 - 60k 长训已显示场景依赖强，特别是 `bicycle` 大负向。
 - soft-prune 已显示降低 late prune 强度会让 `room` 退化，不是全局默认。
-- L2/MSE 口径可能提高 PSNR，但可能牺牲 SSIM/LPIPS；本轮以 PSNR 目标为主，仍记录三项指标。
+- L2/MSE mix 已四场景全负，不能继续作为主路。
 
 ## 下一步
 
-启动 Round 6 PSNR-oriented loss pilot。若仍未接近 +0.2，下一优先级是：
+Round 6 后的判断：
 
 1. 修复 extended densify 的空 feature 形状错误，再回到 late densify。
 2. 做 scene-adaptive selector，但只用于已知正向的 recipe，不再假设单一默认能全局 +0.2。
 3. DINO descriptor top-k25 `max` 只作为补充对照，不再作为主冲刺路线。
+
+截至目前，单一默认 recipe 已试过 token-edge、no-prune、60k、soft-prune、L2 mix，没有一个接近 MipNeRF360 9 场景平均 +0.2。更合理的下一步不是继续盲扫单一方案，而是先解决 late densify 实现 bug，或正式承认这是 scene-adaptive 问题。
