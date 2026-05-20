@@ -142,6 +142,29 @@ CUDA_VISIBLE_DEVICES=0 python scripts/run_0001_fastgs_big_eval.py \
   --resolution -1
 ```
 
+## Phase 1C：final-only low-cost sweep
+
+`start24000` 已经验证 timing 有效但不能默认化。后续小扫只跑最终 30k render / metrics，不再使用 checkpoint-curve runner。
+
+优先四个判别场景：
+
+- `room`: 验证是否继续保住 start24000 对 late-window 的修复。
+- `bonsai`: 当前最强负例。
+- `counter`: 小正例，验证收益是否保留。
+- `kitchen`: 室内负例，验证是否能减伤。
+
+低权重组：
+
+```bash
+tmux new-session -d -s 0004_final_weight015_g0 "cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && mkdir -p output/0004/debug_logs && CUDA_VISIBLE_DEVICES=0 python scripts/run_0001_fastgs_big_eval.py --dataset-name mipnerf360 --dataset-root datasets/mipnerf360 --output-root output/0004/late_scene_adaptive_auxiliary/final_only_start24000_weight015_gpu0 --scenes room bonsai counter kitchen --variant fastgs_big --config configs/experiments/0004_late_scene_adaptive_auxiliary_start24000_weight015.yaml --vfm-cache-template output/0002/vfm_cache/{scene}_depth_anything_v2s_depth --resolution -1 --method-name depth_prune_auto_topk_start24000_weight015 --run-name depth_prune_auto_topk_start24000_weight015_30k_final_r_auto > output/0004/debug_logs/final_only_start24000_weight015_g0.log 2>&1"
+```
+
+窄 proposal 组：
+
+```bash
+tmux new-session -d -s 0004_final_topk005_g1 "cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && mkdir -p output/0004/debug_logs && CUDA_VISIBLE_DEVICES=1 python scripts/run_0001_fastgs_big_eval.py --dataset-name mipnerf360 --dataset-root datasets/mipnerf360 --output-root output/0004/late_scene_adaptive_auxiliary/final_only_start24000_auto_topk005_gpu1 --scenes room bonsai counter kitchen --variant fastgs_big --config configs/experiments/0004_late_scene_adaptive_auxiliary_start24000_auto_topk005.yaml --vfm-cache-template output/0002/vfm_cache/{scene}_depth_anything_v2s_depth --resolution -1 --method-name depth_prune_auto_topk_start24000_auto_topk005 --run-name depth_prune_auto_topk_start24000_auto_topk005_30k_final_r_auto > output/0004/debug_logs/final_only_start24000_auto_topk005_g1.log 2>&1"
+```
+
 ## 结果归档
 
 每轮实验结束后更新：

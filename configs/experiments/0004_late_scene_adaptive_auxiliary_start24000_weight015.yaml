@@ -1,0 +1,25 @@
+name: 0004_late_scene_adaptive_auxiliary_start24000_weight015
+extends: fastgs_big
+scorer: vfm_topology_scorer
+training_args:
+  densification_interval: 100
+  vfm_enable: true
+  vfm_backend: depth_anything_depth_prior
+  vfm_cache_dir: output/0002/vfm_cache/bicycle_depth_anything_v2s_depth
+  vfm_metric_map_mode: topk
+  vfm_metric_topk: 0.25
+  vfm_weight: 0.0
+  vfm_importance_mode: rgb_only
+  vfm_prune_protect_weight: 0.15
+  vfm_prune_protect_mode: rgb_prune_auto_topk
+  vfm_prune_protect_rgb_auto_min_topk: 0.001
+  vfm_prune_protect_rgb_auto_max_topk: 0.010
+  vfm_prune_protect_rgb_auto_std_scale: 2.0
+  vfm_prune_protect_min_count: 5
+  vfm_prune_protect_power: 2.0
+  vfm_active_from_iter: 24000
+  vfm_use_albedo_sh0: true
+experiment:
+  status: late_start_low_weight_final_only_probe
+  proposal: docs/experiments/0004_late_scene_adaptive_auxiliary/proposal.md
+  note: Final-only follow-up after start24000 timing probe. Keeps auto-topk proposal but lowers prune-protect weight from 0.25 to 0.15 to test whether bonsai/kitchen regressions are caused by over-strong protection.
