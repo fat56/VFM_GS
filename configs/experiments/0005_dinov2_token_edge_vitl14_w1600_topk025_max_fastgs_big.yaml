@@ -1,0 +1,18 @@
+name: 0005_dinov2_token_edge_vitl14_w1600_topk025_max_fastgs_big
+scorer: vfm_topology_scorer
+training_args:
+  densification_interval: 100
+  vfm_enable: true
+  vfm_backend: dinov2_token_edge_l1
+  vfm_cache_dir: output/0001/vfm_cache_large/bicycle_dinov2_vitl14_token_edge_w1600
+  vfm_loss_thresh: 0.45
+  vfm_metric_map_mode: topk
+  vfm_metric_topk: 0.25
+  vfm_weight: 0.25
+  vfm_importance_weight: 1.0
+  vfm_importance_mode: max
+  vfm_use_albedo_sh0: true
+experiment:
+  status: 0005_high_gain_psnr_push_round1
+  proposal: docs/experiments/0005_mipnerf360_high_gain_psnr_push/proposal.md
+  note: High-gain MipNeRF360 PSNR push. Uses existing ViT-L/14 1.6K token-edge caches and full FastGS big scene overrides.
