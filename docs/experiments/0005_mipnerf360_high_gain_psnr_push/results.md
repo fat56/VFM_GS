@@ -38,7 +38,22 @@ Round 2 切到质量优先 FastGS/RGB 自身改动：`densify_until_iter=21000`�
 
 输出：
 
-- `output/0005/fastgs_big_rgb_densify_until21000/mipnerf360_g0/summary.csv`
-- `output/0005/fastgs_big_rgb_densify_until21000/mipnerf360_g1/summary.csv`
+- `output/0005/fastgs_big_rgb_densify_until21000/mipnerf360_g0/bicycle/logs/fastgs_big_rgb_densify_until21000_30k_final_r_auto/train.log`
+- `output/0005/fastgs_big_rgb_densify_until21000/mipnerf360_g1/room/logs/fastgs_big_rgb_densify_until21000_30k_final_r_auto/train.log`
+
+结果：失败，无有效 metrics。
+
+失败点：`bicycle` 和 `room` 都在 iteration 18000 左右退出，报错为 `_RasterizeGaussiansBackward returned an invalid gradient at index 3 - got [0, 0, 3] but expected shape compatible with [0, 15, 3]`。
+
+判定：这不是普通质量负例，而是延长 densification 触发了当前 rasterizer/SH feature 空张量路径的实现边界。为了继续当天 PSNR 冲刺，暂时不在此处修内核边界，先切到不改变 densify window 的 no-prune 容量上限探针。
+
+## Round 3：FastGS big no-prune floor
+
+配置：`configs/experiments/0005_fastgs_big_no_prune_floor.yaml`
+
+输出：
+
+- `output/0005/fastgs_big_no_prune_floor/mipnerf360_g0/summary.csv`
+- `output/0005/fastgs_big_no_prune_floor/mipnerf360_g1/summary.csv`
 
 待完成后合并 9 场景，与同一 30k baseline 对齐。该轮只在最终 30k 做 render/metrics，不再做 checkpoint curve。
