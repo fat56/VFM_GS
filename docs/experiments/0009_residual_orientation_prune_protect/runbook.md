@@ -46,13 +46,13 @@ CUDA_VISIBLE_DEVICES=0 uv run --active python -m vfm_gs.cli.metrics \
 GPU0:
 
 ```bash
-tmux new-session -d -s 0009_residual_protect_g0 'cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && CUDA_VISIBLE_DEVICES=0 python scripts/run_0001_fastgs_big_eval.py --dataset-name mipnerf360 --dataset-root datasets/mipnerf360 --output-root output/0009/residual_orientation_protect_pilot/mip_g0 --scenes room treehill --method-name residual_orientation_protect_start24000_auto_topk005 --run-name fastgs_big_30k_scene_override_r_auto --config configs/experiments/0009_residual_orientation_protect_start24000_auto_topk005.yaml --vfm-cache-template "output/0002/vfm_cache/{scene}_depth_anything_v2s_depth" --vfm-cache-feature depth > output/0009/debug_logs/residual_protect_g0.log 2>&1'
+tmux new-session -d -s 0009_residual_protect_g0 'cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && mkdir -p output/0009/debug_logs && CUDA_VISIBLE_DEVICES=0 python scripts/run_0001_fastgs_big_eval.py --dataset-name mipnerf360 --dataset-root datasets/mipnerf360 --output-root output/0009/residual_orientation_protect_pilot/mip_g0 --scenes room treehill --method-name residual_orientation_protect_start24000_auto_topk005 --run-name fastgs_big_30k_scene_override_r_auto --config configs/experiments/0009_residual_orientation_protect_start24000_auto_topk005.yaml --vfm-cache-template "output/0002/vfm_cache/{scene}_depth_anything_v2s_depth" --vfm-cache-feature depth > output/0009/debug_logs/residual_protect_g0.log 2>&1'
 ```
 
 GPU1:
 
 ```bash
-tmux new-session -d -s 0009_residual_protect_g1 'cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && CUDA_VISIBLE_DEVICES=1 python scripts/run_0001_fastgs_big_eval.py --dataset-name mipnerf360 --dataset-root datasets/mipnerf360 --output-root output/0009/residual_orientation_protect_pilot/mip_g1 --scenes stump --method-name residual_orientation_protect_start24000_auto_topk005 --run-name fastgs_big_30k_scene_override_r_auto --config configs/experiments/0009_residual_orientation_protect_start24000_auto_topk005.yaml --vfm-cache-template "output/0002/vfm_cache/{scene}_depth_anything_v2s_depth" --vfm-cache-feature depth > output/0009/debug_logs/residual_protect_g1.log 2>&1'
+tmux new-session -d -s 0009_residual_protect_g1 'cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && mkdir -p output/0009/debug_logs && CUDA_VISIBLE_DEVICES=1 python scripts/run_0001_fastgs_big_eval.py --dataset-name mipnerf360 --dataset-root datasets/mipnerf360 --output-root output/0009/residual_orientation_protect_pilot/mip_g1 --scenes stump --method-name residual_orientation_protect_start24000_auto_topk005 --run-name fastgs_big_30k_scene_override_r_auto --config configs/experiments/0009_residual_orientation_protect_start24000_auto_topk005.yaml --vfm-cache-template "output/0002/vfm_cache/{scene}_depth_anything_v2s_depth" --vfm-cache-feature depth > output/0009/debug_logs/residual_protect_g1.log 2>&1'
 ```
 
 监控：
