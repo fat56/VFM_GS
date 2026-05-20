@@ -34,6 +34,14 @@ OUTPUT_FIELDS = (
     "d_ssim_curve",
     "d_lpips_curve",
     "d_gs_curve",
+    "auto_psnr",
+    "auto_ssim",
+    "auto_lpips",
+    "auto_gs_num",
+    "d_psnr_auto",
+    "d_ssim_auto",
+    "d_lpips_auto",
+    "d_gs_auto",
     "run_dir",
     "source_summary",
 )
@@ -122,10 +130,11 @@ def build_comparison_rows(
     experiment_rows: dict[str, dict[str, str]],
     phase0: dict[str, dict[str, str]],
     curve: dict[str, dict[str, str]],
+    auto: dict[str, dict[str, str]],
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for scene, row in sorted(experiment_rows.items()):
-        if scene not in phase0 or scene not in curve:
+        if scene not in phase0 or scene not in curve or scene not in auto:
             continue
         out: dict[str, Any] = {
             "dataset": row["dataset"],
@@ -141,6 +150,7 @@ def build_comparison_rows(
         }
         add_baseline_delta(out, row, phase0[scene], "phase0", "gs_num")
         add_baseline_delta(out, row, curve[scene], "curve", "gs_num")
+        add_baseline_delta(out, row, auto[scene], "auto", "gs_num")
         rows.append(out)
     return rows
 
@@ -160,6 +170,10 @@ def summarize(rows: list[dict[str, Any]], duplicates: list[dict[str, str]]) -> d
         "avg_d_ssim_curve": mean([float(row["d_ssim_curve"]) for row in rows]),
         "avg_d_lpips_curve": mean([float(row["d_lpips_curve"]) for row in rows]),
         "avg_d_gs_curve": mean([float(row["d_gs_curve"]) for row in rows]),
+        "avg_d_psnr_auto": mean([float(row["d_psnr_auto"]) for row in rows]),
+        "avg_d_ssim_auto": mean([float(row["d_ssim_auto"]) for row in rows]),
+        "avg_d_lpips_auto": mean([float(row["d_lpips_auto"]) for row in rows]),
+        "avg_d_gs_auto": mean([float(row["d_gs_auto"]) for row in rows]),
         "duplicates": duplicates,
     }
 
@@ -188,6 +202,14 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=Path("output/0002/fastgs_big_baseline_checkpoint_curve/mipnerf360/check.csv"),
     )
+    parser.add_argument(
+        "--auto-baseline",
+        type=Path,
+        default=Path(
+            "output/0002/depth_anything_depth_prior_prune_protect_auto_topk_full/"
+            "mipnerf360_combined/summary.csv"
+        ),
+    )
     parser.add_argument("--curve-iteration", type=int, default=30000)
     parser.add_argument(
         "--output-dir",
@@ -205,7 +227,8 @@ def main() -> int:
 
     phase0 = load_phase0_baseline(args.phase0_baseline)
     curve = load_curve_baseline(args.curve_baseline, args.curve_iteration)
-    rows = build_comparison_rows(experiment_rows, phase0, curve)
+    auto = load_phase0_baseline(args.auto_baseline)
+    rows = build_comparison_rows(experiment_rows, phase0, curve, auto)
     summary = summarize(rows, duplicates)
 
     write_csv(args.output_dir / "comparison.csv", rows, OUTPUT_FIELDS)
