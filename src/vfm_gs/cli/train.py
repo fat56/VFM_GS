@@ -26,7 +26,7 @@ try:
     import torch
     import numpy as np
     from vfm_gs.lpips_pytorch import lpips
-    from vfm_gs.utils.loss_utils import l1_loss
+    from vfm_gs.utils.loss_utils import l1_loss, l2_loss
     from fused_ssim import fused_ssim as fast_ssim
     from vfm_gs.gaussian_renderer import render_fastgs, network_gui_ws
     from vfm_gs.scene import Scene, GaussianModel
@@ -219,8 +219,11 @@ def _run_post_prune_finetune(scene, gaussians, pipe, bg, opt, start_iteration, f
 
         gt_image = viewpoint_cam.original_image.cuda()
         Ll1 = l1_loss(image, gt_image)
+        Ll2 = l2_loss(image, gt_image)
         ssim_value = fast_ssim(image.unsqueeze(0), gt_image.unsqueeze(0))
-        loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim_value)
+        l2_blend = max(0.0, min(1.0, float(getattr(opt, "lambda_l2", 0.0) or 0.0)))
+        pixel_loss = (1.0 - l2_blend) * Ll1 + l2_blend * Ll2
+        loss = (1.0 - opt.lambda_dssim) * pixel_loss + opt.lambda_dssim * (1.0 - ssim_value)
         loss.backward()
 
         iter_end.record()
@@ -351,8 +354,11 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         # Loss
         gt_image = viewpoint_cam.original_image.cuda()
         Ll1 = l1_loss(image, gt_image)
+        Ll2 = l2_loss(image, gt_image)
         ssim_value = fast_ssim(image.unsqueeze(0), gt_image.unsqueeze(0))
-        loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim_value)
+        l2_blend = max(0.0, min(1.0, float(getattr(opt, "lambda_l2", 0.0) or 0.0)))
+        pixel_loss = (1.0 - l2_blend) * Ll1 + l2_blend * Ll2
+        loss = (1.0 - opt.lambda_dssim) * pixel_loss + opt.lambda_dssim * (1.0 - ssim_value)
         loss.backward()
 
         iter_end.record()

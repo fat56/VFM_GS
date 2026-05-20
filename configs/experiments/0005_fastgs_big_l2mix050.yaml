@@ -1,0 +1,11 @@
+name: 0005_fastgs_big_l2mix050
+extends: fastgs_big
+scorer: fastgs_photometric
+training_args:
+  densification_interval: 100
+  optimizer_type: default
+  lambda_l2: 0.5
+experiment:
+  status: 0005_high_gain_psnr_push_round6
+  proposal: docs/experiments/0005_mipnerf360_high_gain_psnr_push/proposal.md
+  note: PSNR-oriented loss pilot. Blends L1 and L2 equally before the existing DSSIM term to make training closer to MSE/PSNR.

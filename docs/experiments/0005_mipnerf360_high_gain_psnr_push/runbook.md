@@ -148,4 +148,14 @@ tail -n 60 output/0005/debug_logs/fastgs_big_soft_prune050_g1.log
 
 ## Round 6：PSNR-Oriented Loss
 
-待代码和配置落地后补启动命令。仍然保持 final-only，不做 checkpoint curve。
+GPU0 pilot：
+
+```bash
+tmux new-session -d -s 0005_l2mix050_g0 "cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && mkdir -p output/0005/debug_logs && CUDA_VISIBLE_DEVICES=0 python scripts/run_0001_fastgs_big_eval.py --dataset-name mipnerf360 --dataset-root datasets/mipnerf360 --output-root output/0005/fastgs_big_l2mix050/mipnerf360_g0 --scenes bicycle flowers --variant fastgs_big --config configs/experiments/0005_fastgs_big_l2mix050.yaml --resolution -1 --method-name fastgs_big_l2mix050 --run-name fastgs_big_l2mix050_30k_final_r_auto > output/0005/debug_logs/fastgs_big_l2mix050_g0.log 2>&1"
+```
+
+GPU1 pilot：
+
+```bash
+tmux new-session -d -s 0005_l2mix050_g1 "cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && mkdir -p output/0005/debug_logs && CUDA_VISIBLE_DEVICES=1 python scripts/run_0001_fastgs_big_eval.py --dataset-name mipnerf360 --dataset-root datasets/mipnerf360 --output-root output/0005/fastgs_big_l2mix050/mipnerf360_g1 --scenes room counter --variant fastgs_big --config configs/experiments/0005_fastgs_big_l2mix050.yaml --resolution -1 --method-name fastgs_big_l2mix050 --run-name fastgs_big_l2mix050_30k_final_r_auto > output/0005/debug_logs/fastgs_big_l2mix050_g1.log 2>&1"
+```

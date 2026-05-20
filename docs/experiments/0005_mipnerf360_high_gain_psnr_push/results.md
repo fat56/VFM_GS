@@ -112,4 +112,11 @@ Round 6 准备切到 PSNR-oriented loss：当前 prior、no-prune、60k 长训�
 
 ## Round 6：PSNR-oriented L2 mix
 
-待启动。计划新增一个默认关闭的 L2/MSE loss 混合项，先在 MipNeRF360 4 个代表场景上快速判断是否能直接提高 PSNR，再决定是否扩到 9 场景。
+配置：`configs/experiments/0005_fastgs_big_l2mix050.yaml`
+
+输出：
+
+- `output/0005/fastgs_big_l2mix050/mipnerf360_g0/summary.csv`
+- `output/0005/fastgs_big_l2mix050/mipnerf360_g1/summary.csv`
+
+先跑 `bicycle/flowers` 与 `room/counter` 四场景 pilot；如果 PSNR 信号足够强，再扩到 9 场景。
