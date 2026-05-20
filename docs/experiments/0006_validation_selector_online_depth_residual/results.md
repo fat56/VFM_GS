@@ -34,7 +34,40 @@ tmux：
 - `0006_selector_mip_g0`：GPU0，`output/0006/debug_logs/selector_mip_g0.log`
 - `0006_selector_cross_g1`：GPU1，`output/0006/debug_logs/selector_cross_g1.log`
 
-待填：tmux 任务完成后记录 selector 平均指标、逐场景选择。
+两个任务均已完成。
+
+### MipNeRF360 已完成
+
+输出：
+
+- `output/0006/validation_selector/mipnerf360_train_selector/train_selector_averages.csv`
+- `output/0006/validation_selector/mipnerf360_train_selector/train_selector_recommendations.csv`
+
+与 MipNeRF360 baseline 均值比较：
+
+| 方法 | PSNR | SSIM | LPIPS | GS |
+|---|---:|---:|---:|---:|
+| baseline | 27.9590 | 0.820268 | 0.215657 | 1,161,786 |
+| train_best_psnr selector | 27.9602 | 0.823621 | 0.207624 | 1,384,362 |
+| Δ best_psnr - baseline | +0.0012 | +0.003354 | -0.008033 | +222,576 |
+| train_qcgi selector | 27.9506 | 0.820745 | 0.214239 | 1,200,922 |
+| Δ qcgi - baseline | -0.0084 | +0.000477 | -0.001418 | +39,136 |
+
+`train_qcgi` 逐场景选择：
+
+| 场景 | 选择 |
+|---|---|
+| `bicycle` | `baseline` |
+| `bonsai` | `depth_auto_topk` |
+| `counter` | `depth_start24000_topk005` |
+| `flowers` | `baseline` |
+| `garden` | `depth_auto_topk` |
+| `kitchen` | `depth_start24000_weight015` |
+| `room` | `depth_auto_topk` |
+| `stump` | `depth_rgb_rerank_start9000` |
+| `treehill` | `depth_auto_topk` |
+
+结论：`train_best_psnr` 主要被 RGB rerank 的训练视角质量吸引，LPIPS/SSIM 看起来好，但 Gaussian 增长太大。`train_qcgi` 控制容量后仍比 baseline 低 0.0084 PSNR，虽然 LPIPS 略好，不能默认化。
 
 ### DB/Tandt 已完成
 
@@ -62,6 +95,14 @@ tmux：
 
 结论：DB/Tandt 上 train-split selector 会选出看似合理的 depth 分支，但 test 均值仍略低于 baseline。这是一个轻微过拟合信号，后续不能只用训练视角 proxy 作为默认策略依据。
 
+### Round 1 决策
+
+Validation-driven selector 作为“当前实现”不通过默认化门槛：
+
+- MipNeRF360：`train_qcgi` 容量可控，但 PSNR 低于 baseline，且仍增加约 39k Gaussian。
+- DB/Tandt：`train_qcgi` 与 `train_best_psnr` 一致，但 test PSNR / LPIPS 均略差。
+- train split proxy 有用，但要升级成真正的 held-out selector 或 scene-conditioned policy，不能直接拿训练视角选择结果替换默认 FastGS。
+
 ### 决策口径
 
 - 主看 `train_qcgi`，辅看 `train_best_psnr`。
@@ -81,5 +122,31 @@ tmux：
 
 启动计划：
 
-- `0006_depth_proxy_indoor_g1`：GPU1，`room kitchen bonsai`
-- `0006_depth_proxy_mixed_g0`：GPU0，`stump counter`，等待 MipNeRF360 selector 释放 GPU0 后启动
+- `0006_depth_proxy_indoor_g1`：GPU1，`room kitchen bonsai`，已完成
+- `0006_depth_proxy_mixed_g0`：GPU0，`stump counter`，已完成
+
+### Proxy smoke 结果
+
+输出：
+
+- `output/0006/online_depth_residual_proxy/indoor_g1/summary.json`
+- `output/0006/online_depth_residual_proxy/mixed_g0/summary.json`
+
+整体：
+
+| 分组 | 场景 | views | valid coverage | prior/RGB IoU | residual-depth/RGB IoU | residual-inv/RGB IoU | prior/edge IoU | residual-depth/edge IoU |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| indoor | bonsai/kitchen/room | 24 | 0.551 | 0.0748 | 0.0755 | 0.0406 | 0.0667 | 0.0695 |
+| mixed | counter/stump | 15 | 0.539 | 0.0443 | 0.0431 | 0.0454 | 0.0646 | 0.0645 |
+
+逐场景观察：
+
+| 场景 | prior/RGB IoU | residual-depth/RGB IoU | residual-inv/RGB IoU | 观察 |
+|---|---:|---:|---:|---|
+| `bonsai` | 0.1197 | 0.1213 | 0.0452 | residual-depth 略高于静态 prior，但幅度很小 |
+| `kitchen` | 0.0560 | 0.0548 | 0.0381 | RGB 上没有超过 prior；GT edge 上 residual-depth 更高 |
+| `room` | 0.0488 | 0.0504 | 0.0385 | residual-depth 略高于 prior，方向正确但很弱 |
+| `counter` | 0.0477 | 0.0484 | 0.0361 | residual-depth 略高于 prior，GT edge 也略高 |
+| `stump` | 0.0409 | 0.0377 | 0.0547 | inverse-depth residual 对 RGB error 更强，但 edge 对齐更弱 |
+
+结论：proxy 覆盖率足够做第一轮诊断，但 online residual 还不是一个“拿来就能替代静态 prior”的信号。更准确的说，它暴露了两个变量：深度方向需要按场景/视角校准，且 residual-depth 主要改善 edge 对齐，residual-inv 只在 `stump` 的 RGB error 上更强。下一步若继续，应做 orientation-aware residual selector，而不是直接把某一个 residual 图接入 pruning。
