@@ -1,0 +1,11 @@
+name: 0005_fastgs_big_no_prune_floor
+extends: fastgs_big
+scorer: fastgs_photometric
+training_args:
+  densification_interval: 100
+  optimizer_type: default
+  prune_min_gaussian_count: 1000000000
+experiment:
+  status: 0005_high_gain_psnr_push_backup
+  proposal: docs/experiments/0005_mipnerf360_high_gain_psnr_push/proposal.md
+  note: Quality upper-bound probe. Uses an intentionally unreachable prune_min_gaussian_count to disable FastGS training/final pruning and test whether retained capacity alone improves PSNR enough to justify a softer pruning schedule.

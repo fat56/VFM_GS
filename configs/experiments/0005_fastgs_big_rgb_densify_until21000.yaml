@@ -1,0 +1,11 @@
+name: 0005_fastgs_big_rgb_densify_until21000
+extends: fastgs_big
+scorer: fastgs_photometric
+training_args:
+  densification_interval: 100
+  optimizer_type: default
+  densify_until_iter: 21000
+experiment:
+  status: 0005_high_gain_psnr_push_round2
+  proposal: docs/experiments/0005_mipnerf360_high_gain_psnr_push/proposal.md
+  note: Quality-first FastGS big variant. Keeps the original RGB/photometric scorer but extends densification from 15k to 21k to test whether late capacity growth can beat the 30k baseline PSNR target.

@@ -49,3 +49,25 @@ tail -n 60 output/0005/debug_logs/tokenedge_vitl14_w1600_topk025_max_g1.log
 - `docs/experiments/0005_mipnerf360_high_gain_psnr_push/results.md`
 - `docs/experiments/0005_mipnerf360_high_gain_psnr_push/review.md`
 - `docs/roadmap.md`
+
+## Round 2：RGB densify-until-21000
+
+GPU0：
+
+```bash
+tmux new-session -d -s 0005_rgb_densify21_g0 "cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && mkdir -p output/0005/debug_logs && CUDA_VISIBLE_DEVICES=0 python scripts/run_0001_fastgs_big_eval.py --dataset-name mipnerf360 --dataset-root datasets/mipnerf360 --output-root output/0005/fastgs_big_rgb_densify_until21000/mipnerf360_g0 --scenes bicycle flowers garden stump treehill --variant fastgs_big --config configs/experiments/0005_fastgs_big_rgb_densify_until21000.yaml --resolution -1 --method-name fastgs_big_rgb_densify_until21000 --run-name fastgs_big_rgb_densify_until21000_30k_final_r_auto > output/0005/debug_logs/fastgs_big_rgb_densify_until21000_g0.log 2>&1"
+```
+
+GPU1：
+
+```bash
+tmux new-session -d -s 0005_rgb_densify21_g1 "cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && mkdir -p output/0005/debug_logs && CUDA_VISIBLE_DEVICES=1 python scripts/run_0001_fastgs_big_eval.py --dataset-name mipnerf360 --dataset-root datasets/mipnerf360 --output-root output/0005/fastgs_big_rgb_densify_until21000/mipnerf360_g1 --scenes room counter kitchen bonsai --variant fastgs_big --config configs/experiments/0005_fastgs_big_rgb_densify_until21000.yaml --resolution -1 --method-name fastgs_big_rgb_densify_until21000 --run-name fastgs_big_rgb_densify_until21000_30k_final_r_auto > output/0005/debug_logs/fastgs_big_rgb_densify_until21000_g1.log 2>&1"
+```
+
+监控：
+
+```bash
+tmux ls
+tail -n 60 output/0005/debug_logs/fastgs_big_rgb_densify_until21000_g0.log
+tail -n 60 output/0005/debug_logs/fastgs_big_rgb_densify_until21000_g1.log
+```
