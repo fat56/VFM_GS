@@ -146,6 +146,13 @@ CUDA_VISIBLE_DEVICES=0 python scripts/run_0001_fastgs_big_eval.py \
 
 `start24000` 已经验证 timing 有效但不能默认化。后续小扫只跑最终 30k render / metrics，不再使用 checkpoint-curve runner。
 
+本阶段已完成两组：
+
+- `final_only_start24000_weight015_gpu0`: protect weight 0.15，四场景均值 ΔPSNR -0.0919。
+- `final_only_start24000_auto_topk005_gpu1`: auto-topk 上限 0.5%，四场景均值 ΔPSNR -0.0351。
+
+结论：固定低权重和固定窄 topk 都不能成为默认策略。后续除非明确做 selector，不再继续手工扫固定 weight / fixed topk。
+
 优先四个判别场景：
 
 - `room`: 验证是否继续保住 start24000 对 late-window 的修复。
@@ -173,3 +180,8 @@ tmux new-session -d -s 0004_final_topk005_g1 "cd /home/m/project/ltm/VFM_GS && s
 - `docs/experiments/0004_late_scene_adaptive_auxiliary/review.md`
 
 如果实验方向再次收束，继续把结论同步回 `docs/roadmap.md`。
+
+当前归档：
+
+- Round 3 final-only 结果见 `docs/experiments/0004_late_scene_adaptive_auxiliary/results.md`。
+- 复盘结论见 `docs/experiments/0004_late_scene_adaptive_auxiliary/review.md`。

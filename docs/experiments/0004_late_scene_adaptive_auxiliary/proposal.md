@@ -62,6 +62,8 @@ python scripts/run_0001_fastgs_big_eval.py \
 | LPIPS | FastGS big curve | Round 2 start24000 | 6 场景平均 +0.00001 |
 | 训练时间 | FastGS big curve | Round 2 start24000 | checkpoint-curve 诊断成本过高，不作常规口径 |
 | Gaussian 数量 | FastGS big curve | Round 2 start24000 | 6 场景平均 +1,674 |
+| PSNR | FastGS big curve | Round 3 final-only weight0.15 | 4 场景平均 -0.0919 |
+| PSNR | FastGS big curve | Round 3 final-only topk0.5% | 4 场景平均 -0.0351 |
 
 ## 失败记录
 
@@ -71,8 +73,8 @@ python scripts/run_0001_fastgs_big_eval.py \
 
 ## 决策
 
-`start24000` 证明了更晚介入能显著减轻 `room` 的 late-window 伤害，但 6 场景平均仍负，`bonsai/kitchen` 不稳。因此 Depth Anything prune-protect auto-topk 不能默认化；若继续，只能作为 final-only 的小范围低强度 sweep。
+`start24000` 证明了更晚介入能显著减轻 `room` 的 late-window 伤害，但 6 场景平均仍负，`bonsai/kitchen` 不稳。Round 3 的 final-only 小扫显示，单纯降低 protect weight 更差；收窄 auto-topk 能修复 `kitchen`，但会伤害 `room/counter`。因此 Depth Anything prune-protect auto-topk 不能默认化，固定阈值/固定权重支线应收束。
 
 ## 下一步
 
-如果继续 0004，改跑 final-only 的低成本四场景小扫：`room/bonsai/counter/kitchen`，优先试更低 protect weight 或更窄 auto-topk 上限。若仍不能让 `bonsai/kitchen` 回到 baseline 附近，0004 应停止继续扩大 Depth Anything prune-protect，并改向 validation-driven selector 或只保留离线诊断。
+如果继续 0004，应保持 final-only 评测，转向 validation-driven selector 或 scene-conditioned policy：让每个场景在 baseline / start24000 / topk0.5% 之间选择，而不是继续手工扫固定超参。若 selector 也只能带来接近噪声级的收益，则把 Depth Anything prune-protect 保留为离线诊断工具。

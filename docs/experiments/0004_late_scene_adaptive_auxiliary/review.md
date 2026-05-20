@@ -2,7 +2,7 @@
 
 ## 结论
 
-两轮 0004 结果说明：Depth Anything `rgb_prune_auto_topk` 作为 late prune-protect 辅助器，确实比 0002 早期 densify/rerank 更接近中性，但还不能作为默认策略。`start24000` 把 `room` 的 30k 负向从 -0.2219 PSNR 收窄到 -0.0498，并把 24k -> 30k late gain 差值从 -0.1589 修复到 -0.0004；但 6 场景平均仍为 -0.0340 PSNR、-0.00029 SSIM、LPIPS +0.00001，且 `bonsai/kitchen` 是新的主要负例。
+三轮 0004 结果说明：Depth Anything `rgb_prune_auto_topk` 作为 late prune-protect 辅助器，确实比 0002 早期 densify/rerank 更接近中性，但还不能作为默认策略。`start24000` 把 `room` 的 30k 负向从 -0.2219 PSNR 收窄到 -0.0498，并把 24k -> 30k late gain 差值从 -0.1589 修复到 -0.0004；但 6 场景平均仍为 -0.0340 PSNR、-0.00029 SSIM、LPIPS +0.00001。第三轮 final-only 小扫进一步说明：降 protect weight 到 0.15 会让四场景均值掉到 -0.0919 PSNR；收窄 auto-topk 到 0.5% 能修复 `kitchen`，但把 `room` 拉到 -0.1161 PSNR，四场景均值仍为 -0.0351 PSNR。
 
 ## 目前判断
 
@@ -41,6 +41,15 @@
 
 因此 `start24000` 不是默认解，而是把问题从“过早介入伤害 room”推进到“prior/protect 排序在部分室内场景仍不可靠”。这说明 late-only 是必要条件，不是充分条件。
 
+## 第三轮复盘
+
+Round 3 改成 final-only 评测，只在 30k 后 render / metrics，用来确认两个低成本修补方向：
+
+- `weight0.15`：保护强度降低后，`counter` 小幅更好，但 `room/bonsai/kitchen` 全部负向，四场景均值 -0.0919 PSNR。尤其 `kitchen` 从 Round 2 的 -0.0887 继续跌到 -0.2118，说明弱化保护并没有解决排序错位。
+- `auto_topk0.5%`：更窄候选能把 `kitchen` 翻到 +0.0331，并把 `bonsai` 负向从 -0.1283 收窄到 -0.0654；但 `room` 从 -0.0498 扩大到 -0.1161，`counter` 也从 +0.0375 降到 +0.0081。四场景均值仍为 -0.0351 PSNR。
+
+这轮结果把失败原因进一步缩窄：问题不是单一“保护太强”或“候选太宽”，而是场景最优的 proposal 宽度和 protect 排序不一致。`kitchen` 需要更窄 proposal，`room` 反而对更窄 proposal 更敏感；这类冲突很难靠固定超参解决。
+
 ## 风险点
 
 - 辅助信号仍然可能和 RGB 误差错位。
@@ -49,11 +58,10 @@
 
 ## 下一步
 
-下一步如果继续，应只做低成本 final-only 小扫，不再启用 checkpoint curve。优先级：
+下一步如果继续，应保持低成本 final-only，不再启用 checkpoint curve。优先级：
 
-- 更低 protect weight，例如 0.10 或 0.15。
-- 更窄 auto-topk 上限，例如 max 0.005。
-- 只跑 `room/bonsai/counter/kitchen` 这四个最有判别力的场景，训练完只评测 30k。
-- 如果 `bonsai/kitchen` 仍明显负向，就停止 Depth Anything prune-protect 在线方向。
+- 不再继续手工扫固定 weight / fixed topk；Round 3 已经说明这条线只能换负例。
+- 如果继续在线方向，应做 validation-driven selector：每个场景用 train/holdout 快速指标选择 baseline / start24000 / topk0.5%。
+- 另一个方向是把 Depth Anything 留作离线诊断，分析哪些场景需要更窄 proposal，而不是直接接入训练。
 
 评测方式也要收敛：start24000 这轮保留 checkpoint curve 是为了验证介入时机；后续除非专门做曲线诊断，否则不再每 2k render/metric，统一回到 final-only 评测。
