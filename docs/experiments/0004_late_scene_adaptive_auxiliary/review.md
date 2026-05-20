@@ -43,3 +43,5 @@
 - 若 `room` 的负向明显收窄，同时 `stump/counter/bicycle` 不丢掉已有小收益，则继续做更轻权重或更窄 top-k 的 late-only sweep。
 - 若 `room` 仍大幅负向，说明 Depth Anything prune-protect 的排序本身仍和 FastGS pruning 目标错位，应停止把它作为在线辅助器。
 - 若平均只在 +/-0.02 PSNR 内波动且 LPIPS/GS 没有同步收益，则默认视为平台期噪声。
+
+评测方式也要收敛：start24000 这轮保留 checkpoint curve 是为了验证介入时机；后续除非专门做曲线诊断，否则不再每 2k render/metric，统一回到 final-only 评测。

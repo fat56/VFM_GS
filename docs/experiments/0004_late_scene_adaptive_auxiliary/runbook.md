@@ -8,6 +8,17 @@ source .venv/bin/activate
 
 0004 先复用现有 FastGS big 训练链路和 0002 / 0003 已验证的辅助后端。长跑建议继续用 `tmux` 或 `screen`。
 
+## 评测策略
+
+默认不要每 2k iteration 做 render / metrics。checkpoint curve 只用于专门诊断训练曲线，例如 0002 baseline curve 和本轮 start24000 timing 验证；它可以帮助观察 Gaussian 增长、后期 pruning 和渲染质量之间的关系，但不适合作为后续 sweep 或扩场景的常规流程。
+
+后续 0004 实验默认使用 final-only：
+
+- 训练完整 30k。
+- 只对最终 checkpoint 做 render / metrics。
+- 只记录 30k PSNR / SSIM / LPIPS / Gaussian 数量和训练日志里的 prune-protect 统计。
+- 只有明确需要分析曲线时，才重新启用 `scripts/run_fastgs_big_checkpoint_curve.py`。
+
 ## Phase 0：确定晚期辅助是否值得跑
 
 先不要把 prior 放到 densification 早期。第一轮只验证一个小型异质 pilot：
@@ -28,7 +39,7 @@ source .venv/bin/activate
 2. 辅助只在 RGB 候选内部 rerank / protect。
 3. 不同场景会落到不同强度或不同开关状态。
 
-运行时应记录：
+本阶段为了判断介入时机，可以记录：
 
 - 每 2k iteration 的 `render`
 - 每 2k iteration 的 `metrics`
@@ -82,6 +93,8 @@ CUDA_VISIBLE_DEVICES=1 uv run --active python scripts/run_fastgs_big_checkpoint_
 
 第一轮显示 `room` 对 18k/21k protect 很敏感。下一轮只改变介入时机：`configs/experiments/0004_late_scene_adaptive_auxiliary_start24000.yaml` 会跳过 18k/21k，只在 24k/27k 的 pruning 中启用 protect。
 
+注意：这轮仍使用 checkpoint-curve runner，是为了验证 late-only timing 假设。完成后不要继续把 checkpoint-curve 作为默认实验方式；后续参数 sweep 和扩场景回到 final-only。
+
 GPU1 跑异质 pilot：
 
 ```bash
@@ -113,6 +126,21 @@ tail -n 60 output/0004/debug_logs/depth_prune_auto_topk_start24000_indoor_g0.log
 - Tandt 全场景
 
 这一步只在小 pilot 说明“晚期辅助有机会”时做。
+
+扩展阶段使用 final-only runner，而不是 checkpoint-curve runner。例如：
+
+```bash
+source .venv/bin/activate
+CUDA_VISIBLE_DEVICES=0 python scripts/run_0001_fastgs_big_eval.py \
+  --dataset-name mipnerf360 \
+  --dataset-root datasets/mipnerf360 \
+  --output-root output/0004/late_scene_adaptive_auxiliary/final_only_mipnerf360_gpu0 \
+  --scenes bicycle stump room \
+  --variant fastgs_big \
+  --config configs/experiments/0004_late_scene_adaptive_auxiliary_start24000.yaml \
+  --vfm-cache-template output/0002/vfm_cache/{scene}_depth_anything_v2s_depth \
+  --resolution -1
+```
 
 ## 结果归档
 

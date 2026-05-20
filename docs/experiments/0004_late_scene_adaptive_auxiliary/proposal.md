@@ -75,4 +75,4 @@ python scripts/run_0001_fastgs_big_eval.py \
 
 ## 下一步
 
-运行 `configs/experiments/0004_late_scene_adaptive_auxiliary_start24000.yaml` 的 6 场景复验。若仍不稳，0004 应停止继续扩大 Depth Anything prune-protect，并改向 validation-driven selector 或只保留离线诊断。
+运行 `configs/experiments/0004_late_scene_adaptive_auxiliary_start24000.yaml` 的 6 场景复验。这一轮使用 checkpoint curve 是为了验证 24k/27k late-only timing；完成后后续 sweep 和扩场景不再默认每 2k render/metric，改回训练完成后只评测最终 checkpoint。若 start24000 仍不稳，0004 应停止继续扩大 Depth Anything prune-protect，并改向 validation-driven selector 或只保留离线诊断。
