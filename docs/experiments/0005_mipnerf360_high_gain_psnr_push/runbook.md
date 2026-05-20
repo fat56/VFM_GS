@@ -143,3 +143,9 @@ tmux ls
 tail -n 60 output/0005/debug_logs/fastgs_big_soft_prune050_g0.log
 tail -n 60 output/0005/debug_logs/fastgs_big_soft_prune050_g1.log
 ```
+
+结果：该轮在 4 个场景后 early-stop，`room` 大负向，soft late-prune 不作为默认路线。
+
+## Round 6：PSNR-Oriented Loss
+
+待代码和配置落地后补启动命令。仍然保持 final-only，不做 checkpoint curve。

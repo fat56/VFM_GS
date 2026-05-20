@@ -4,7 +4,7 @@
 
 Round 1 已 early-stop：DINOv2 ViT-L/14 token-edge 1.6K cache 在 4 个已完成场景上 PSNR 均值为 -0.0440，且平均多 195,124 个 Gaussians；虽然 SSIM/LPIPS 有正向，但已不可能达成 MipNeRF360 9 场景平均 PSNR +0.2 的当天目标。
 
-Round 5 切到 soft late-prune：保持默认 15k densification，只把 18k/21k/24k/27k 后期 prune 的删除比例降到 50%。当前结果说明 prior、no-prune 和 60k 长训都不能作为全局默认。
+Round 6 准备切到 PSNR-oriented loss：当前 prior、no-prune、60k 长训和 soft-prune 都不能作为全局默认；下一步直接把训练 loss 往 MSE/PSNR 口径靠。
 
 ## Round 1：token-edge ViT-L/1600 top-k25 max
 
@@ -98,4 +98,18 @@ Round 5 切到 soft late-prune：保持默认 15k densification，只把 18k/21k
 - `output/0005/fastgs_big_soft_prune050/mipnerf360_g0/summary.csv`
 - `output/0005/fastgs_big_soft_prune050/mipnerf360_g1/summary.csv`
 
-待完成后合并 9 场景，与同一 30k baseline 对齐。该轮只对最终 30k 做 render/metrics，不做 checkpoint curve。
+本轮在 4 个场景后 early-stop。对照为同一 30k baseline。
+
+| 场景 | PSNR | ΔPSNR | SSIM | ΔSSIM | LPIPS | ΔLPIPS | GS | ΔGS |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| bicycle | 25.2698 | +0.0051 | 0.7554 | -0.0002 | 0.2453 | +0.0005 | 1,586,765 | +28,685 |
+| flowers | 21.6508 | +0.0295 | 0.6030 | +0.0008 | 0.3426 | +0.0019 | 1,148,069 | +13,237 |
+| room | 32.1066 | -0.1941 | 0.9301 | -0.0006 | 0.1889 | +0.0008 | 584,995 | +14,805 |
+| counter | 29.5744 | +0.0332 | 0.9179 | -0.0001 | 0.1766 | +0.0000 | 478,078 | +6,820 |
+| **已完成均值** | 27.1504 | -0.0316 | 0.8016 | -0.0000 | 0.2383 | +0.0008 | 949,477 | +15,887 |
+
+判定：停止继续跑剩余 5 场景。soft-prune 能轻微改善 `bicycle/flowers/counter`，但 `room` 大幅退化；降低 late prune 强度不是全局 +0.2 的主因。
+
+## Round 6：PSNR-oriented L2 mix
+
+待启动。计划新增一个默认关闭的 L2/MSE loss 混合项，先在 MipNeRF360 4 个代表场景上快速判断是否能直接提高 PSNR，再决定是否扩到 9 场景。

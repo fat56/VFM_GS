@@ -14,7 +14,9 @@ Round 3 改为 no-prune 容量上限探针：默认 15k 前增长逻辑不变，
 
 Round 4 改为长训上限探针：保持默认 FastGS big 的 densification/pruning schedule，只把总迭代从 30k 拉到 60k，并同步把 `position_lr_max_steps` 拉到 60k，避免 30k 后位置学习率过早贴近 final。4 个场景后 early-stop：`flowers` +0.1589、`counter` +0.1523、`room` +0.0638，但 `bicycle` -0.1944，均值只有 +0.0452。长训对部分场景有强收益，但 outdoor 风险太大，不能作为全局默认。
 
-Round 5 转向 soft late-prune：保留默认 15k densification，仍在 18k/21k/24k/27k 执行 late prune，但只删除候选中的 50%，按 pruning score 从高到低删。它是 no-prune 和原始 prune 之间的中间方案，目标是保留 pruning 的去噪作用，同时减少过裁剪带来的质量损失。
+Round 5 转向 soft late-prune：保留默认 15k densification，仍在 18k/21k/24k/27k 执行 late prune，但只删除候选中的 50%，按 pruning score 从高到低删。4 个场景后 early-stop：`bicycle/flowers/counter` 小幅正向，但 `room` -0.1941，均值 -0.0316。它说明“原始 late prune 过强”不是当前全局 +0.2 缺口的主因。
+
+Round 6 转向 PSNR-oriented loss。当前训练 loss 是 L1 + SSIM，而目标指标 PSNR 本质由 MSE 决定；前面多轮都在改 GS 生命周期，但没直接改变优化目标。下一步用默认关闭的 L2/MSE 混合项做 pilot，判断 loss 口径是否比 prior/prune 更接近当天目标。
 
 ## 风险
 
@@ -24,11 +26,12 @@ Round 5 转向 soft late-prune：保留默认 15k densification，仍在 18k/21k
 - 延长 densification 当前存在实现边界，18k 会触发 rasterizer backward 空 SH feature 形状错误；除非专门修代码，否则不再直接跑 21k window。
 - no-prune 已证明容量不是当天目标的主要瓶颈：点数大幅增加但 PSNR 只有 +0.0280。
 - 60k 长训已显示场景依赖强，特别是 `bicycle` 大负向。
-- soft-prune 可能增加少量容量；如果收益仍薄，说明 FastGS 当前 pruning 强度不是 +0.2 缺口的核心。
+- soft-prune 已显示降低 late prune 强度会让 `room` 退化，不是全局默认。
+- L2/MSE 口径可能提高 PSNR，但可能牺牲 SSIM/LPIPS；本轮以 PSNR 目标为主，仍记录三项指标。
 
 ## 下一步
 
-启动 Round 5 双卡 final-only 全 9 场景。若 Round 5 未接近 +0.2，下一优先级是：
+启动 Round 6 PSNR-oriented loss pilot。若仍未接近 +0.2，下一优先级是：
 
 1. 修复 extended densify 的空 feature 形状错误，再回到 late densify。
 2. 做 scene-adaptive selector，但只用于已知正向的 recipe，不再假设单一默认能全局 +0.2。
