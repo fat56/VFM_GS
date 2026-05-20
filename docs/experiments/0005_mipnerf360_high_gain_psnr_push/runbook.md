@@ -119,3 +119,27 @@ tmux ls
 tail -n 60 output/0005/debug_logs/fastgs_big_60k_lr60k_g0.log
 tail -n 60 output/0005/debug_logs/fastgs_big_60k_lr60k_g1.log
 ```
+
+结果：该轮在 4 个场景后 early-stop，`flowers/counter` 强正向，但 `bicycle` 大负向。
+
+## Round 5：Soft-Prune 0.50
+
+GPU0：
+
+```bash
+tmux new-session -d -s 0005_softprune050_g0 "cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && mkdir -p output/0005/debug_logs && CUDA_VISIBLE_DEVICES=0 python scripts/run_0001_fastgs_big_eval.py --dataset-name mipnerf360 --dataset-root datasets/mipnerf360 --output-root output/0005/fastgs_big_soft_prune050/mipnerf360_g0 --scenes bicycle flowers garden stump treehill --variant fastgs_big --config configs/experiments/0005_fastgs_big_soft_prune050.yaml --resolution -1 --method-name fastgs_big_soft_prune050 --run-name fastgs_big_soft_prune050_30k_final_r_auto > output/0005/debug_logs/fastgs_big_soft_prune050_g0.log 2>&1"
+```
+
+GPU1：
+
+```bash
+tmux new-session -d -s 0005_softprune050_g1 "cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && mkdir -p output/0005/debug_logs && CUDA_VISIBLE_DEVICES=1 python scripts/run_0001_fastgs_big_eval.py --dataset-name mipnerf360 --dataset-root datasets/mipnerf360 --output-root output/0005/fastgs_big_soft_prune050/mipnerf360_g1 --scenes room counter kitchen bonsai --variant fastgs_big --config configs/experiments/0005_fastgs_big_soft_prune050.yaml --resolution -1 --method-name fastgs_big_soft_prune050 --run-name fastgs_big_soft_prune050_30k_final_r_auto > output/0005/debug_logs/fastgs_big_soft_prune050_g1.log 2>&1"
+```
+
+监控：
+
+```bash
+tmux ls
+tail -n 60 output/0005/debug_logs/fastgs_big_soft_prune050_g0.log
+tail -n 60 output/0005/debug_logs/fastgs_big_soft_prune050_g1.log
+```

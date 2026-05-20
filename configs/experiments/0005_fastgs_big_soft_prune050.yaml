@@ -1,0 +1,11 @@
+name: 0005_fastgs_big_soft_prune050
+extends: fastgs_big
+scorer: fastgs_photometric
+training_args:
+  densification_interval: 100
+  optimizer_type: default
+  final_prune_remove_fraction: 0.5
+experiment:
+  status: 0005_high_gain_psnr_push_round5
+  proposal: docs/experiments/0005_mipnerf360_high_gain_psnr_push/proposal.md
+  note: Soft late-prune probe. Keeps default FastGS densification and only removes 50% of the late final-prune candidates ranked by pruning score.

@@ -427,6 +427,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                     min_opacity=0.1,
                     pruning_score=pruning_score,
                     min_gaussian_count=getattr(opt, "prune_min_gaussian_count", 0),
+                    remove_fraction=getattr(opt, "final_prune_remove_fraction", 1.0),
                 )
 
             if (
