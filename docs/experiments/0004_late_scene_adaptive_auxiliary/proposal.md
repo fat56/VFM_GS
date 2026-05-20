@@ -57,11 +57,11 @@ python scripts/run_0001_fastgs_big_eval.py \
 
 | 指标 | 基线 | 实验 | 差值 |
 |---|---:|---:|---:|
-| PSNR | TBD | TBD | TBD |
-| SSIM | TBD | TBD | TBD |
-| LPIPS | TBD | TBD | TBD |
-| 训练时间 | TBD | TBD | TBD |
-| Gaussian 数量 | TBD | TBD | TBD |
+| PSNR | FastGS big curve | Round 1 start15001 | 6 场景平均 -0.0242 |
+| SSIM | FastGS big curve | Round 1 start15001 | 6 场景平均 -0.00014 |
+| LPIPS | FastGS big curve | Round 1 start15001 | 6 场景平均 +0.00014 |
+| 训练时间 | FastGS big curve | Round 1 start15001 | 待汇总 |
+| Gaussian 数量 | FastGS big curve | Round 1 start15001 | 6 场景平均 +529 |
 
 ## 失败记录
 
@@ -71,8 +71,8 @@ python scripts/run_0001_fastgs_big_eval.py \
 
 ## 决策
 
-先验证“晚期 + 场景自适应 + 预算约束”这三件事是否能同时成立。若不能同时成立，就停止把 prior 当作在线辅助器，只保留离线诊断价值。
+第一轮 `start15001` 没有通过默认化标准：它更像近中性的减伤器，而不是稳定增益器。下一步只验证一个更窄的问题：把介入推迟到 24k/27k 后，能否保留 `stump/counter` 的小正向并显著减轻 `room` 退化。
 
 ## 下一步
 
-先跑 MipNeRF360 的小 pilot，记录每 2k iteration 的 render / metric / Gaussian 数量，再决定是否扩到全 9 场景。
+运行 `configs/experiments/0004_late_scene_adaptive_auxiliary_start24000.yaml` 的 6 场景复验。若仍不稳，0004 应停止继续扩大 Depth Anything prune-protect，并改向 validation-driven selector 或只保留离线诊断。

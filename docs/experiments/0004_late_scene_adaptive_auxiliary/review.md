@@ -2,7 +2,7 @@
 
 ## 结论
 
-尚无正式结果。
+第一轮 0004 结果说明：Depth Anything `rgb_prune_auto_topk` 作为 late prune-protect 辅助器，确实比 0002 早期 densify/rerank 更接近中性，但还不能作为默认策略。6 场景 30k 平均相对 baseline 为 -0.0242 PSNR、-0.00014 SSIM、LPIPS +0.00014、平均多 529 个 Gaussian；其中 `room` 的 -0.2219 PSNR 是明确负例。
 
 ## 目前判断
 
@@ -17,6 +17,19 @@
 - 若 prior 只带来小于约 0.02 PSNR 的变化，应默认视为平台期噪声，除非 LPIPS/GS 同时清晰改善。
 - `stump` 这类 PSNR 和 LPIPS 分歧场景，要明确选择目标：若实验目标是视觉质量，LPIPS 改善可以记录；若目标是 PSNR/SSIM，不应被后期 LPIPS 小收益误导。
 
+## 第一轮复盘
+
+`start15001` 实际在 18k/21k/24k/27k 四次 pruning 中启用 protect。它的表现是典型的“减伤器还没变成增益器”：
+
+- `bicycle` 基本中性，30k +0.0067 PSNR，LPIPS 小幅改善。
+- `stump` 30k +0.0252 PSNR，但 SSIM/LPIPS 变差；它更像是减轻 PSNR 后期回落，而不是全面提质。
+- `counter` 30k +0.0452 PSNR，但 SSIM/LPIPS 没有同步改善。
+- `bonsai` 30k +0.0703 PSNR，但 16k/20k/24k -> 30k 的 late gain 全部低于 baseline，说明单点正向主要来自早期曲线偏移，不能直接归因给 protect。
+- `kitchen` 24k 后窗口略正，但最终仍 -0.0706 PSNR。
+- `room` 30k -0.2219 PSNR，且 24k -> 30k 窗口比 baseline 少 +0.1589 PSNR，是当前最重要的失败样本。
+
+这轮结果支持一个更窄的假设：辅助器如果要存在，应该更晚、更少次地介入。`room` 在 baseline 里 24k -> 30k 仍有 +0.1058 PSNR，18k/21k 的保护可能过早固定了本该继续被 pruning/重分配的 Gaussian 生命周期。
+
 ## 风险点
 
 - 辅助信号仍然可能和 RGB 误差错位。
@@ -25,4 +38,8 @@
 
 ## 下一步
 
-先把小 pilot 跑完，再决定要不要扩到全量场景。
+下一轮只改 `vfm_active_from_iter`：从 15001 改到 24000，跳过 18k/21k，只在 24k/27k 生效。判断标准：
+
+- 若 `room` 的负向明显收窄，同时 `stump/counter/bicycle` 不丢掉已有小收益，则继续做更轻权重或更窄 top-k 的 late-only sweep。
+- 若 `room` 仍大幅负向，说明 Depth Anything prune-protect 的排序本身仍和 FastGS pruning 目标错位，应停止把它作为在线辅助器。
+- 若平均只在 +/-0.02 PSNR 内波动且 LPIPS/GS 没有同步收益，则默认视为平台期噪声。

@@ -73,6 +73,35 @@ CUDA_VISIBLE_DEVICES=1 uv run --active python scripts/run_fastgs_big_checkpoint_
   --vfm-cache-template output/0002/vfm_cache/{scene}_depth_anything_v2s_depth
 ```
 
+第一轮 `start15001` 已完成，结果见：
+
+- `output/0004/late_scene_adaptive_auxiliary/depth_prune_auto_topk_pilot_gpu1/check.md`
+- `output/0004/late_scene_adaptive_auxiliary/depth_prune_auto_topk_indoor_gpu0/check.md`
+
+## Phase 1B：更晚介入 start24000
+
+第一轮显示 `room` 对 18k/21k protect 很敏感。下一轮只改变介入时机：`configs/experiments/0004_late_scene_adaptive_auxiliary_start24000.yaml` 会跳过 18k/21k，只在 24k/27k 的 pruning 中启用 protect。
+
+GPU1 跑异质 pilot：
+
+```bash
+tmux new-session -d -s 0004_depth_start24_pilot_g1 "cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && mkdir -p output/0004/debug_logs && CUDA_VISIBLE_DEVICES=1 python scripts/run_fastgs_big_checkpoint_curve.py --dataset-name mipnerf360 --dataset-root datasets/mipnerf360 --output-root output/0004/late_scene_adaptive_auxiliary/depth_prune_auto_topk_start24000_pilot_gpu1 --scenes bicycle stump room --iterations 30000 --checkpoint-interval 2000 --resolution -1 --variant fastgs_big --densification-interval 100 --method-name depth_prune_auto_topk_start24000 --run-name depth_prune_auto_topk_start24000_30k_curve_r_auto --config configs/experiments/0004_late_scene_adaptive_auxiliary_start24000.yaml --vfm-cache-template output/0002/vfm_cache/{scene}_depth_anything_v2s_depth > output/0004/debug_logs/depth_prune_auto_topk_start24000_pilot_g1.log 2>&1"
+```
+
+GPU0 跑室内补充组：
+
+```bash
+tmux new-session -d -s 0004_depth_start24_indoor_g0 "cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && mkdir -p output/0004/debug_logs && CUDA_VISIBLE_DEVICES=0 python scripts/run_fastgs_big_checkpoint_curve.py --dataset-name mipnerf360 --dataset-root datasets/mipnerf360 --output-root output/0004/late_scene_adaptive_auxiliary/depth_prune_auto_topk_start24000_indoor_gpu0 --scenes bonsai counter kitchen --iterations 30000 --checkpoint-interval 2000 --resolution -1 --variant fastgs_big --densification-interval 100 --method-name depth_prune_auto_topk_start24000 --run-name depth_prune_auto_topk_start24000_30k_curve_r_auto --config configs/experiments/0004_late_scene_adaptive_auxiliary_start24000.yaml --vfm-cache-template output/0002/vfm_cache/{scene}_depth_anything_v2s_depth > output/0004/debug_logs/depth_prune_auto_topk_start24000_indoor_g0.log 2>&1"
+```
+
+监控：
+
+```bash
+tmux ls
+tail -n 60 output/0004/debug_logs/depth_prune_auto_topk_start24000_pilot_g1.log
+tail -n 60 output/0004/debug_logs/depth_prune_auto_topk_start24000_indoor_g0.log
+```
+
 如果后面切到 DINO prune-protect 对照，就复用 `configs/experiments/0003_dino_descriptor_prune_protect_only.yaml` 和 0003 的现成 cache，仍然保持晚期介入和预算约束。
 
 ## Phase 2：扩展到全量场景
