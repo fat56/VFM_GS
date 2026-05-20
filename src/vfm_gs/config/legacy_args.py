@@ -144,6 +144,11 @@ class OptimizationParams(ParamGroup):
         self.vfm_prune_protect_rgb_auto_min_topk = 0.001
         self.vfm_prune_protect_rgb_auto_max_topk = 0.010
         self.vfm_prune_protect_rgb_auto_std_scale = 2.0
+        self.vfm_residual_orientation_topk = 0.10
+        self.vfm_residual_orientation_selector = "edge_iou"
+        self.vfm_residual_proxy_chunk_size = 1_000_000
+        self.vfm_residual_proxy_splat_radius = 1
+        self.vfm_residual_proxy_min_coverage = 0.05
         self.vfm_use_albedo_sh0 = True
         self.vfm_dinov2_repo = ""
         self.vfm_dinov2_device = "cuda"

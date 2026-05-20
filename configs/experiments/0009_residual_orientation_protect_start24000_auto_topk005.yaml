@@ -1,0 +1,30 @@
+name: 0009_residual_orientation_protect_start24000_auto_topk005
+extends: fastgs_big
+scorer: vfm_topology_scorer
+training_args:
+  densification_interval: 100
+  vfm_enable: true
+  vfm_backend: depth_anything_residual_orientation
+  vfm_cache_dir: output/0002/vfm_cache/bicycle_depth_anything_v2s_depth
+  vfm_metric_map_mode: topk
+  vfm_metric_topk: 0.10
+  vfm_weight: 0.0
+  vfm_importance_mode: rgb_only
+  vfm_prune_protect_weight: 0.25
+  vfm_prune_protect_mode: rgb_prune_auto_topk
+  vfm_prune_protect_rgb_auto_min_topk: 0.001
+  vfm_prune_protect_rgb_auto_max_topk: 0.005
+  vfm_prune_protect_rgb_auto_std_scale: 2.0
+  vfm_prune_protect_min_count: 5
+  vfm_prune_protect_power: 2.0
+  vfm_residual_orientation_topk: 0.10
+  vfm_residual_orientation_selector: edge_iou
+  vfm_residual_proxy_chunk_size: 1000000
+  vfm_residual_proxy_splat_radius: 1
+  vfm_residual_proxy_min_coverage: 0.05
+  vfm_active_from_iter: 24000
+  vfm_use_albedo_sh0: true
+experiment:
+  status: residual_orientation_late_prune_protect_probe
+  proposal: docs/experiments/0009_residual_orientation_prune_protect/proposal.md
+  note: Conservative follow-up to 0008. RGB keeps densification; residual orientation only protects late RGB pruning candidates using an edge-IoU per-view selector.

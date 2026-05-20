@@ -21,6 +21,7 @@ _CACHED_BACKEND_MANIFESTS = {
     "colmap_depth_edge_prior": ("colmap_depth_edge_l1",),
     "depth_anything_depth_prior": _DEPTH_ANYTHING_CACHE_BACKENDS,
     "depth_anything_depth_edge_prior": _DEPTH_ANYTHING_CACHE_BACKENDS,
+    "depth_anything_residual_orientation": _DEPTH_ANYTHING_CACHE_BACKENDS,
     "dinov2_token_edge_l1": _DINO_CACHE_BACKENDS,
     "dinov2_descriptor_cosine": _DINO_CACHE_BACKENDS,
     "dinov2_descriptor_cosine_l1": _DINO_CACHE_BACKENDS,
@@ -254,6 +255,164 @@ def _depth_anything_prior_error(rendered_image, viewpoint_cam, cache_dir):
     )
 
 
+def _normalize_valid(value_map, valid_mask, eps=1e-6):
+    out = torch.zeros_like(value_map, dtype=torch.float32)
+    valid_values = value_map[valid_mask].to(torch.float32)
+    if valid_values.numel() == 0:
+        return out
+    value_min = torch.min(valid_values)
+    value_max = torch.max(valid_values)
+    out[valid_mask] = (value_map[valid_mask].to(torch.float32) - value_min) / torch.clamp(
+        value_max - value_min,
+        min=eps,
+    )
+    return torch.clamp(out, 0.0, 1.0)
+
+
+def _topk_mask_valid(value_map, topk_fraction, valid_mask=None):
+    flat = value_map.detach().to(torch.float32).reshape(-1)
+    if valid_mask is None:
+        valid_flat = torch.ones_like(flat, dtype=torch.bool)
+    else:
+        valid_flat = valid_mask.reshape(-1)
+    valid_indices = torch.nonzero(valid_flat, as_tuple=False).reshape(-1)
+    mask = torch.zeros_like(flat, dtype=torch.bool)
+    if valid_indices.numel() == 0:
+        return mask.view_as(value_map)
+
+    topk_fraction = min(max(float(topk_fraction), 0.0), 1.0)
+    k = int(math.ceil(valid_indices.numel() * topk_fraction))
+    if k <= 0:
+        return mask.view_as(value_map)
+    k = min(k, valid_indices.numel())
+    valid_values = torch.nan_to_num(flat[valid_indices], nan=0.0, posinf=0.0, neginf=0.0)
+    top_indices = torch.topk(valid_values, k=k, largest=True, sorted=False).indices
+    mask[valid_indices[top_indices]] = True
+    return mask.view_as(value_map)
+
+
+def _mask_iou(left_mask, right_mask):
+    union = torch.count_nonzero(left_mask | right_mask).item()
+    if union == 0:
+        return 0.0
+    intersection = torch.count_nonzero(left_mask & right_mask).item()
+    return float(intersection) / float(union)
+
+
+def _proxy_center_zbuffer_depth(gaussians, viewpoint_cam, chunk_size, splat_radius):
+    xyz = gaussians.get_xyz.detach()
+    device = xyz.device
+    height = int(viewpoint_cam.image_height)
+    width = int(viewpoint_cam.image_width)
+    depth_flat = torch.full((height * width,), float("inf"), dtype=torch.float32, device=device)
+    chunk_size = max(1, int(chunk_size or 1))
+    radius = max(0, int(splat_radius or 0))
+
+    for start in range(0, int(xyz.shape[0]), chunk_size):
+        points = xyz[start : start + chunk_size]
+        ones = torch.ones((points.shape[0], 1), dtype=points.dtype, device=device)
+        points_h = torch.cat([points, ones], dim=1)
+        view_points = torch.matmul(points_h, viewpoint_cam.world_view_transform)
+        clip = torch.matmul(points_h, viewpoint_cam.full_proj_transform)
+        clip_w = clip[:, 3]
+        ndc = clip[:, :3] / torch.clamp(clip_w[:, None], min=1e-7)
+        depth = view_points[:, 2].to(torch.float32)
+        valid = (
+            torch.isfinite(depth)
+            & torch.isfinite(ndc).all(dim=1)
+            & (clip_w > 0.0)
+            & (depth > float(getattr(viewpoint_cam, "znear", 0.01)))
+            & (ndc[:, 0] >= -1.0)
+            & (ndc[:, 0] <= 1.0)
+            & (ndc[:, 1] >= -1.0)
+            & (ndc[:, 1] <= 1.0)
+        )
+        if not torch.any(valid):
+            continue
+
+        x = torch.clamp(((ndc[valid, 0] + 1.0) * 0.5 * width).to(torch.long), 0, width - 1)
+        y = torch.clamp(((1.0 - ndc[valid, 1]) * 0.5 * height).to(torch.long), 0, height - 1)
+        valid_depth = depth[valid]
+        for dy in range(-radius, radius + 1):
+            yy = y + dy
+            in_y = (yy >= 0) & (yy < height)
+            if not torch.any(in_y):
+                continue
+            for dx in range(-radius, radius + 1):
+                xx = x + dx
+                in_bounds = in_y & (xx >= 0) & (xx < width)
+                if not torch.any(in_bounds):
+                    continue
+                pixel_indices = yy[in_bounds] * width + xx[in_bounds]
+                depth_flat.scatter_reduce_(
+                    0,
+                    pixel_indices,
+                    valid_depth[in_bounds],
+                    reduce="amin",
+                    include_self=True,
+                )
+
+    valid_flat = torch.isfinite(depth_flat)
+    return depth_flat.view(height, width), valid_flat.view(height, width)
+
+
+def _depth_anything_residual_orientation_error(rendered_image, viewpoint_cam, cache_dir, gaussians, args):
+    if gaussians is None:
+        raise ValueError("depth_anything_residual_orientation requires gaussians for the center-depth proxy.")
+
+    prior = normalize01(_depth_anything_prior_error(rendered_image, viewpoint_cam, cache_dir))
+    depth, valid = _proxy_center_zbuffer_depth(
+        gaussians,
+        viewpoint_cam,
+        getattr(args, "vfm_residual_proxy_chunk_size", 1_000_000),
+        getattr(args, "vfm_residual_proxy_splat_radius", 1),
+    )
+    min_coverage = max(0.0, float(getattr(args, "vfm_residual_proxy_min_coverage", 0.05) or 0.0))
+    valid_coverage = float(valid.to(torch.float32).mean().item()) if valid.numel() else 0.0
+    if valid_coverage < min_coverage or torch.count_nonzero(valid).item() == 0:
+        return prior
+
+    depth_norm = _normalize_valid(depth, valid)
+    inv_depth_norm = _normalize_valid(1.0 / torch.clamp(depth, min=1e-6), valid)
+    residual_depth = torch.where(valid, torch.abs(depth_norm - prior), torch.zeros_like(prior))
+    residual_inv = torch.where(valid, torch.abs(inv_depth_norm - prior), torch.zeros_like(prior))
+
+    selector = str(getattr(args, "vfm_residual_orientation_selector", "edge_iou") or "edge_iou").lower()
+    signals = {
+        "prior": prior * valid.to(torch.float32),
+        "residual_depth": residual_depth,
+        "residual_inv": residual_inv,
+    }
+    if selector in signals:
+        return signals[selector]
+    if selector != "edge_iou":
+        raise ValueError(
+            "Unsupported vfm_residual_orientation_selector {!r}. Available: edge_iou, prior, residual_depth, residual_inv.".format(
+                selector
+            )
+        )
+
+    topk = float(
+        getattr(
+            args,
+            "vfm_residual_orientation_topk",
+            getattr(args, "vfm_metric_topk", 0.10),
+        )
+        or 0.0
+    )
+    gt_edges = normalize01(_gradient_magnitude(_luma(viewpoint_cam.original_image.to(rendered_image.device))))
+    edge_mask = _topk_mask_valid(gt_edges, topk, valid)
+    best_signal = "prior"
+    best_score = -1.0
+    for signal_name in ("prior", "residual_depth", "residual_inv"):
+        signal_mask = _topk_mask_valid(signals[signal_name], topk, valid)
+        score = _mask_iou(signal_mask, edge_mask)
+        if score > best_score:
+            best_signal = signal_name
+            best_score = score
+    return signals[best_signal]
+
+
 def _dinov2_token_edge_l1_error(rendered_image, viewpoint_cam, cache_dir):
     gt_token_edges = _get_cache(cache_dir).get_dinov2_token_edge_map(viewpoint_cam.image_name, rendered_image.device)
     rendered_edges = normalize01(_gradient_magnitude(_luma(rendered_image)))
@@ -317,6 +476,8 @@ def _compute_pixel_error_map(
     viewpoint_cam,
     backend,
     cache_dir,
+    gaussians=None,
+    args=None,
     dinov2_repo="",
     dinov2_device="cuda",
     descriptor_token_smooth_kernel=1,
@@ -335,6 +496,8 @@ def _compute_pixel_error_map(
         return _colmap_depth_edge_prior_error(rendered_image, viewpoint_cam, cache_dir)
     if backend in ("depth_anything_depth_prior", "depth_anything_depth_edge_prior"):
         return _depth_anything_prior_error(rendered_image, viewpoint_cam, cache_dir)
+    if backend == "depth_anything_residual_orientation":
+        return _depth_anything_residual_orientation_error(rendered_image, viewpoint_cam, cache_dir, gaussians, args)
     if backend == "dinov2_token_edge_l1":
         return _dinov2_token_edge_l1_error(rendered_image, viewpoint_cam, cache_dir)
     if backend in ("dinov2_descriptor_cosine", "dinov2_descriptor_cosine_l1"):
@@ -349,7 +512,7 @@ def _compute_pixel_error_map(
     raise ValueError(
         "Unsupported vfm_backend {!r}. Available backends: mock_l1, mock_edge_l1, cached_edge_l1, "
         "colmap_depth_edge_l1, colmap_depth_edge_prior, depth_anything_depth_prior, "
-        "depth_anything_depth_edge_prior, dinov2_token_edge_l1, "
+        "depth_anything_depth_edge_prior, depth_anything_residual_orientation, dinov2_token_edge_l1, "
         "dinov2_descriptor_cosine.".format(backend)
     )
 
@@ -697,6 +860,8 @@ def compute_gaussian_score_fastgs_with_vfm(camlist, gaussians, pipe, bg, args, D
             viewpoint_cam,
             backend,
             cache_dir,
+            gaussians=gaussians,
+            args=args,
             dinov2_repo=dinov2_repo,
             dinov2_device=dinov2_device,
             descriptor_token_smooth_kernel=descriptor_token_smooth_kernel,
@@ -905,7 +1070,7 @@ def preflight_vfm_topology_scorer(dataset, args):
         )
     if backend in ("dinov2_descriptor_cosine", "dinov2_descriptor_cosine_l1") and manifest.get("feature") != "dinov2_patchtokens":
         errors.append("feature mismatch: manifest={!r}, expected 'dinov2_patchtokens'".format(manifest.get("feature")))
-    if backend == "depth_anything_depth_prior" and manifest.get("feature") != "depth_anything_relative_depth":
+    if backend in ("depth_anything_depth_prior", "depth_anything_residual_orientation") and manifest.get("feature") != "depth_anything_relative_depth":
         errors.append("feature mismatch: manifest={!r}, expected 'depth_anything_relative_depth'".format(manifest.get("feature")))
     if backend == "depth_anything_depth_edge_prior" and manifest.get("feature") != "depth_anything_depth_edge":
         errors.append("feature mismatch: manifest={!r}, expected 'depth_anything_depth_edge'".format(manifest.get("feature")))
