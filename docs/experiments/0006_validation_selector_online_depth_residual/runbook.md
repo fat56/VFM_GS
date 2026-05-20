@@ -66,13 +66,28 @@ git push
 
 ## Round 2：Online depth residual smoke
 
-Round 2 在 Round 1 结束后启动。第一步只做 proxy smoke，不直接改 CUDA rasterizer：
+Round 2 第一部分只做 proxy smoke，不直接改 CUDA rasterizer：
 
-- 计算 Depth Anything cache 与当前模型近似 rendered-depth proxy 的 residual。
+- 用当前 Gaussian 中心投影加小半径 z-buffer splat，构造近似 rendered-depth proxy。
+- 计算 Depth Anything cache 与 proxy depth / inverse-depth 的 residual。
 - 对 `room kitchen bonsai stump counter` 比较 residual 分布、RGB error、已有 depth protect 选择的 candidate。
 - 如果 residual 能区分 0004 负例和小正例，再进入 renderer alpha-weighted depth 输出实现。
 
-双卡分工建议：
+GPU1 先跑 indoor / negative-heavy scenes：
 
-- GPU0：`room kitchen bonsai`
-- GPU1：`stump counter`
+```bash
+tmux new-session -d -s 0006_depth_proxy_indoor_g1 "cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && mkdir -p output/0006/debug_logs && CUDA_VISIBLE_DEVICES=1 uv run --active python scripts/diagnose_0006_online_depth_residual_proxy.py --input-summary output/0006/validation_selector/mipnerf360_depth_candidates.csv --output-dir output/0006/online_depth_residual_proxy/indoor_g1 --scenes room kitchen bonsai --max-views 8 --view-stride 17 --topk 0.10 --splat-radius 1 > output/0006/debug_logs/depth_proxy_indoor_g1.log 2>&1"
+```
+
+GPU0 等 `0006_selector_mip_g0` 结束后跑 small-positive / mixed scenes：
+
+```bash
+tmux new-session -d -s 0006_depth_proxy_mixed_g0 "cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && mkdir -p output/0006/debug_logs && CUDA_VISIBLE_DEVICES=0 uv run --active python scripts/diagnose_0006_online_depth_residual_proxy.py --input-summary output/0006/validation_selector/mipnerf360_depth_candidates.csv --output-dir output/0006/online_depth_residual_proxy/mixed_g0 --scenes stump counter --max-views 8 --view-stride 17 --topk 0.10 --splat-radius 1 > output/0006/debug_logs/depth_proxy_mixed_g0.log 2>&1"
+```
+
+监控：
+
+```bash
+tail -n 80 output/0006/debug_logs/depth_proxy_indoor_g1.log
+tail -n 80 output/0006/debug_logs/depth_proxy_mixed_g0.log
+```
