@@ -4,7 +4,7 @@
 
 Round 1 已 early-stop：DINOv2 ViT-L/14 token-edge 1.6K cache 在 4 个已完成场景上 PSNR 均值为 -0.0440，且平均多 195,124 个 Gaussians；虽然 SSIM/LPIPS 有正向，但已不可能达成 MipNeRF360 9 场景平均 PSNR +0.2 的当天目标。
 
-Round 2 切到质量优先 FastGS/RGB 自身改动：`densify_until_iter=21000`，不引入 VFM，验证延长后期增长是否能补足默认 15k 之后的边缘/细节容量。
+Round 4 切到 `fastgs_big` 60k 长训，并把 `position_lr_max_steps` 同步拉到 60k。当前 prior / 保容量路线均无法接近 +0.2 PSNR，下一步直接验证 30k 是否训练预算不足。
 
 ## Round 1：token-edge ViT-L/1600 top-k25 max
 
@@ -56,4 +56,25 @@ Round 2 切到质量优先 FastGS/RGB 自身改动：`densify_until_iter=21000`�
 - `output/0005/fastgs_big_no_prune_floor/mipnerf360_g0/summary.csv`
 - `output/0005/fastgs_big_no_prune_floor/mipnerf360_g1/summary.csv`
 
-待完成后合并 9 场景，与同一 30k baseline 对齐。该轮只在最终 30k 做 render/metrics，不再做 checkpoint curve。
+本轮在 4 个场景后 early-stop。对照为同一 30k baseline。
+
+| 场景 | PSNR | ΔPSNR | SSIM | ΔSSIM | LPIPS | ΔLPIPS | GS | ΔGS |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| bicycle | 25.2479 | -0.0168 | 0.7552 | -0.0003 | 0.2450 | +0.0003 | 2,570,509 | +1,012,429 |
+| flowers | 21.6490 | +0.0277 | 0.6024 | +0.0002 | 0.3390 | -0.0017 | 1,958,298 | +823,466 |
+| room | 32.3277 | +0.0270 | 0.9310 | +0.0003 | 0.1864 | -0.0016 | 1,281,650 | +711,460 |
+| counter | 29.6154 | +0.0742 | 0.9183 | +0.0003 | 0.1753 | -0.0013 | 1,096,385 | +625,127 |
+| **已完成均值** | 27.2100 | +0.0280 | 0.8015 | +0.0001 | 0.2364 | -0.0011 | 1,726,711 | +793,121 |
+
+判定：停止继续跑剩余 5 场景。no-prune 保住大量容量，但 PSNR 只有薄正向，且 `bicycle` 退化；要达成 +0.2，剩余场景需要平均约 +0.315 PSNR，和已完成信号不匹配。
+
+## Round 4：FastGS big 60k + LR 60k
+
+配置：`configs/experiments/0005_fastgs_big_60k_lr60k.yaml`
+
+输出：
+
+- `output/0005/fastgs_big_60k_lr60k/mipnerf360_g0/summary.csv`
+- `output/0005/fastgs_big_60k_lr60k/mipnerf360_g1/summary.csv`
+
+待完成后合并 9 场景，与同一 30k baseline 对齐。该轮只对最终 60k 做 render/metrics，不做 checkpoint curve。

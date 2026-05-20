@@ -10,7 +10,9 @@ Round 2 改为更直接的质量上限探针：保留 FastGS photometric scorer�
 
 Round 2 的失败本身也说明一件事：如果要做“后期继续复制/分裂”的正式路线，不能只把 `densify_until_iter` 往后拨。18k 同时位于 extended densify window 和 FastGS late prune schedule，当前点增删逻辑会触发稀有空张量路径。后续如果回到这条路线，应先修训练内核/feature shape 边界，或把 late densify 和 late prune 错开。
 
-Round 3 改为 no-prune 容量上限探针：默认 15k 前增长逻辑不变，只用超大 `prune_min_gaussian_count` 禁用训练期和后期 prune。这个实验的意义是先回答“保住 15k 已有容量能否明显提高 PSNR”。如果 no-prune 都不能接近 +0.2，说明仅靠保容量不是主解；如果 no-prune 大幅提高，则下一步应做 softer prune schedule，而不是 DINO/Depth rerank。
+Round 3 改为 no-prune 容量上限探针：默认 15k 前增长逻辑不变，只用超大 `prune_min_gaussian_count` 禁用训练期和后期 prune。4 个场景后 early-stop：平均 +0.0280 PSNR、+793,121 GS；`counter` +0.0742 但 `bicycle` -0.0168。结论是保容量能带来薄增益，但代价极大，也不接近 +0.2。
+
+Round 4 改为长训上限探针：保持默认 FastGS big 的 densification/pruning schedule，只把总迭代从 30k 拉到 60k，并同步把 `position_lr_max_steps` 拉到 60k，避免 30k 后位置学习率过早贴近 final。它回答的问题是：当前 30k baseline 是否只是训练预算不足，而不是先验/容量不足。
 
 ## 风险
 
@@ -18,13 +20,13 @@ Round 3 改为 no-prune 容量上限探针：默认 15k 前增长逻辑不变，
 - 0001 里部分 +0.2 证据来自较早评测口径；本轮必须用 FastGS big 1.6K baseline 重新对齐。
 - 如果 token-edge 在 high-res full recipe 下退化，需要立刻切到 DINO descriptor top-k25 `max` 或 mixed selector。
 - 延长 densification 当前存在实现边界，18k 会触发 rasterizer backward 空 SH feature 形状错误；除非专门修代码，否则不再直接跑 21k window。
-- no-prune 可能显著增加 Gaussian 数量；若 PSNR 增益不足，容量不是当天目标的主要瓶颈。
+- no-prune 已证明容量不是当天目标的主要瓶颈：点数大幅增加但 PSNR 只有 +0.0280。
+- 60k 长训可能比 30k 多花约一倍训练时间；但它不改变模型生命周期逻辑，风险比继续堆 prior 更小。
 
 ## 下一步
 
-启动 Round 3 双卡 final-only 全 9 场景。若 Round 3 未接近 +0.2，下一优先级是：
+启动 Round 4 双卡 final-only 全 9 场景。若 Round 4 未接近 +0.2，下一优先级是：
 
-1. `fastgs_big` 60k：不增加新点，只延长优化，验证 30k 是否只是训练步数不足。
-2. softer prune schedule：保留默认 15k densification，只降低 18k/21k/24k/27k 的 prune 强度。
-3. 修复 extended densify 的空 feature 形状错误，再回到 late densify。
-4. DINO descriptor top-k25 `max` 只作为补充对照，不再作为主冲刺路线。
+1. softer prune schedule：保留默认 15k densification，只降低 18k/21k/24k/27k 的 prune 强度。
+2. 修复 extended densify 的空 feature 形状错误，再回到 late densify。
+3. DINO descriptor top-k25 `max` 只作为补充对照，不再作为主冲刺路线。

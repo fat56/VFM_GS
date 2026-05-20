@@ -1,0 +1,11 @@
+name: 0005_fastgs_big_60k_lr60k
+extends: fastgs_big
+scorer: fastgs_photometric
+training_args:
+  densification_interval: 100
+  optimizer_type: default
+  position_lr_max_steps: 60000
+experiment:
+  status: 0005_high_gain_psnr_push_round4
+  proposal: docs/experiments/0005_mipnerf360_high_gain_psnr_push/proposal.md
+  note: Long-train FastGS big PSNR upper-bound probe. Keeps default densification/pruning schedule and extends the position learning-rate schedule to 60k iterations.

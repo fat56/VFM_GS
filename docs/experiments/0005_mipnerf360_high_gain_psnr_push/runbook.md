@@ -95,3 +95,27 @@ tmux ls
 tail -n 60 output/0005/debug_logs/fastgs_big_no_prune_floor_g0.log
 tail -n 60 output/0005/debug_logs/fastgs_big_no_prune_floor_g1.log
 ```
+
+结果：该轮在 4 个场景后 early-stop，容量大幅增加但 PSNR 只有薄正向。
+
+## Round 4：FastGS Big 60k LR 60k
+
+GPU0：
+
+```bash
+tmux new-session -d -s 0005_60k_g0 "cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && mkdir -p output/0005/debug_logs && CUDA_VISIBLE_DEVICES=0 python scripts/run_0001_fastgs_big_eval.py --dataset-name mipnerf360 --dataset-root datasets/mipnerf360 --output-root output/0005/fastgs_big_60k_lr60k/mipnerf360_g0 --scenes bicycle flowers garden stump treehill --iterations 60000 --variant fastgs_big --config configs/experiments/0005_fastgs_big_60k_lr60k.yaml --resolution -1 --method-name fastgs_big_60k_lr60k --run-name fastgs_big_60k_lr60k_final_r_auto > output/0005/debug_logs/fastgs_big_60k_lr60k_g0.log 2>&1"
+```
+
+GPU1：
+
+```bash
+tmux new-session -d -s 0005_60k_g1 "cd /home/m/project/ltm/VFM_GS && source .venv/bin/activate && mkdir -p output/0005/debug_logs && CUDA_VISIBLE_DEVICES=1 python scripts/run_0001_fastgs_big_eval.py --dataset-name mipnerf360 --dataset-root datasets/mipnerf360 --output-root output/0005/fastgs_big_60k_lr60k/mipnerf360_g1 --scenes room counter kitchen bonsai --iterations 60000 --variant fastgs_big --config configs/experiments/0005_fastgs_big_60k_lr60k.yaml --resolution -1 --method-name fastgs_big_60k_lr60k --run-name fastgs_big_60k_lr60k_final_r_auto > output/0005/debug_logs/fastgs_big_60k_lr60k_g1.log 2>&1"
+```
+
+监控：
+
+```bash
+tmux ls
+tail -n 60 output/0005/debug_logs/fastgs_big_60k_lr60k_g0.log
+tail -n 60 output/0005/debug_logs/fastgs_big_60k_lr60k_g1.log
+```
