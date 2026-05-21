@@ -6,7 +6,7 @@
 
 第一批 `descriptor_i050_fastgs_big_legacy_cache` 已完成 MipNeRF360 全 9 场景。结论：在 direct `fastgs_big` 1.6K 口径下，0001 的 DINO descriptor weighted i0.50 不再是清晰正向默认方案。它相对 Phase 0 baseline 的均值为 -0.0027 PSNR、+0.0011 SSIM、LPIPS -0.0032，但平均多 53,628 Gaussians；QCGI 均值 -0.1015，只有 3/9 场景 QCGI 正向。
 
-第二批已启动准备：`descriptor_i050_until8000` 只让 descriptor i0.50 在 8000 iter 前参与 densification，后续回到 FastGS/RGB importance。目标不是提高质量上界，而是检查能否保留 SSIM/LPIPS 收益并压回 Gaussian 增长。
+第二批 `descriptor_i050_until8000` pilot 已完成 6 场景。它相对 Phase 0 质量均值略正向（+0.0239 PSNR、+0.0012 SSIM、LPIPS -0.0029），但平均仍多 52,337 Gaussians，QCGI 均值 -0.0232；相对 full i0.50 平均少 39,032 Gaussians，QCGI 近乎持平（+0.0018）。结论：early-window 确实比 full i0.50 更省，但固定 8000 iter 仍不能成为 direct `fastgs_big` 1.6K 默认方案。
 
 已完成第一批：
 
@@ -77,10 +77,19 @@
 - GPU0：`bicycle/garden/stump`
 - GPU1：`counter/kitchen/bonsai`
 
-判定：
+| 场景 | PSNR | SSIM | LPIPS | GS | ΔPSNR vs P0 | ΔSSIM vs P0 | ΔLPIPS vs P0 | ΔGS vs P0 | QCGI vs P0 | ΔPSNR vs full | ΔGS vs full | QCGI vs full |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| bicycle | 25.2764 | 0.7580 | 0.2410 | 1,581,406 | +0.0195 | +0.0027 | -0.0040 | +21,197 | +0.0731 | -0.0383 | -28,660 | -0.1195 |
+| garden | 27.5721 | 0.8648 | 0.1095 | 2,590,798 | -0.0625 | +0.0003 | -0.0001 | -44,018 | -0.0554 | +0.0775 | +25,843 | +0.1006 |
+| stump | 27.2062 | 0.7891 | 0.2335 | 1,141,851 | +0.0278 | +0.0022 | -0.0058 | +76,991 | +0.0243 | +0.0212 | -47,666 | -0.0037 |
+| counter | 29.5782 | 0.9190 | 0.1735 | 514,084 | +0.0522 | +0.0010 | -0.0030 | +43,507 | +0.0437 | -0.0247 | -37,102 | -0.0440 |
+| kitchen | 32.4306 | 0.9395 | 0.1037 | 1,241,014 | +0.1497 | +0.0005 | -0.0015 | +63,026 | +0.1047 | +0.0061 | -49,828 | +0.0050 |
+| bonsai | 33.0416 | 0.9544 | 0.1569 | 997,414 | -0.0430 | +0.0006 | -0.0029 | +153,321 | -0.3298 | +0.0636 | -96,781 | +0.0721 |
+| **平均** | **29.1842** | **0.8708** | **0.1697** | **1,344,428** | **+0.0239** | **+0.0012** | **-0.0029** | **+52,337** | **-0.0232** | **+0.0176** | **-39,032** | **+0.0018** |
 
-- 首先看相对 Phase0 的 QCGI 是否回正，且平均 ΔGS 是否明显低于第一批的 +53,628。
-- 再看相对 full i0.50 是否以较小质量损失换来足够容量下降。
-- 若 `bonsai/stump` 的容量负例不改善，或 `bicycle/counter/kitchen` 的正向质量被吃掉，则不继续 early-window 固定策略，转向 scene-adaptive / selector。
+判断：
 
-当前状态：已准备配置和 tmux launcher，待运行。
+- 相对 Phase0，early-window 保留了 SSIM/LPIPS 收益，PSNR 均值也转正；但平均增点几乎没有低于第一批 full i0.50 的 +53,628，QCGI 仍为负。
+- 相对 full i0.50，`garden/bonsai` 质量和 QCGI 明显改善，`kitchen` 也更好；`bicycle/counter` 则用容量下降换掉了一部分原本质量收益。
+- `bonsai` 仍是主要容量负例：即使缩短到 8000 iter，仍多 153,321 Gaussians，QCGI -0.3298。`garden` 虽少点但质量不足，QCGI -0.0554。
+- 固定 early-window 策略不继续默认化；下一轮应转向 scene-adaptive/selector：只在 `bicycle/stump/counter/kitchen` 这类正 QCGI 场景启用 descriptor early-window，或者寻找可由训练前/早期统计预测的开关，避免 `garden/bonsai` 这类负例。
