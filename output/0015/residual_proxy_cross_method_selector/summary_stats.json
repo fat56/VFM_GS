@@ -1,0 +1,107 @@
+{
+  "oracle_selection": {
+    "bicycle": "dino_i050_full",
+    "flowers": "dino_i050_until8000",
+    "garden": "residual_orientation",
+    "stump": "dino_i050_until8000",
+    "treehill": "residual_orientation",
+    "room": "residual_orientation",
+    "counter": "depth_auto_topk",
+    "kitchen": "depth_auto_topk",
+    "bonsai": "phase0"
+  },
+  "feature_count": 74,
+  "in_sample_stump": "i4000_to_i8000_ssim_gain <= 0.0594741 ? residual_orientation : dino_i050_until8000",
+  "policies": [
+    {
+      "policy": "fixed_phase0",
+      "avg_delta_psnr": 0.0,
+      "avg_delta_ssim": 0.0,
+      "avg_delta_lpips": 0.0,
+      "avg_delta_gs_num": 0.0,
+      "avg_qcgi": 0.0,
+      "selected_methods": "phase0 phase0 phase0 phase0 phase0 phase0 phase0 phase0 phase0"
+    },
+    {
+      "policy": "fixed_depth_auto_topk",
+      "avg_delta_psnr": 0.013289981418185763,
+      "avg_delta_ssim": -0.0001306401358710395,
+      "avg_delta_lpips": 0.0004935165246327718,
+      "avg_delta_gs_num": 306.8888888888889,
+      "avg_qcgi": 0.006509040522045561,
+      "selected_methods": "depth_auto_topk depth_auto_topk depth_auto_topk depth_auto_topk depth_auto_topk depth_auto_topk depth_auto_topk depth_auto_topk depth_auto_topk"
+    },
+    {
+      "policy": "fixed_residual_orientation",
+      "avg_delta_psnr": 0.0071570078531901045,
+      "avg_delta_ssim": -9.919537438286675e-05,
+      "avg_delta_lpips": 0.0001905767454041375,
+      "avg_delta_gs_num": -1650.6666666666667,
+      "avg_qcgi": 0.0032311055274009703,
+      "selected_methods": "residual_orientation residual_orientation residual_orientation residual_orientation residual_orientation residual_orientation residual_orientation residual_orientation residual_orientation"
+    },
+    {
+      "policy": "fixed_dino_i050_full",
+      "avg_delta_psnr": -0.0027101304796006945,
+      "avg_delta_ssim": 0.0010612673229641384,
+      "avg_delta_lpips": -0.003223113715648651,
+      "avg_delta_gs_num": 53628.444444444445,
+      "avg_qcgi": -0.10145977099763022,
+      "selected_methods": "dino_i050_full dino_i050_full dino_i050_full dino_i050_full dino_i050_full dino_i050_full dino_i050_full dino_i050_full dino_i050_full"
+    },
+    {
+      "policy": "fixed_dino_i050_until8000",
+      "avg_delta_psnr": 0.015630722045898438,
+      "avg_delta_ssim": 0.0009492569499545627,
+      "avg_delta_lpips": -0.0017697496546639337,
+      "avg_delta_gs_num": 33372.22222222222,
+      "avg_qcgi": -0.017122168459468415,
+      "selected_methods": "dino_i050_until8000 dino_i050_until8000 dino_i050_until8000 dino_i050_until8000 dino_i050_until8000 dino_i050_until8000 dino_i050_until8000 dino_i050_until8000 dino_i050_until8000"
+    },
+    {
+      "policy": "fixed_dino_i050_until4000",
+      "avg_delta_psnr": -0.0038348303900824655,
+      "avg_delta_ssim": 4.8995018005371094e-05,
+      "avg_delta_lpips": -0.0008001493083106147,
+      "avg_delta_gs_num": 11992.0,
+      "avg_qcgi": -0.014816294599533085,
+      "selected_methods": "dino_i050_until4000 dino_i050_until4000 dino_i050_until4000 dino_i050_until4000 dino_i050_until4000 dino_i050_until4000 dino_i050_until4000 dino_i050_until4000 dino_i050_until4000"
+    },
+    {
+      "policy": "oracle_best_qcgi_per_scene",
+      "avg_delta_psnr": 0.0489150153266059,
+      "avg_delta_ssim": 0.0011057456334431965,
+      "avg_delta_lpips": -0.001606638232866923,
+      "avg_delta_gs_num": 12306.111111111111,
+      "avg_qcgi": 0.06460989693758223,
+      "selected_methods": "dino_i050_full dino_i050_until8000 residual_orientation dino_i050_until8000 residual_orientation residual_orientation depth_auto_topk depth_auto_topk phase0"
+    },
+    {
+      "policy": "in_sample_phase0_plus_residual_proxy_stump:i4000_to_i8000_ssim_gain <= 0.0594741 ? residual_orientation : dino_i050_until8000",
+      "avg_delta_psnr": 0.035929573906792536,
+      "avg_delta_ssim": 0.0007289316919114855,
+      "avg_delta_lpips": -0.001129121416144901,
+      "avg_delta_gs_num": 16321.555555555555,
+      "avg_qcgi": 0.037685148159080084,
+      "selected_methods": "dino_i050_until8000 dino_i050_until8000 residual_orientation dino_i050_until8000 residual_orientation residual_orientation residual_orientation dino_i050_until8000 residual_orientation"
+    },
+    {
+      "policy": "loocv_phase0_plus_residual_proxy_stump",
+      "avg_delta_psnr": 0.012495252821180556,
+      "avg_delta_ssim": 0.0007562836011250814,
+      "avg_delta_lpips": -0.0011201004187266033,
+      "avg_delta_gs_num": 30929.88888888889,
+      "avg_qcgi": -0.033142017507129244,
+      "selected_methods": "dino_i050_until8000 dino_i050_until8000 dino_i050_until8000 dino_i050_full dino_i050_until8000 depth_auto_topk residual_orientation dino_i050_until8000 dino_i050_until8000"
+    },
+    {
+      "policy": "loocv_phase0_plus_residual_proxy_nearest_neighbor",
+      "avg_delta_psnr": -0.009947458902994791,
+      "avg_delta_ssim": -5.604161156548394e-05,
+      "avg_delta_lpips": -5.362513992521498e-05,
+      "avg_delta_gs_num": -10676.555555555555,
+      "avg_qcgi": -0.013679387656900617,
+      "selected_methods": "dino_i050_until8000 dino_i050_full depth_auto_topk depth_auto_topk dino_i050_full depth_auto_topk residual_orientation phase0 residual_orientation"
+    }
+  ]
+}

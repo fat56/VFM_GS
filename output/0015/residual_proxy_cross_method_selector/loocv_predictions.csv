@@ -1,0 +1,19 @@
+selector,scene,selected_method,oracle_method,selected_qcgi,oracle_qcgi,meta
+loocv_phase0_plus_residual_proxy_stump,bicycle,dino_i050_until8000,dino_i050_full,0.07307799771118165,0.16391663801002504,i4000_to_i8000_ssim_gain <= 0.0594741 ? residual_orientation : dino_i050_until8000
+loocv_phase0_plus_residual_proxy_nearest_neighbor,bicycle,dino_i050_until8000,dino_i050_full,0.07307799771118165,0.16391663801002504,nearest=flowers; distance=9.13146
+loocv_phase0_plus_residual_proxy_stump,flowers,dino_i050_until8000,dino_i050_until8000,0.05647099018096924,0.05647099018096924,i4000_to_i8000_ssim_gain <= 0.0594741 ? residual_orientation : dino_i050_until8000
+loocv_phase0_plus_residual_proxy_nearest_neighbor,flowers,dino_i050_full,dino_i050_until8000,-0.021922975778579712,0.05647099018096924,nearest=bicycle; distance=8.81932
+loocv_phase0_plus_residual_proxy_stump,garden,dino_i050_until8000,residual_orientation,-0.05539563298225403,0.022792406380176544,residual_proxy_avg_proxy_valid_coverage <= 0.513172 ? residual_orientation : dino_i050_until8000
+loocv_phase0_plus_residual_proxy_nearest_neighbor,garden,depth_auto_topk,residual_orientation,0.018488653004169464,0.022792406380176544,nearest=kitchen; distance=13.1126
+loocv_phase0_plus_residual_proxy_stump,stump,dino_i050_full,dino_i050_until8000,-0.09366413114356997,0.024285382803916927,residual_proxy_l1_oracle_pick_prior <= 1.5 ? dino_i050_full : depth_auto_topk
+loocv_phase0_plus_residual_proxy_nearest_neighbor,stump,depth_auto_topk,dino_i050_until8000,-0.06738072633743286,0.024285382803916927,nearest=counter; distance=9.08733
+loocv_phase0_plus_residual_proxy_stump,treehill,dino_i050_until8000,residual_orientation,-0.042405128479003906,0.04058328510093689,i8000_to_i30000_gs_gain <= -137412 ? depth_auto_topk : dino_i050_until8000
+loocv_phase0_plus_residual_proxy_nearest_neighbor,treehill,dino_i050_full,residual_orientation,-0.03490063548088074,0.04058328510093689,nearest=bicycle; distance=13.868
+loocv_phase0_plus_residual_proxy_stump,room,depth_auto_topk,residual_orientation,-0.08185739050292969,0.02589401602745056,i8000_to_i30000_lpips_gain <= -0.0421616 ? dino_i050_until8000 : depth_auto_topk
+loocv_phase0_plus_residual_proxy_nearest_neighbor,room,depth_auto_topk,residual_orientation,-0.08185739050292969,0.02589401602745056,nearest=counter; distance=5.33874
+loocv_phase0_plus_residual_proxy_stump,counter,residual_orientation,depth_auto_topk,0.07062858070659637,0.07392892930126191,i4000_to_i8000_ssim_gain <= 0.0594741 ? residual_orientation : dino_i050_until8000
+loocv_phase0_plus_residual_proxy_nearest_neighbor,counter,residual_orientation,depth_auto_topk,0.07062858070659637,0.07392892930126191,nearest=room; distance=5.04515
+loocv_phase0_plus_residual_proxy_stump,kitchen,dino_i050_until8000,depth_auto_topk,0.1046816667547226,0.17361742463350296,i4000_to_i8000_ssim_gain <= 0.0594741 ? residual_orientation : dino_i050_until8000
+loocv_phase0_plus_residual_proxy_nearest_neighbor,kitchen,phase0,depth_auto_topk,0.0,0.17361742463350296,nearest=bonsai; distance=10.1156
+loocv_phase0_plus_residual_proxy_stump,bonsai,dino_i050_until8000,phase0,-0.3298151098098755,0.0,residual_proxy_avg_edge_proxy_edge_iou <= 0.0611997 ? residual_orientation : dino_i050_until8000
+loocv_phase0_plus_residual_proxy_nearest_neighbor,bonsai,residual_orientation,phase0,-0.07924799223423004,0.0,nearest=room; distance=10.7522
