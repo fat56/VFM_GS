@@ -124,3 +124,31 @@
 - full 9 相对 Phase0 的质量平均是正向的，但 QCGI 仍为负，说明固定 until8000 仍是“质量略涨、容量仍贵”的方案。
 - 相对 full i0.50，until8000 平均少 20,256 Gaussians，PSNR 更高 0.0183，但 SSIM/LPIPS 略差，QCGI 接近持平。
 - 以 Phase0 QCGI 为标签，正向场景是 `bicycle/flowers/stump/counter/kitchen`，负向场景是 `garden/treehill/room/bonsai`。下一步值得做的是 scene-adaptive 开关，而不是继续调一个全局固定窗口。
+
+## Scene oracle upper bound
+
+目的：不训练新模型，只用 full9 标签做上界估计；若某场景 until8000 相对 Phase0 的 QCGI 为正，则选择 until8000，否则回退 Phase0。
+
+输出：
+
+- `output/0010/descriptor_i050_until8000_scene_oracle/summary.csv`
+- `output/0010/descriptor_i050_until8000_scene_oracle/comparison_vs_phase0.csv`
+- `output/0010/descriptor_i050_until8000_scene_oracle/summary_stats.json`
+
+| 场景 | 选择 | ΔPSNR | ΔSSIM | ΔLPIPS | ΔGS | QCGI |
+|---|---|---:|---:|---:|---:|---:|
+| bicycle | until8000 | +0.0195 | +0.0027 | -0.0040 | +21,197 | +0.0731 |
+| flowers | until8000 | +0.0414 | +0.0010 | +0.0012 | -7,395 | +0.0565 |
+| garden | Phase0 | +0.0000 | +0.0000 | +0.0000 | +0 | +0.0000 |
+| stump | until8000 | +0.0278 | +0.0022 | -0.0058 | +76,991 | +0.0243 |
+| treehill | Phase0 | +0.0000 | +0.0000 | +0.0000 | +0 | +0.0000 |
+| room | Phase0 | +0.0000 | +0.0000 | +0.0000 | +0 | +0.0000 |
+| counter | until8000 | +0.0522 | +0.0010 | -0.0030 | +43,507 | +0.0437 |
+| kitchen | until8000 | +0.1497 | +0.0005 | -0.0015 | +63,026 | +0.1047 |
+| bonsai | Phase0 | +0.0000 | +0.0000 | +0.0000 | +0 | +0.0000 |
+| **平均** | **5/9 enabled** | **+0.0323** | **+0.0008** | **-0.0015** | **+21,925** | **+0.0336** |
+
+判断：
+
+- oracle 上界能把 full9 固定 until8000 的 QCGI 从 -0.0171 拉到 +0.0336，说明“是否启用 descriptor early-window”确实有场景选择价值。
+- 但上界幅度不大，真实 selector 不能太复杂；下一步应优先做低成本、可解释的场景开关，而不是引入训练内大模型或重型验证流程。
