@@ -6,6 +6,8 @@
 
 第一批 `descriptor_i050_fastgs_big_legacy_cache` 已完成 MipNeRF360 全 9 场景。结论：在 direct `fastgs_big` 1.6K 口径下，0001 的 DINO descriptor weighted i0.50 不再是清晰正向默认方案。它相对 Phase 0 baseline 的均值为 -0.0027 PSNR、+0.0011 SSIM、LPIPS -0.0032，但平均多 53,628 Gaussians；QCGI 均值 -0.1015，只有 3/9 场景 QCGI 正向。
 
+第二批已启动准备：`descriptor_i050_until8000` 只让 descriptor i0.50 在 8000 iter 前参与 densification，后续回到 FastGS/RGB importance。目标不是提高质量上界，而是检查能否保留 SSIM/LPIPS 收益并压回 Gaussian 增长。
+
 已完成第一批：
 
 - `descriptor_i050_fastgs_big_legacy_cache`
@@ -13,10 +15,12 @@
   - VFM cache: `output/0001/vfm_cache/{scene}_dinov2_vits14`
   - 输出：`output/0010/descriptor_i050_fastgs_big_legacy_cache/`
 
-待第一批完成后再决定是否扩展：
+第一批完成后暂不直接扩展：
 
 - `descriptor_max_fastgs_big_legacy_cache`
 - `descriptor_i050_fastgs_big_images1600_cache`
+
+原因：第一批的主要失败是容量效率，而不是 descriptor 信号完全无效。直接跑 `descriptor max` 很可能提高质量但进一步增点，因此优先进入容量受控 pilot。
 
 ## 口径说明
 
@@ -52,3 +56,31 @@
 - 正例主要是 `bicycle/counter/kitchen`；`stump` 三项质量正向但增点过多，QCGI 负；`bonsai` 是主要容量负例。
 - 因此 0001 的旧口径“全 9 场景强正向”不能直接外推为 `fastgs_big` 1.6K 默认方案。
 - 下一步若继续补 0010，应优先试更严格的 early/limited active window 或 scene-adaptive 版本，而不是直接扩 `descriptor max`。`descriptor max` 预计质量可能更高但容量更贵，不太可能解决 direct 1.6K 默认化问题。
+
+## Descriptor i0.50 until8000 pilot
+
+配置：
+
+- `configs/experiments/0010_descriptor_i050_active_until8000.yaml`
+
+输出：
+
+- `output/0010/descriptor_i050_until8000_pilot/mip_g0/summary.csv`
+- `output/0010/descriptor_i050_until8000_pilot/mip_g1/summary.csv`
+- `output/0010/descriptor_i050_until8000_pilot/mipnerf360_pilot_combined/summary.csv`
+- `output/0010/descriptor_i050_until8000_pilot/mipnerf360_pilot_combined/comparison_vs_phase0.csv`
+- `output/0010/descriptor_i050_until8000_pilot/mipnerf360_pilot_combined/comparison_vs_i050_full.csv`
+- `output/0010/descriptor_i050_until8000_pilot/mipnerf360_pilot_combined/summary_stats.json`
+
+场景：
+
+- GPU0：`bicycle/garden/stump`
+- GPU1：`counter/kitchen/bonsai`
+
+判定：
+
+- 首先看相对 Phase0 的 QCGI 是否回正，且平均 ΔGS 是否明显低于第一批的 +53,628。
+- 再看相对 full i0.50 是否以较小质量损失换来足够容量下降。
+- 若 `bonsai/stump` 的容量负例不改善，或 `bicycle/counter/kitchen` 的正向质量被吃掉，则不继续 early-window 固定策略，转向 scene-adaptive / selector。
+
+当前状态：已准备配置和 tmux launcher，待运行。

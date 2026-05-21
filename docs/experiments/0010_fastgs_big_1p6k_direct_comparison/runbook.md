@@ -71,3 +71,48 @@ Use:
 ```text
 output/0002/phase0_5090_fastgs_big_baseline_fix1/mipnerf360_combined/summary.csv
 ```
+
+## Descriptor i0.50 until8000 pilot
+
+This pilot keeps the same direct `fastgs_big + images + -r -1` recipe, but stops DINO descriptor influence after iteration 8000:
+
+```bash
+bash scripts/run_0010_descriptor_i050_until8000_pilot_tmux.sh start
+```
+
+Sessions:
+
+```bash
+tmux attach -t 0010_i050_u8000_g0
+tmux attach -t 0010_i050_u8000_g1
+tmux attach -t 0010_i050_u8000_merge
+```
+
+Logs:
+
+```text
+output/0010/debug_logs/0010_i050_u8000_g0.log
+output/0010/debug_logs/0010_i050_u8000_g1.log
+output/0010/debug_logs/0010_i050_u8000_merge.log
+```
+
+GPU0 scenes:
+
+```text
+bicycle garden stump
+```
+
+GPU1 scenes:
+
+```text
+counter kitchen bonsai
+```
+
+Merged outputs:
+
+```text
+output/0010/descriptor_i050_until8000_pilot/mipnerf360_pilot_combined/summary.csv
+output/0010/descriptor_i050_until8000_pilot/mipnerf360_pilot_combined/comparison_vs_phase0.csv
+output/0010/descriptor_i050_until8000_pilot/mipnerf360_pilot_combined/comparison_vs_i050_full.csv
+output/0010/descriptor_i050_until8000_pilot/mipnerf360_pilot_combined/summary_stats.json
+```

@@ -55,3 +55,16 @@
 - QCGI
 
 若全 9 场景均值不能超过 Phase 0 baseline，或只靠大幅增点换来薄收益，则不再把 0001 的旧口径最佳结果放进“fastgs_big direct”主表。
+
+## 第二批补充
+
+第一批 `descriptor_i050_fastgs_big_legacy_cache` 已说明 direct 1.6K 下 descriptor 信号仍有 SSIM/LPIPS 收益，但容量代价过高。因此第二批不直接扩 `descriptor max`，而是先跑容量受控 pilot：
+
+- `descriptor_i050_until8000`
+  - 配置：`configs/experiments/0010_descriptor_i050_active_until8000.yaml`
+  - 训练口径：`fastgs_big + images + -r -1`
+  - VFM cache：沿用 0001 `output/0001/vfm_cache/{scene}_dinov2_vits14`
+  - 机制：`vfm_active_until_iter=8000`，只让 DINO descriptor 影响早期 densification。
+  - 场景：`bicycle/garden/stump/counter/kitchen/bonsai`
+
+这个 pilot 的核心判定不是 PSNR 上界，而是相对第一批 full i0.50 是否显著减少 Gaussian，并在 `bicycle/counter/kitchen` 保留主要质量正向、在 `bonsai/stump` 修复容量负例。
