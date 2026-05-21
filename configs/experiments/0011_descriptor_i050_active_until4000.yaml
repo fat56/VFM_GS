@@ -1,0 +1,22 @@
+name: 0011_descriptor_i050_active_until4000
+extends: fastgs_big
+scorer: vfm_topology_scorer
+training_args:
+  densification_interval: 100
+  vfm_enable: true
+  vfm_backend: dinov2_descriptor_cosine
+  vfm_cache_dir: output/0001/vfm_cache/bicycle_dinov2_vits14
+  vfm_dinov2_repo: output/0001/external/dinov2
+  vfm_dinov2_device: cuda
+  vfm_metric_map_mode: topk
+  vfm_metric_topk: 0.25
+  vfm_descriptor_token_smooth_kernel: 3
+  vfm_weight: 0.0
+  vfm_importance_weight: 0.50
+  vfm_importance_mode: weighted
+  vfm_use_albedo_sh0: true
+  vfm_active_until_iter: 4000
+experiment:
+  status: descriptor_i050_active_until4000_full9
+  proposal: docs/experiments/0011_descriptor_i050_until4000_direct_full9/proposal.md
+  note: Direct fastgs_big 1.6K follow-up to 0010. DINO descriptor only affects early densification through iteration 4000.
