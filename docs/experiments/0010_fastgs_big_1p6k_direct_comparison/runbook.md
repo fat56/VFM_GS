@@ -116,3 +116,48 @@ output/0010/descriptor_i050_until8000_pilot/mipnerf360_pilot_combined/comparison
 output/0010/descriptor_i050_until8000_pilot/mipnerf360_pilot_combined/comparison_vs_i050_full.csv
 output/0010/descriptor_i050_until8000_pilot/mipnerf360_pilot_combined/summary_stats.json
 ```
+
+## Descriptor i0.50 until8000 full9 completion
+
+The full9 completion only runs the three scenes missing from the 6-scene pilot, then merges them with the pilot outputs:
+
+```bash
+bash scripts/run_0010_descriptor_i050_until8000_full9_tmux.sh start
+```
+
+Sessions:
+
+```bash
+tmux attach -t 0010_i050_u8000_full9_g0
+tmux attach -t 0010_i050_u8000_full9_g1
+tmux attach -t 0010_i050_u8000_full9_merge
+```
+
+Logs:
+
+```text
+output/0010/debug_logs/0010_i050_u8000_full9_g0.log
+output/0010/debug_logs/0010_i050_u8000_full9_g1.log
+output/0010/debug_logs/0010_i050_u8000_full9_merge.log
+```
+
+GPU0 scenes:
+
+```text
+flowers treehill
+```
+
+GPU1 scenes:
+
+```text
+room
+```
+
+Merged outputs:
+
+```text
+output/0010/descriptor_i050_until8000_full9_combined/summary.csv
+output/0010/descriptor_i050_until8000_full9_combined/comparison_vs_phase0.csv
+output/0010/descriptor_i050_until8000_full9_combined/comparison_vs_i050_full.csv
+output/0010/descriptor_i050_until8000_full9_combined/summary_stats.json
+```

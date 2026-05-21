@@ -68,3 +68,12 @@
   - 场景：`bicycle/garden/stump/counter/kitchen/bonsai`
 
 这个 pilot 的核心判定不是 PSNR 上界，而是相对第一批 full i0.50 是否显著减少 Gaussian，并在 `bicycle/counter/kitchen` 保留主要质量正向、在 `bonsai/stump` 修复容量负例。
+
+## 第三批补齐
+
+第二批 6 场景 pilot 显示固定 until8000 仍不适合作为默认方案，但它提供了有用的场景差异：部分场景 QCGI 正向，部分场景仍明显负向。为了后续做 scene-adaptive/selector，需要补齐同一配置的剩余 3 个 MipNeRF360 场景：
+
+- `descriptor_i050_until8000_full9`
+  - 补跑场景：`flowers/treehill/room`
+  - 合并方式：复用第二批 6 场景结果，加上新增 3 场景，生成 full 9 summary/comparison。
+  - 目的：形成完整 9 场景“是否启用 descriptor early-window”的标签表，判断 scene-adaptive 是否值得继续。

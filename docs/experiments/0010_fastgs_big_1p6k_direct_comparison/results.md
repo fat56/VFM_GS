@@ -93,3 +93,17 @@
 - 相对 full i0.50，`garden/bonsai` 质量和 QCGI 明显改善，`kitchen` 也更好；`bicycle/counter` 则用容量下降换掉了一部分原本质量收益。
 - `bonsai` 仍是主要容量负例：即使缩短到 8000 iter，仍多 153,321 Gaussians，QCGI -0.3298。`garden` 虽少点但质量不足，QCGI -0.0554。
 - 固定 early-window 策略不继续默认化；下一轮应转向 scene-adaptive/selector：只在 `bicycle/stump/counter/kitchen` 这类正 QCGI 场景启用 descriptor early-window，或者寻找可由训练前/早期统计预测的开关，避免 `garden/bonsai` 这类负例。
+
+## Descriptor i0.50 until8000 full9 completion
+
+目的：补齐 `flowers/treehill/room`，并与第二批 6 场景合并为 full 9，以便后续 scene-adaptive/selector 有完整标签。
+
+输出：
+
+- `output/0010/descriptor_i050_until8000_full9_extra/`
+- `output/0010/descriptor_i050_until8000_full9_combined/summary.csv`
+- `output/0010/descriptor_i050_until8000_full9_combined/comparison_vs_phase0.csv`
+- `output/0010/descriptor_i050_until8000_full9_combined/comparison_vs_i050_full.csv`
+- `output/0010/descriptor_i050_until8000_full9_combined/summary_stats.json`
+
+当前状态：已准备配置和 tmux launcher，待运行。
