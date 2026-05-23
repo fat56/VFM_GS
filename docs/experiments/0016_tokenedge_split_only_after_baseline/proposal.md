@@ -60,3 +60,26 @@ SWITCH_ITERS="16000" bash scripts/run_0016_tokenedge_split_only_tmux.sh start
 - `delta_gs_num = final - start`
 
 如果某些场景在 16K/18K/20K 后仍能通过 token-edge split-only 获得稳定质量增长，再进入 0017 或 0016 Round 2 做 scene-adaptive/容量控制。
+
+## Supplemental Smoke
+
+主实验说明 token-edge late split-only 在 full 9 上失败后，补充四个 3 场景短程排雷实验，确认 descriptor/clone 和 30K 后接入是否存在反例信号：
+
+- `desc_clone_16k`：16K baseline PLY 续跑 2K，DINO descriptor 只控制 clone。
+- `desc_split_16k`：16K baseline PLY 续跑 2K，DINO descriptor 只控制 split。
+- `desc_clone_30k`：30K baseline PLY 续跑 2K，DINO descriptor 只控制 clone。
+- `tokenedge_split_30k`：30K baseline PLY 续跑 2K，DINO token-edge 只控制 split。
+
+共同设置：
+
+- 场景：`kitchen / flowers / bonsai`。
+- 评估点：起点、`+1000`、`+2000`。
+- importance：`vfm_only`，不混入 RGB importance。
+- prune / final prune / opacity reset：关闭，保持与主实验可比。
+- 输出：`output/0016/supplemental_smoke/`。
+
+运行：
+
+```bash
+bash scripts/run_0016_supplemental_smoke_tmux.sh start
+```

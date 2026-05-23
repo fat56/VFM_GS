@@ -94,3 +94,22 @@ Do not defaultize this strategy.
 - 不把 prune 关闭后直接交给 token-edge，因为容量增长和质量退化强相关。
 - 如果继续利用 token-edge，应先恢复 RGB candidate gate 或添加 hard budget，再只把 token-edge 当成局部 rerank/protect 信号。
 - 20K 后接入尤其危险，室内场景和 `bonsai` 的退化最明显。
+
+## Supplemental Smoke Status
+
+补充四个 3 场景短程 smoke 已启动，等待完成后再汇总：
+
+| variant | start | backend | branch | scenes | eval |
+|---|---:|---|---|---|---|
+| `desc_clone_16k` | 16000 | DINO descriptor | clone only | kitchen / flowers / bonsai | start / +1K / +2K |
+| `desc_split_16k` | 16000 | DINO descriptor | split only | kitchen / flowers / bonsai | start / +1K / +2K |
+| `desc_clone_30k` | 30000 | DINO descriptor | clone only | kitchen / flowers / bonsai | start / +1K / +2K |
+| `tokenedge_split_30k` | 30000 | DINO token-edge | split only | kitchen / flowers / bonsai | start / +1K / +2K |
+
+输出目录：
+
+- `output/0016/supplemental_smoke/mip_g0`
+- `output/0016/supplemental_smoke/mip_g1`
+- `output/0016/supplemental_smoke/mipnerf360_smoke_combined`
+
+临时观察：`kitchen` 的首个 `desc_clone_16k` 和 `desc_clone_30k` run 已经跑通，后续等完整 12 runs 完成后再判断。
