@@ -107,6 +107,9 @@ class OptimizationParams(ParamGroup):
         self.densify_budget_candidate_cap_mode = "global"
         self.densify_budget_spatial_bins = 8
         self.densify_budget_support_bins = 4
+        self.densify_clone_enabled = True
+        self.densify_split_enabled = True
+        self.densify_prune_enabled = True
         self.mult = 0.5      # multiplier for the compact box to control the tile number of each splat
 
         self.random_background = False
@@ -165,6 +168,7 @@ class OptimizationParams(ParamGroup):
         self.target_gaussian_prune_order = "lowest_score"
         self.prune_min_gaussian_count = 0
         self.prune_min_gaussian_target_ratio = 0.0
+        self.final_prune_enabled = True
         self.final_prune_remove_fraction = 1.0
         self.post_prune_finetune_iterations = 0
         self.post_prune_finetune_step_interval = 0

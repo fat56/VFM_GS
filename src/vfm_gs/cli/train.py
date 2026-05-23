@@ -260,12 +260,24 @@ def _run_post_prune_finetune(scene, gaussians, pipe, bg, opt, start_iteration, f
     return total_time, save_iteration
 
 
-def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from, websockets):
+def training(
+    dataset,
+    opt,
+    pipe,
+    testing_iterations,
+    saving_iterations,
+    checkpoint_iterations,
+    checkpoint,
+    debug_from,
+    websockets,
+    start_pointcloud_iteration=0,
+):
     require_runtime_imports()
     from vfm_gs.scorers import get_scorer
     from vfm_gs.utils.fast_utils import sampling_cameras
 
     first_iter = 0
+    start_pointcloud_iteration = int(start_pointcloud_iteration or 0)
     scorer_name = getattr(opt, "scorer", "fastgs_photometric")
     if getattr(opt, "vfm_enable", False):
         scorer_name = "vfm_topology_scorer"
@@ -289,11 +301,13 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
     tb_writer = prepare_output_and_logger(dataset, opt, pipe)
     gaussians = GaussianModel(dataset.sh_degree, opt.optimizer_type)
-    scene = Scene(dataset, gaussians)
+    scene = Scene(dataset, gaussians, load_iteration=start_pointcloud_iteration if start_pointcloud_iteration > 0 else None)
     gaussians.training_setup(opt)
     if checkpoint:
         (model_params, first_iter) = torch.load(checkpoint)
         gaussians.restore(model_params, opt)
+    elif start_pointcloud_iteration > 0:
+        first_iter = start_pointcloud_iteration
 
     bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
     background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
@@ -423,7 +437,12 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             # The multiview consistent pruning of fastgs. We do it every 3k iterations after 15k
             # In this stage, the model converge basically. So we can prune more aggressively without degrading rendering quality.
             # You can check the rendering results of 20K iterations in arxiv version (https://arxiv.org/abs/2511.04283), the rendering quality is already very good.
-            if iteration % 3000 == 0 and iteration > 15_000 and iteration < 30_000:
+            if (
+                bool(getattr(opt, "final_prune_enabled", True))
+                and iteration % 3000 == 0
+                and iteration > 15_000
+                and iteration < 30_000
+            ):
                 my_viewpoint_stack = scene.getTrainCameras().copy()
                 camlist = sampling_cameras(my_viewpoint_stack)
 
@@ -618,6 +637,7 @@ def main(argv=None):
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[30_000])
     parser.add_argument("--start_checkpoint", type=str, default = None)
+    parser.add_argument("--start_pointcloud_iteration", type=int, default=0)
     parser.add_argument("--websockets", action='store_true', default=False)
     parser.add_argument("--benchmark_dir", type=str, default=None)
     apply_argparse_defaults(parser, train_config)
@@ -643,7 +663,8 @@ def main(argv=None):
         args.checkpoint_iterations, 
         args.start_checkpoint, 
         args.debug_from, 
-        args.websockets
+        args.websockets,
+        args.start_pointcloud_iteration,
     )
 
     # All done

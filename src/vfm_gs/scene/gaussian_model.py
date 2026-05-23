@@ -353,6 +353,7 @@ class GaussianModel:
         self._rotation = nn.Parameter(torch.tensor(rots, dtype=torch.float, device="cuda").requires_grad_(True))
 
         self.active_sh_degree = self.max_sh_degree
+        self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
 
     def replace_tensor_to_optimizer(self, tensor, name):
         optimizable_tensors = {}
@@ -836,6 +837,10 @@ class GaussianModel:
 
         all_clones = torch.logical_and(clone_qualifiers, grad_qualifiers)
         all_splits = torch.logical_and(split_qualifiers, grad_qualifiers_abs)
+        if not bool(getattr(args, "densify_clone_enabled", True)):
+            all_clones = torch.zeros_like(all_clones, dtype=torch.bool)
+        if not bool(getattr(args, "densify_split_enabled", True)):
+            all_splits = torch.zeros_like(all_splits, dtype=torch.bool)
 
         # This is our multi-view consisent metric for densification
         # We use this metric to further filter the candidates for densification, which is similar to taming 3dgs.
@@ -853,8 +858,10 @@ class GaussianModel:
                 metric_mask = final_topm_mask
         metric_mask = self._cap_densify_candidates(args, importance_score, metric_mask, all_clones, all_splits)
 
-        self.densify_and_clone_fastgs(metric_mask, all_clones)
-        self.densify_and_split_fastgs(metric_mask, all_splits)
+        if bool(getattr(args, "densify_clone_enabled", True)):
+            self.densify_and_clone_fastgs(metric_mask, all_clones)
+        if bool(getattr(args, "densify_split_enabled", True)):
+            self.densify_and_split_fastgs(metric_mask, all_splits)
 
         prune_mask = (self.get_opacity < min_opacity).squeeze()
         if max_screen_size:
@@ -862,30 +869,32 @@ class GaussianModel:
             big_points_ws = self.get_scaling.max(dim=1).values > 0.1 * extent
             prune_mask = torch.logical_or(torch.logical_or(prune_mask, big_points_vs), big_points_ws)
 
-        scores = 1 - pruning_score 
-        to_remove = torch.sum(prune_mask)
-        remove_budget = int(0.5 * to_remove)
+        if bool(getattr(args, "densify_prune_enabled", True)):
+            scores = 1 - pruning_score
+            to_remove = torch.sum(prune_mask)
+            remove_budget = int(0.5 * to_remove)
 
-        # Keep diagnostic capacity floors from pruning below a known baseline.
-        min_gaussian_count = max(0, int(getattr(args, "prune_min_gaussian_count", 0) or 0))
-        if min_gaussian_count > 0:
-            current_count = self.get_xyz.shape[0]
-            protected_budget = max(0, current_count - min_gaussian_count)
-            remove_budget = min(remove_budget, protected_budget)
+            # Keep diagnostic capacity floors from pruning below a known baseline.
+            min_gaussian_count = max(0, int(getattr(args, "prune_min_gaussian_count", 0) or 0))
+            if min_gaussian_count > 0:
+                current_count = self.get_xyz.shape[0]
+                protected_budget = max(0, current_count - min_gaussian_count)
+                remove_budget = min(remove_budget, protected_budget)
 
-        if remove_budget:
-            n_init_points = self.get_xyz.shape[0]
-            padded_importance = torch.zeros((n_init_points), dtype=torch.float32)
-            padded_importance[:scores.shape[0]] = 1 / (1e-6 + scores.squeeze())
-            selected_pts_mask = torch.zeros_like(padded_importance, dtype=bool, device="cuda")
-            sampled_indices = torch.multinomial(padded_importance, remove_budget, replacement=False)
-            selected_pts_mask[sampled_indices] = True
-            final_prune = torch.logical_and(prune_mask, selected_pts_mask)
-            self.prune_points(final_prune)
+            if remove_budget:
+                n_init_points = self.get_xyz.shape[0]
+                padded_importance = torch.zeros((n_init_points), dtype=torch.float32)
+                padded_importance[:scores.shape[0]] = 1 / (1e-6 + scores.squeeze())
+                selected_pts_mask = torch.zeros_like(padded_importance, dtype=bool, device="cuda")
+                sampled_indices = torch.multinomial(padded_importance, remove_budget, replacement=False)
+                selected_pts_mask[sampled_indices] = True
+                final_prune = torch.logical_and(prune_mask, selected_pts_mask)
+                self.prune_points(final_prune)
         
-        opacities_new = inverse_sigmoid(torch.min(self.get_opacity, torch.ones_like(self.get_opacity)*0.8))
-        optimizable_tensors = self.replace_tensor_to_optimizer(opacities_new, "opacity")
-        self._opacity = optimizable_tensors["opacity"]
+        if bool(getattr(args, "densify_prune_enabled", True)):
+            opacities_new = inverse_sigmoid(torch.min(self.get_opacity, torch.ones_like(self.get_opacity)*0.8))
+            optimizable_tensors = self.replace_tensor_to_optimizer(opacities_new, "opacity")
+            self._opacity = optimizable_tensors["opacity"]
         tmp_radii = self.tmp_radii
         self.tmp_radii = None
 

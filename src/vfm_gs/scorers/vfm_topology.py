@@ -795,11 +795,25 @@ def compute_gaussian_score_fastgs_with_vfm(camlist, gaussians, pipe, bg, args, D
     _sync_if_needed(profile_this)
     total_start = time.perf_counter()
     rgb_start = total_start
-    rgb_importance, rgb_pruning = compute_gaussian_score_fastgs(
-        camlist, gaussians, pipe, bg, args, DENSIFY=DENSIFY
-    )
-    rgb_ms = _elapsed_ms(rgb_start, profile_this)
     backend = getattr(args, "vfm_backend", "mock_l1")
+    vfm_weight = getattr(args, "vfm_weight", 0.25)
+    vfm_importance_mode = getattr(args, "vfm_importance_mode", "max").lower()
+    vfm_prune_protect_weight = max(0.0, float(getattr(args, "vfm_prune_protect_weight", 0.0) or 0.0))
+    skip_rgb_score = (
+        DENSIFY
+        and vfm_importance_mode == "vfm_only"
+        and float(vfm_weight or 0.0) <= 0.0
+        and vfm_prune_protect_weight <= 0.0
+        and not bool(getattr(args, "densify_prune_enabled", True))
+    )
+    if skip_rgb_score:
+        rgb_importance = torch.zeros((gaussians._xyz.shape[0],), dtype=torch.float32, device=gaussians._xyz.device)
+        rgb_pruning = torch.zeros_like(rgb_importance)
+    else:
+        rgb_importance, rgb_pruning = compute_gaussian_score_fastgs(
+            camlist, gaussians, pipe, bg, args, DENSIFY=DENSIFY
+        )
+    rgb_ms = _elapsed_ms(rgb_start, profile_this)
     if not _is_vfm_active(args):
         _clear_rgb_rerank_reference(args)
         if profile_this:
@@ -819,13 +833,10 @@ def compute_gaussian_score_fastgs_with_vfm(camlist, gaussians, pipe, bg, args, D
     vfm_counts_total = None
     vfm_support_total = None
     vfm_pruning_total = None
-    vfm_weight = getattr(args, "vfm_weight", 0.25)
-    vfm_importance_mode = getattr(args, "vfm_importance_mode", "max").lower()
     vfm_importance_weight = max(0.0, getattr(args, "vfm_importance_weight", 1.0))
     if DENSIFY and vfm_importance_mode != "adaptive_weighted":
         vfm_importance_weight = _budget_aware_importance_weight(vfm_importance_weight, gaussians, args)
     vfm_importance_normalizer = getattr(args, "vfm_importance_normalizer", "none").lower()
-    vfm_prune_protect_weight = max(0.0, float(getattr(args, "vfm_prune_protect_weight", 0.0) or 0.0))
     needs_vfm_counts = DENSIFY or vfm_prune_protect_weight > 0.0
     support_cap_mode = (
         DENSIFY
@@ -960,6 +971,8 @@ def compute_gaussian_score_fastgs_with_vfm(camlist, gaussians, pipe, bg, args, D
         vfm_importance = torch.floor(vfm_counts_total.to(torch.float32) / len(camlist))
         if vfm_importance_mode == "rgb_only":
             importance_score = rgb_importance
+        elif vfm_importance_mode == "vfm_only":
+            importance_score = vfm_importance
         elif vfm_importance_mode == "weighted":
             blend = min(vfm_importance_weight, 1.0)
             importance_score = torch.floor(
