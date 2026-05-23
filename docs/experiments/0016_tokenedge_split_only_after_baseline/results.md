@@ -95,9 +95,9 @@ Do not defaultize this strategy.
 - 如果继续利用 token-edge，应先恢复 RGB candidate gate 或添加 hard budget，再只把 token-edge 当成局部 rerank/protect 信号。
 - 20K 后接入尤其危险，室内场景和 `bonsai` 的退化最明显。
 
-## Supplemental Smoke Status
+## Supplemental Smoke Results
 
-补充四个 3 场景短程 smoke 已启动，等待完成后再汇总：
+补充四个 3 场景短程 smoke 已完成。它们都从 FastGS baseline checkpoint-curve PLY 接续 2K iteration，并在 start / +1K / +2K 各 render + metric 一次：
 
 | variant | start | backend | branch | scenes | eval |
 |---|---:|---|---|---|---|
@@ -106,10 +106,68 @@ Do not defaultize this strategy.
 | `desc_clone_30k` | 30000 | DINO descriptor | clone only | kitchen / flowers / bonsai | start / +1K / +2K |
 | `tokenedge_split_30k` | 30000 | DINO token-edge | split only | kitchen / flowers / bonsai | start / +1K / +2K |
 
+完整性：
+
+- `summary.csv`：36 行，即 4 variants x 3 scenes x 3 eval points。
+- `comparison_start_to_eval.csv`：24 行，即 4 variants x 3 scenes x 2 deltas。
+- `aggregate_by_variant.csv`：8 行，即 4 variants x +1K/+2K。
+
 输出目录：
 
 - `output/0016/supplemental_smoke/mip_g0`
 - `output/0016/supplemental_smoke/mip_g1`
 - `output/0016/supplemental_smoke/mipnerf360_smoke_combined`
 
-临时观察：`kitchen` 的首个 `desc_clone_16k` 和 `desc_clone_30k` run 已经跑通，后续等完整 12 runs 完成后再判断。
+### Supplemental Aggregate
+
+| variant | eval | scenes | avg dPSNR | avg dSSIM | avg dLPIPS | avg dGS |
+|---|---:|---:|---:|---:|---:|---:|
+| `desc_clone_16k` | +1000 | 3 | +0.1120 | +0.00097 | -0.00148 | +7,271 |
+| `desc_clone_16k` | +2000 | 3 | +0.1522 | +0.00140 | -0.00227 | +10,433 |
+| `desc_split_16k` | +1000 | 3 | -0.3978 | -0.00721 | +0.01267 | +82,901 |
+| `desc_split_16k` | +2000 | 3 | -0.3635 | -0.00690 | +0.01110 | +173,382 |
+| `desc_clone_30k` | +1000 | 3 | -0.0384 | -0.00089 | +0.00073 | +8,427 |
+| `desc_clone_30k` | +2000 | 3 | -0.0080 | -0.00057 | +0.00042 | +12,504 |
+| `tokenedge_split_30k` | +1000 | 3 | -3.8692 | -0.07358 | +0.08165 | +425,761 |
+| `tokenedge_split_30k` | +2000 | 3 | -3.7699 | -0.07431 | +0.08280 | +821,564 |
+
+### Supplemental Per-Scene
+
+| variant | scene | eval | dPSNR | dSSIM | dLPIPS | dGS | PSNR start -> eval |
+|---|---|---:|---:|---:|---:|---:|---:|
+| `desc_clone_16k` | kitchen | +1000 | +0.1789 | +0.00165 | -0.00198 | +2 | 31.8556 -> 32.0344 |
+| `desc_clone_16k` | kitchen | +2000 | +0.2351 | +0.00180 | -0.00256 | +2 | 31.8556 -> 32.0907 |
+| `desc_clone_16k` | flowers | +1000 | -0.0153 | +0.00015 | -0.00059 | +21,803 | 21.5731 -> 21.5578 |
+| `desc_clone_16k` | flowers | +2000 | +0.0042 | +0.00116 | -0.00204 | +31,285 | 21.5731 -> 21.5773 |
+| `desc_clone_16k` | bonsai | +1000 | +0.1723 | +0.00110 | -0.00188 | +9 | 32.1146 -> 32.2869 |
+| `desc_clone_16k` | bonsai | +2000 | +0.2173 | +0.00125 | -0.00222 | +11 | 32.1146 -> 32.3320 |
+| `desc_split_16k` | kitchen | +1000 | -0.1661 | -0.00397 | +0.00817 | +60,194 | 31.8556 -> 31.6895 |
+| `desc_split_16k` | kitchen | +2000 | -0.1962 | -0.00473 | +0.00830 | +137,365 | 31.8556 -> 31.6594 |
+| `desc_split_16k` | flowers | +1000 | -0.0147 | -0.00314 | +0.00117 | +23,595 | 21.5731 -> 21.5584 |
+| `desc_split_16k` | flowers | +2000 | +0.0030 | -0.00230 | -0.00023 | +37,687 | 21.5731 -> 21.5761 |
+| `desc_split_16k` | bonsai | +1000 | -1.0127 | -0.01451 | +0.02867 | +164,913 | 32.1146 -> 31.1019 |
+| `desc_split_16k` | bonsai | +2000 | -0.8974 | -0.01367 | +0.02522 | +345,094 | 32.1146 -> 31.2173 |
+| `desc_clone_30k` | kitchen | +1000 | -0.0381 | -0.00017 | +0.00003 | +1 | 32.4183 -> 32.3802 |
+| `desc_clone_30k` | kitchen | +2000 | -0.0016 | -0.00001 | -0.00005 | +1 | 32.4183 -> 32.4167 |
+| `desc_clone_30k` | flowers | +1000 | -0.0821 | -0.00244 | +0.00203 | +25,278 | 21.6213 -> 21.5392 |
+| `desc_clone_30k` | flowers | +2000 | -0.0544 | -0.00174 | +0.00138 | +37,509 | 21.6213 -> 21.5670 |
+| `desc_clone_30k` | bonsai | +1000 | +0.0049 | -0.00006 | +0.00013 | +2 | 32.9616 -> 32.9664 |
+| `desc_clone_30k` | bonsai | +2000 | +0.0318 | +0.00003 | -0.00008 | +2 | 32.9616 -> 32.9934 |
+| `tokenedge_split_30k` | kitchen | +1000 | -3.9187 | -0.05790 | +0.07782 | +287,978 | 32.4183 -> 28.4996 |
+| `tokenedge_split_30k` | kitchen | +2000 | -3.9299 | -0.06207 | +0.08067 | +626,264 | 32.4183 -> 28.4883 |
+| `tokenedge_split_30k` | flowers | +1000 | -0.4990 | -0.02742 | +0.01123 | +122,222 | 21.6213 -> 21.1224 |
+| `tokenedge_split_30k` | flowers | +2000 | -0.5383 | -0.02471 | +0.01205 | +169,730 | 21.6213 -> 21.0830 |
+| `tokenedge_split_30k` | bonsai | +1000 | -7.1901 | -0.13542 | +0.15588 | +867,082 | 32.9616 -> 25.7715 |
+| `tokenedge_split_30k` | bonsai | +2000 | -6.8415 | -0.13614 | +0.15568 | +1,668,697 | 32.9616 -> 26.1201 |
+
+### Supplemental Decision
+
+补充 smoke 进一步确认：split-only 方向不值得继续放大，尤其是 30K 后的 token-edge split-only 会灾难性增点并严重伤指标。
+
+唯一有正信号的是 `desc_clone_16k`：+2K 平均 `+0.1522` PSNR、`+0.00140` SSIM、`-0.00227` LPIPS，且 kitchen / bonsai 几乎不增点。它比 split 更像是在补 RGB loss 难以继续推动的小区域，但 flowers 仍增加 `+31,285` 个 Gaussian，说明需要容量约束或 candidate 分布检查后再扩展。
+
+后续建议：
+
+- 不扩展 `desc_split_16k`、`tokenedge_split_30k`，也不把 split-only late continuation 默认化。
+- `desc_clone_30k` 基本中性偏负，30K 后继续 clone 的收益不够明确。
+- 若要开 0017，优先只跟 `desc_clone_16k` 这条线，做 full9 或更严格的容量 cap / RGB gate pilot。
