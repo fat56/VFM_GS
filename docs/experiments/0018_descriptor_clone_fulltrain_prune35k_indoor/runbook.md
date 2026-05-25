@@ -84,3 +84,54 @@ CUDA_VISIBLE_DEVICES=0 uv run --active python scripts/run_0018_descriptor_clone_
   --output-root output/0018/descriptor_clone_fulltrain_prune35k_indoor/manual \
   --scenes room
 ```
+
+## 补充对照
+
+0018 后续包含两个补充对照，不另开 0019；当前已完成：
+
+- `rgb_fastgs_extra_fulltrain`：从 0 跑完整流程，15K-20K 使用 RGB/FastGS extra-densify，optimizer/final-prune schedule 与 0018 主实验一致。
+- `desc16k21k_prune35k`：复用 0017 的 descriptor clone-only 21K PLY，从 21K 接 FastGS final-prune tail 到 35K，用来观察 PLY 续跑与从头完整训练的差异；该路径从 PLY 加载并重置 optimizer，不是严格的 optimizer-state 继承实验。
+
+启动：
+
+```bash
+bash scripts/run_0018_supplemental_controls_tmux.sh start
+```
+
+tmux 会话：
+
+```bash
+tmux attach -t 0018_controls_g0
+tmux attach -t 0018_controls_g1
+tmux attach -t 0018_controls_merge
+```
+
+补充对照输出：
+
+```text
+output/0018/supplemental_controls/mip_g0
+output/0018/supplemental_controls/mip_g1
+output/0018/supplemental_controls/mipnerf360_indoor_combined/summary.csv
+output/0018/supplemental_controls/mipnerf360_indoor_combined/comparison_start_to_eval.csv
+output/0018/supplemental_controls/mipnerf360_indoor_combined/aggregate_start_to_eval.csv
+output/0018/supplemental_controls/mipnerf360_indoor_combined/comparison_vs_baseline30.csv
+output/0018/supplemental_controls/mipnerf360_indoor_combined/aggregate_vs_baseline30.csv
+```
+
+完整性预期：
+
+```text
+summary.csv: 36 行 = RGB/FastGS fulltrain 20 行 + 0017-21K continuation 16 行
+comparison_start_to_eval.csv: 24 行 = 每个对照 4 场景 x 3 个后续评测点
+comparison_vs_baseline30.csv: 16 行 = 2 个对照 x 4 场景 x 30K/35K
+aggregate_start_to_eval.csv: 6 行 = 2 个对照 x 3 个后续评测点
+aggregate_vs_baseline30.csv: 4 行 = 2 个对照 x 30K/35K
+```
+
+状态检查：
+
+```bash
+tmux ls | grep 0018_controls
+tail -f output/0018/debug_logs/0018_controls_g0.log
+tail -f output/0018/debug_logs/0018_controls_g1.log
+```

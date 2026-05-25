@@ -78,4 +78,53 @@ output/0018/descriptor_clone_fulltrain_prune35k_indoor/mipnerf360_indoor_combine
 - 到 30K 时，0018 与 FastGS 30K 基本打平：PSNR 略低，但 LPIPS 更好。
 - 到 35K 时，0018 平均超过 FastGS 30K，并且四个室内场景的 Gaussian 数量都更少。
 
-决策：这条分支在室内场景上值得继续。下一步必须做同样 shifted optimizer / prune schedule 下的无 descriptor 对照，或者 RGB/FastGS extra-densify 对照，用来分离 35K 收益到底来自 descriptor guidance，还是来自更长、更后移的训练 schedule。
+决策：这条分支在室内场景上值得继续，但必须结合下面的补充对照理解；不能把 35K 收益归因到 descriptor clone 单独胜出。
+
+## 补充对照
+
+状态：已完成。
+
+追加两个 0018 内部对照，不另开 0019：
+
+- `rgb_fastgs_extra_fulltrain`：15K-20K 使用 RGB/FastGS extra-densify，其他 optimizer / final-prune schedule 与主实验一致，用来判断 35K 收益是否来自更长、更后移的 FastGS schedule。
+- `desc16k21k_prune35k`：复用 0017 descriptor clone-only 的 21K PLY，从 21K 接 FastGS final-prune tail 到 35K，用来观察 PLY 续跑与从头完整训练的差异。该对照从 PLY 加载并重新初始化 optimizer，不是严格的 optimizer-state 继承实验。
+
+完整性：
+
+```text
+summary.csv: 36 行 = RGB/FastGS fulltrain 20 行 + 0017-21K continuation 16 行
+comparison_start_to_eval.csv: 24 行
+comparison_vs_baseline30.csv: 16 行
+aggregate_start_to_eval.csv: 6 行
+aggregate_vs_baseline30.csv: 4 行
+```
+
+相对各自起点的 prune tail：
+
+| 对照 | 起点 | 终点 | dPSNR | dSSIM | dLPIPS | dGS |
+|---|---:|---:|---:|---:|---:|---:|
+| RGB/FastGS extra fulltrain | 20K | 35K | +0.9076 | +0.00592 | -0.00908 | -148,432 |
+| 0017-21K PLY continuation | 21K | 35K | +0.2365 | +0.00094 | -0.00088 | -183,409 |
+| 主实验 descriptor fulltrain | 20K | 35K | +0.4627 | +0.00254 | -0.00378 | -201,264 |
+
+相对标准 FastGS 30K baseline：
+
+| 对照 | 终点 | dPSNR | dSSIM | dLPIPS | dGS | 胜出数 |
+|---|---:|---:|---:|---:|---:|---|
+| RGB/FastGS extra fulltrain | 35K | +0.0720 | +0.00090 | -0.00176 | +20,678 | PSNR 3/4，SSIM 4/4，LPIPS 4/4，点数 0/4 更少 |
+| 0017-21K PLY continuation | 35K | -0.1118 | -0.00089 | +0.00209 | +7,003 | PSNR 0/4，SSIM 0/4，LPIPS 0/4，点数 0/4 更少 |
+| 主实验 descriptor fulltrain | 35K | +0.0574 | +0.00013 | -0.00126 | -5,830 | PSNR 3/4，SSIM 3/4，LPIPS 4/4，点数 4/4 更少 |
+
+与主实验 descriptor fulltrain 35K 直接相比：
+
+| 对照 | dPSNR | dSSIM | dLPIPS | dGS | 说明 |
+|---|---:|---:|---:|---:|---|
+| RGB/FastGS extra fulltrain 35K | +0.0146 | +0.00077 | -0.00050 | +26,508 | 质量略高，但点数更多；PSNR 2/4 胜，LPIPS 4/4 胜，点数 0/4 更少 |
+| 0017-21K PLY continuation 35K | -0.1692 | -0.00102 | +0.00336 | +12,833 | 全面低于从头主实验；PSNR 0/4 胜，LPIPS 0/4 胜 |
+
+补充解读：
+
+- RGB/FastGS extra-densify 的 20K 起点明显弱于 descriptor 20K：平均 `-0.4302 PSNR`、`-0.00261 SSIM`、`LPIPS +0.00480`，但它在 20K-35K tail 中获得更大的增益，最终 35K 质量略高于主实验。
+- 因此，0018 最终质量收益主要不能被解释为 descriptor guidance 单独贡献；更强的解释是 **更长、更后移的 optimizer / final-prune schedule** 是关键变量。
+- descriptor fulltrain 的优势主要体现在容量权衡：35K 相对 baseline30 少 5,830 点，而 RGB extra 35K 多 20,678 点；RGB 质量略高但不省点。
+- 0017-21K PLY continuation 明显弱于从头完整训练，说明训练路径很重要。由于该对照从 PLY 加载并重置 optimizer，只能说明 “0017 PLY 续跑路径” 不如 0018 从头路径，不能当作严格的 optimizer-state 继承结论。

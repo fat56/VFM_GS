@@ -1,0 +1,17 @@
+name: 0018_desc16k21k_from0017_prune35k_indoor
+extends: fastgs_big
+scorer: fastgs_photometric
+training_args:
+  iterations: 35000
+  densification_interval: 100
+  densify_until_iter: 15000
+  optimizer_dense_until_iter: 20000
+  optimizer_sparse32_until_iter: 25000
+  final_prune_enabled: true
+  final_prune_from_iter: 21000
+  final_prune_until_iter: 35000
+  final_prune_interval: 3000
+experiment:
+  status: 0018_desc16k21k_from0017_prune35k_indoor
+  proposal: docs/experiments/0018_descriptor_clone_fulltrain_prune35k_indoor/proposal.md
+  note: Continuation control. Starts from the 0017 descriptor clone-only 21K PLY, resets optimizer state through normal PLY loading, disables further densification, and runs FastGS final-prune tail to 35K.

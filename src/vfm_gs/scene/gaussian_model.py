@@ -66,6 +66,7 @@ class GaussianModel:
         self.xyz_gradient_accum = torch.empty(0)
         self.xyz_gradient_accum_abs = torch.empty(0)
         self.denom = torch.empty(0)
+        self.tmp_radii = None
         self.optimizer = None
         self.shoptimizer = None
         self.percent_dense = 0
