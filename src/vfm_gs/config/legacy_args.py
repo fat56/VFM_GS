@@ -87,8 +87,11 @@ class OptimizationParams(ParamGroup):
         self.lambda_l2 = 0.0
         self.densification_interval = 100
         self.opacity_reset_interval = 3000
+        self.opacity_reset_until_iter = 0
         self.densify_from_iter = 500
         self.densify_until_iter = 15_000
+        self.extra_densify_from_iter = 0
+        self.extra_densify_until_iter = 0
         self.densify_grad_threshold = 0.0002
         
         # fastgs parameters
@@ -110,6 +113,12 @@ class OptimizationParams(ParamGroup):
         self.densify_clone_enabled = True
         self.densify_split_enabled = True
         self.densify_prune_enabled = True
+        self.vfm_densify_override_enabled = False
+        self.vfm_densify_override_from_iter = 0
+        self.vfm_densify_override_until_iter = 0
+        self.vfm_densify_override_clone_enabled = True
+        self.vfm_densify_override_split_enabled = False
+        self.vfm_densify_override_prune_enabled = False
         self.mult = 0.5      # multiplier for the compact box to control the tile number of each splat
 
         self.random_background = False
@@ -169,7 +178,12 @@ class OptimizationParams(ParamGroup):
         self.prune_min_gaussian_count = 0
         self.prune_min_gaussian_target_ratio = 0.0
         self.final_prune_enabled = True
+        self.final_prune_from_iter = 15_000
+        self.final_prune_until_iter = 30_000
+        self.final_prune_interval = 3_000
         self.final_prune_remove_fraction = 1.0
+        self.optimizer_dense_until_iter = 15_000
+        self.optimizer_sparse32_until_iter = 20_000
         self.post_prune_finetune_iterations = 0
         self.post_prune_finetune_step_interval = 0
         self.post_prune_finetune_sh_step_interval = 0

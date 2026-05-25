@@ -1,0 +1,43 @@
+name: 0018_descriptor_clone_fulltrain_prune35k_indoor
+extends: fastgs_big
+scorer: vfm_topology_scorer
+training_args:
+  iterations: 35000
+  densification_interval: 100
+  densify_until_iter: 15000
+  extra_densify_from_iter: 15000
+  extra_densify_until_iter: 20000
+  opacity_reset_until_iter: 15000
+  optimizer_dense_until_iter: 20000
+  optimizer_sparse32_until_iter: 25000
+  final_prune_enabled: true
+  final_prune_from_iter: 20000
+  final_prune_until_iter: 35000
+  final_prune_interval: 3000
+  vfm_enable: true
+  vfm_active_from_iter: 15000
+  vfm_active_until_iter: 20000
+  vfm_backend: dinov2_descriptor_cosine
+  vfm_cache_dir: output/0001/vfm_cache/bicycle_dinov2_vits14
+  vfm_dinov2_repo: output/0001/external/dinov2
+  vfm_dinov2_device: cuda
+  vfm_metric_map_mode: topk
+  vfm_metric_topk: 0.25
+  vfm_descriptor_token_smooth_kernel: 3
+  vfm_weight: 0.0
+  vfm_importance_weight: 1.0
+  vfm_importance_mode: vfm_only
+  vfm_use_albedo_sh0: true
+  densify_clone_enabled: true
+  densify_split_enabled: true
+  densify_prune_enabled: true
+  vfm_densify_override_enabled: true
+  vfm_densify_override_from_iter: 15000
+  vfm_densify_override_until_iter: 20000
+  vfm_densify_override_clone_enabled: true
+  vfm_densify_override_split_enabled: false
+  vfm_densify_override_prune_enabled: false
+experiment:
+  status: 0018_descriptor_clone_fulltrain_prune35k_indoor
+  proposal: docs/experiments/0018_descriptor_clone_fulltrain_prune35k_indoor/proposal.md
+  note: Full 0-35K indoor run. FastGS baseline through 15K, descriptor clone-only from 15K to 20K, shifted optimizer schedule, then FastGS final-prune tail through 35K.

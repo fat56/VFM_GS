@@ -134,6 +134,57 @@ def _post_prune_finetune_iterations(opt):
     return max(0, int(getattr(opt, "post_prune_finetune_iterations", 0) or 0))
 
 
+def _open_iteration_window(iteration, from_iter, until_iter):
+    if from_iter > 0 and iteration <= from_iter:
+        return False
+    if until_iter > 0 and iteration >= until_iter:
+        return False
+    return True
+
+
+def _should_run_densification(opt, iteration):
+    if iteration < int(getattr(opt, "densify_until_iter", 15_000) or 15_000):
+        return True
+    extra_from = int(getattr(opt, "extra_densify_from_iter", 0) or 0)
+    extra_until = int(getattr(opt, "extra_densify_until_iter", 0) or 0)
+    if extra_from <= 0 and extra_until <= 0:
+        return False
+    return _open_iteration_window(iteration, extra_from, extra_until)
+
+
+def _should_reset_opacity(opt, dataset, iteration):
+    reset_interval = int(getattr(opt, "opacity_reset_interval", 0) or 0)
+    if reset_interval <= 0:
+        return False
+    reset_until = int(getattr(opt, "opacity_reset_until_iter", 0) or 0)
+    if reset_until > 0 and iteration >= reset_until:
+        return False
+    return iteration % reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter)
+
+
+def _should_run_final_prune(opt, iteration):
+    if not bool(getattr(opt, "final_prune_enabled", True)):
+        return False
+    interval = int(getattr(opt, "final_prune_interval", 3000) or 3000)
+    interval = max(1, interval)
+    from_iter = int(getattr(opt, "final_prune_from_iter", 15_000) or 15_000)
+    until_iter = int(getattr(opt, "final_prune_until_iter", 30_000) or 30_000)
+    if iteration % interval != 0:
+        return False
+    if iteration <= from_iter:
+        return False
+    if until_iter > 0 and iteration >= until_iter:
+        return False
+    return True
+
+
+def _optimizer_schedule_kwargs(opt):
+    return {
+        "dense_until_iter": int(getattr(opt, "optimizer_dense_until_iter", 15_000) or 15_000),
+        "sparse32_until_iter": int(getattr(opt, "optimizer_sparse32_until_iter", 20_000) or 20_000),
+    }
+
+
 def _post_prune_finetune_interval(opt, attr_name):
     value = int(getattr(opt, attr_name, 0) or 0)
     return max(1, value) if value > 0 else None
@@ -244,6 +295,7 @@ def _run_post_prune_finetune(scene, gaussians, pipe, bg, opt, start_iteration, f
                     iteration,
                     step_interval=step_interval,
                     sh_step_interval=sh_step_interval,
+                    **_optimizer_schedule_kwargs(opt),
                 )
             elif opt.optimizer_type == "sparse_adam":
                 visible = radii > 0
@@ -396,7 +448,7 @@ def training(
             optim_start.record()
             
             # Densification
-            if iteration < opt.densify_until_iter:
+            if _should_run_densification(opt, iteration):
                 # Keep track of max radii in image-space for pruning
                 gaussians.max_radii2D[visibility_filter] = torch.max(gaussians.max_radii2D[visibility_filter], radii[visibility_filter])
                 gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
@@ -431,17 +483,14 @@ def training(
                         staged_pruned_count += pruned_count
                         total_time += budget_time
 
-                if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
+                if _should_reset_opacity(opt, dataset, iteration):
                     gaussians.reset_opacity()
 
             # The multiview consistent pruning of fastgs. We do it every 3k iterations after 15k
             # In this stage, the model converge basically. So we can prune more aggressively without degrading rendering quality.
             # You can check the rendering results of 20K iterations in arxiv version (https://arxiv.org/abs/2511.04283), the rendering quality is already very good.
             if (
-                bool(getattr(opt, "final_prune_enabled", True))
-                and iteration % 3000 == 0
-                and iteration > 15_000
-                and iteration < 30_000
+                _should_run_final_prune(opt, iteration)
             ):
                 my_viewpoint_stack = scene.getTrainCameras().copy()
                 camlist = sampling_cameras(my_viewpoint_stack)
@@ -478,7 +527,7 @@ def training(
             # Optimization step
             if iteration < opt.iterations:
                 if opt.optimizer_type == "default":
-                    gaussians.optimizer_step(iteration)
+                    gaussians.optimizer_step(iteration, **_optimizer_schedule_kwargs(opt))
                 elif opt.optimizer_type == "sparse_adam":
                     visible = radii > 0
                     gaussians.optimizer.step(visible, radii.shape[0])

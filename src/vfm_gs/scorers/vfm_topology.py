@@ -63,6 +63,27 @@ def _is_vfm_active(args):
     return True
 
 
+def _vfm_densify_override_active(args):
+    if not bool(getattr(args, "vfm_densify_override_enabled", False)):
+        return False
+    iteration = int(getattr(args, "current_iteration", 0) or 0)
+    if iteration <= 0:
+        return False
+    from_iter = int(getattr(args, "vfm_densify_override_from_iter", 0) or 0)
+    until_iter = int(getattr(args, "vfm_densify_override_until_iter", 0) or 0)
+    if from_iter > 0 and iteration <= from_iter:
+        return False
+    if until_iter > 0 and iteration >= until_iter:
+        return False
+    return True
+
+
+def _densify_prune_enabled(args):
+    if _vfm_densify_override_active(args):
+        return bool(getattr(args, "vfm_densify_override_prune_enabled", True))
+    return bool(getattr(args, "densify_prune_enabled", True))
+
+
 def _clear_rgb_rerank_reference(args):
     if hasattr(args, "vfm_rgb_broad_reference_score"):
         args.vfm_rgb_broad_reference_score = None
@@ -799,12 +820,14 @@ def compute_gaussian_score_fastgs_with_vfm(camlist, gaussians, pipe, bg, args, D
     vfm_weight = getattr(args, "vfm_weight", 0.25)
     vfm_importance_mode = getattr(args, "vfm_importance_mode", "max").lower()
     vfm_prune_protect_weight = max(0.0, float(getattr(args, "vfm_prune_protect_weight", 0.0) or 0.0))
+    vfm_active = _is_vfm_active(args)
     skip_rgb_score = (
-        DENSIFY
+        vfm_active
+        and DENSIFY
         and vfm_importance_mode == "vfm_only"
         and float(vfm_weight or 0.0) <= 0.0
         and vfm_prune_protect_weight <= 0.0
-        and not bool(getattr(args, "densify_prune_enabled", True))
+        and not _densify_prune_enabled(args)
     )
     if skip_rgb_score:
         rgb_importance = torch.zeros((gaussians._xyz.shape[0],), dtype=torch.float32, device=gaussians._xyz.device)
@@ -814,7 +837,7 @@ def compute_gaussian_score_fastgs_with_vfm(camlist, gaussians, pipe, bg, args, D
             camlist, gaussians, pipe, bg, args, DENSIFY=DENSIFY
         )
     rgb_ms = _elapsed_ms(rgb_start, profile_this)
-    if not _is_vfm_active(args):
+    if not vfm_active:
         _clear_rgb_rerank_reference(args)
         if profile_this:
             total_ms = _elapsed_ms(total_start, profile_this)

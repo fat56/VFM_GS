@@ -225,10 +225,21 @@ class GaussianModel:
                 param_group['lr'] = lr
                 return lr
 
-    def optimizer_step(self, iteration, step_interval=None, sh_step_interval=None):
+    def optimizer_step(
+        self,
+        iteration,
+        step_interval=None,
+        sh_step_interval=None,
+        dense_until_iter=15_000,
+        sparse32_until_iter=20_000,
+    ):
         ''' An optimization schdeuler. The goal is similar to the sparse Adam of taming 3dgs.'''
         if step_interval is not None or sh_step_interval is not None:
-            default_step, default_sh_step = self._optimizer_step_flags(iteration)
+            default_step, default_sh_step = self._optimizer_step_flags(
+                iteration,
+                dense_until_iter=dense_until_iter,
+                sparse32_until_iter=sparse32_until_iter,
+            )
             do_step = default_step
             do_sh_step = default_sh_step
             if step_interval is not None:
@@ -245,13 +256,16 @@ class GaussianModel:
                 self.shoptimizer.zero_grad(set_to_none = True)
             return
 
-        if iteration <= 15000:
+        dense_until_iter = int(dense_until_iter or 15_000)
+        sparse32_until_iter = max(dense_until_iter, int(sparse32_until_iter or 20_000))
+
+        if iteration <= dense_until_iter:
             self.optimizer.step()
             self.optimizer.zero_grad(set_to_none = True)
             if iteration % 16 == 0:
                 self.shoptimizer.step()
                 self.shoptimizer.zero_grad(set_to_none = True)
-        elif iteration <= 20000:
+        elif iteration <= sparse32_until_iter:
             if iteration % 32 ==0:
                 self.optimizer.step()
                 self.optimizer.zero_grad(set_to_none = True)
@@ -264,10 +278,12 @@ class GaussianModel:
                 self.shoptimizer.step()
                 self.shoptimizer.zero_grad(set_to_none = True)
 
-    def _optimizer_step_flags(self, iteration):
-        if iteration <= 15000:
+    def _optimizer_step_flags(self, iteration, dense_until_iter=15_000, sparse32_until_iter=20_000):
+        dense_until_iter = int(dense_until_iter or 15_000)
+        sparse32_until_iter = max(dense_until_iter, int(sparse32_until_iter or 20_000))
+        if iteration <= dense_until_iter:
             return True, iteration % 16 == 0
-        if iteration <= 20000:
+        if iteration <= sparse32_until_iter:
             should_step = iteration % 32 == 0
             return should_step, should_step
         should_step = iteration % 64 == 0
@@ -814,6 +830,25 @@ class GaussianModel:
 
         return keep_mask
 
+    def _vfm_densify_override_active(self, args):
+        if not bool(getattr(args, "vfm_densify_override_enabled", False)):
+            return False
+        iteration = int(getattr(args, "current_iteration", 0) or 0)
+        if iteration <= 0:
+            return False
+        from_iter = int(getattr(args, "vfm_densify_override_from_iter", 0) or 0)
+        until_iter = int(getattr(args, "vfm_densify_override_until_iter", 0) or 0)
+        if from_iter > 0 and iteration <= from_iter:
+            return False
+        if until_iter > 0 and iteration >= until_iter:
+            return False
+        return True
+
+    def _densify_branch_enabled(self, args, branch, default=True):
+        if self._vfm_densify_override_active(args):
+            return bool(getattr(args, "vfm_densify_override_{}_enabled".format(branch), default))
+        return bool(getattr(args, "densify_{}_enabled".format(branch), default))
+
     def densify_and_prune_fastgs(self, max_screen_size, min_opacity, extent, radii, args, importance_score = None, pruning_score = None):
         
         ''' 
@@ -837,9 +872,12 @@ class GaussianModel:
 
         all_clones = torch.logical_and(clone_qualifiers, grad_qualifiers)
         all_splits = torch.logical_and(split_qualifiers, grad_qualifiers_abs)
-        if not bool(getattr(args, "densify_clone_enabled", True)):
+        clone_enabled = self._densify_branch_enabled(args, "clone", True)
+        split_enabled = self._densify_branch_enabled(args, "split", True)
+        prune_enabled = self._densify_branch_enabled(args, "prune", True)
+        if not clone_enabled:
             all_clones = torch.zeros_like(all_clones, dtype=torch.bool)
-        if not bool(getattr(args, "densify_split_enabled", True)):
+        if not split_enabled:
             all_splits = torch.zeros_like(all_splits, dtype=torch.bool)
 
         # This is our multi-view consisent metric for densification
@@ -858,9 +896,9 @@ class GaussianModel:
                 metric_mask = final_topm_mask
         metric_mask = self._cap_densify_candidates(args, importance_score, metric_mask, all_clones, all_splits)
 
-        if bool(getattr(args, "densify_clone_enabled", True)):
+        if clone_enabled:
             self.densify_and_clone_fastgs(metric_mask, all_clones)
-        if bool(getattr(args, "densify_split_enabled", True)):
+        if split_enabled:
             self.densify_and_split_fastgs(metric_mask, all_splits)
 
         prune_mask = (self.get_opacity < min_opacity).squeeze()
@@ -869,7 +907,7 @@ class GaussianModel:
             big_points_ws = self.get_scaling.max(dim=1).values > 0.1 * extent
             prune_mask = torch.logical_or(torch.logical_or(prune_mask, big_points_vs), big_points_ws)
 
-        if bool(getattr(args, "densify_prune_enabled", True)):
+        if prune_enabled:
             scores = 1 - pruning_score
             to_remove = torch.sum(prune_mask)
             remove_budget = int(0.5 * to_remove)
@@ -891,7 +929,7 @@ class GaussianModel:
                 final_prune = torch.logical_and(prune_mask, selected_pts_mask)
                 self.prune_points(final_prune)
         
-        if bool(getattr(args, "densify_prune_enabled", True)):
+        if prune_enabled:
             opacities_new = inverse_sigmoid(torch.min(self.get_opacity, torch.ones_like(self.get_opacity)*0.8))
             optimizable_tensors = self.replace_tensor_to_optimizer(opacities_new, "opacity")
             self._opacity = optimizable_tensors["opacity"]
