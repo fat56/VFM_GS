@@ -850,6 +850,19 @@ class GaussianModel:
             return bool(getattr(args, "vfm_densify_override_{}_enabled".format(branch), default))
         return bool(getattr(args, "densify_{}_enabled".format(branch), default))
 
+    def _vfm_clone_or_rgb_active(self, args):
+        if not bool(getattr(args, "vfm_clone_or_rgb_enabled", False)):
+            return False
+        iteration = int(getattr(args, "current_iteration", 0) or 0)
+        from_iter = int(getattr(args, "vfm_clone_or_rgb_from_iter", 0) or 0)
+        until_iter = int(getattr(args, "vfm_clone_or_rgb_until_iter", 0) or 0)
+        if iteration > 0:
+            if from_iter > 0 and iteration <= from_iter:
+                return False
+            if until_iter > 0 and iteration >= until_iter:
+                return False
+        return True
+
     def densify_and_prune_fastgs(self, max_screen_size, min_opacity, extent, radii, args, importance_score = None, pruning_score = None):
         
         ''' 
@@ -885,6 +898,24 @@ class GaussianModel:
         # We use this metric to further filter the candidates for densification, which is similar to taming 3dgs.
         metric_threshold = self._densify_metric_threshold(args)
         metric_mask = importance_score > metric_threshold
+        clone_metric_mask = metric_mask
+        split_metric_mask = metric_mask
+        clone_or_rgb_active = self._vfm_clone_or_rgb_active(args)
+        if clone_or_rgb_active:
+            rgb_importance_score = getattr(args, "vfm_rgb_importance_score", None)
+            if rgb_importance_score is None or rgb_importance_score.shape[0] != importance_score.shape[0]:
+                raise ValueError(
+                    "vfm_clone_or_rgb_enabled requires vfm_rgb_importance_score from the VFM scorer."
+                )
+            rgb_importance_score = rgb_importance_score.to(device=importance_score.device)
+            rgb_metric_mask = rgb_importance_score > metric_threshold
+            clone_metric_mask = torch.logical_or(metric_mask, rgb_metric_mask)
+            split_metric_mask = rgb_metric_mask
+
+            rgb_pruning_score = getattr(args, "vfm_rgb_pruning_score", None)
+            if pruning_score is None or rgb_pruning_score is None or rgb_pruning_score.shape[0] != pruning_score.shape[0]:
+                raise ValueError("vfm_clone_or_rgb_enabled requires vfm_rgb_pruning_score from the VFM scorer.")
+            pruning_score = rgb_pruning_score.to(device=pruning_score.device)
         if getattr(args, "vfm_rgb_rerank_final_topm", False):
             final_topm_mask = self._rgb_rerank_final_topm_mask(
                 args,
@@ -895,12 +926,17 @@ class GaussianModel:
             )
             if final_topm_mask is not None:
                 metric_mask = final_topm_mask
-        metric_mask = self._cap_densify_candidates(args, importance_score, metric_mask, all_clones, all_splits)
+                clone_metric_mask = final_topm_mask
+                split_metric_mask = final_topm_mask
+        if not clone_or_rgb_active:
+            metric_mask = self._cap_densify_candidates(args, importance_score, metric_mask, all_clones, all_splits)
+            clone_metric_mask = metric_mask
+            split_metric_mask = metric_mask
 
         if clone_enabled:
-            self.densify_and_clone_fastgs(metric_mask, all_clones)
+            self.densify_and_clone_fastgs(clone_metric_mask, all_clones)
         if split_enabled:
-            self.densify_and_split_fastgs(metric_mask, all_splits)
+            self.densify_and_split_fastgs(split_metric_mask, all_splits)
 
         prune_mask = (self.get_opacity < min_opacity).squeeze()
         if max_screen_size:

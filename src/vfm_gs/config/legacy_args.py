@@ -119,6 +119,9 @@ class OptimizationParams(ParamGroup):
         self.vfm_densify_override_clone_enabled = True
         self.vfm_densify_override_split_enabled = False
         self.vfm_densify_override_prune_enabled = False
+        self.vfm_clone_or_rgb_enabled = False
+        self.vfm_clone_or_rgb_from_iter = 0
+        self.vfm_clone_or_rgb_until_iter = 0
         self.mult = 0.5      # multiplier for the compact box to control the tile number of each splat
 
         self.random_background = False

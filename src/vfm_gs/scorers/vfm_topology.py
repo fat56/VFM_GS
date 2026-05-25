@@ -89,6 +89,13 @@ def _clear_rgb_rerank_reference(args):
         args.vfm_rgb_broad_reference_score = None
 
 
+def _clear_rgb_densify_reference(args):
+    if hasattr(args, "vfm_rgb_importance_score"):
+        args.vfm_rgb_importance_score = None
+    if hasattr(args, "vfm_rgb_pruning_score"):
+        args.vfm_rgb_pruning_score = None
+
+
 class VFMFeatureCache:
     def __init__(self, cache_dir):
         self.cache_dir = cache_dir
@@ -828,6 +835,7 @@ def compute_gaussian_score_fastgs_with_vfm(camlist, gaussians, pipe, bg, args, D
         and float(vfm_weight or 0.0) <= 0.0
         and vfm_prune_protect_weight <= 0.0
         and not _densify_prune_enabled(args)
+        and not bool(getattr(args, "vfm_clone_or_rgb_enabled", False))
     )
     if skip_rgb_score:
         rgb_importance = torch.zeros((gaussians._xyz.shape[0],), dtype=torch.float32, device=gaussians._xyz.device)
@@ -836,6 +844,11 @@ def compute_gaussian_score_fastgs_with_vfm(camlist, gaussians, pipe, bg, args, D
         rgb_importance, rgb_pruning = compute_gaussian_score_fastgs(
             camlist, gaussians, pipe, bg, args, DENSIFY=DENSIFY
         )
+    if DENSIFY:
+        args.vfm_rgb_importance_score = rgb_importance.detach()
+        args.vfm_rgb_pruning_score = rgb_pruning.detach()
+    else:
+        _clear_rgb_densify_reference(args)
     rgb_ms = _elapsed_ms(rgb_start, profile_this)
     if not vfm_active:
         _clear_rgb_rerank_reference(args)
