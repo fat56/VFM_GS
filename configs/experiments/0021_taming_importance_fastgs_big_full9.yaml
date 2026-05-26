@@ -1,0 +1,30 @@
+name: 0021_taming_importance_fastgs_big_full9
+extends: fastgs_big
+scorer: taming_importance_fastgs_prune
+training_args:
+  iterations: 30000
+  densification_interval: 100
+  densify_until_iter: 15000
+  final_prune_enabled: true
+  final_prune_from_iter: 15000
+  final_prune_until_iter: 30000
+  final_prune_interval: 3000
+  # Keep FastGS densification threshold contract, but feed it a Taming-style score.
+  densify_metric_thresh: 5.0
+  taming_metric_loss_thresh: 0.1
+  taming_metric_topk: 0.0
+  taming_importance_output_median: 5.0
+  # Taming-3DGS default score coefficients from the public implementation.
+  taming_view_importance: 50.0
+  taming_mse_importance: 50.0
+  taming_edge_importance: 50.0
+  taming_grad_importance: 25.0
+  taming_opacity_importance: 100.0
+  taming_depth_importance: 5.0
+  taming_loss_importance: 10.0
+  taming_radii_importance: 10.0
+  taming_scale_importance: 25.0
+experiment:
+  status: 0021_taming_importance_fastgs_big_full9
+  proposal: docs/experiments/0021_taming_importance_fastgs_big_full9/proposal.md
+  note: FastGS big ablation that replaces only the densification per-Gaussian importance with a Taming-3DGS-style score while keeping FastGS pruning, clone/split gates, final prune, scene overrides, and densification interval 100.

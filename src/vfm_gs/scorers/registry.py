@@ -6,6 +6,10 @@ ScorerFn = Callable[..., object]
 _SCORERS: Dict[str, ScorerFn] = {}
 _LAZY_SCORERS: Dict[str, Tuple[str, str]] = {
     "fastgs_photometric": ("vfm_gs.scorers.fastgs_photometric", "compute_gaussian_score_fastgs"),
+    "taming_importance_fastgs_prune": (
+        "vfm_gs.scorers.taming_importance",
+        "compute_gaussian_score_taming_importance_fastgs_prune",
+    ),
     "vfm_topology_scorer": ("vfm_gs.scorers.vfm_topology", "compute_gaussian_score_fastgs_with_vfm"),
 }
 
