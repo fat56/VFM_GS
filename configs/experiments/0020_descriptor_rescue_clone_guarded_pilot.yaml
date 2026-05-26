@@ -1,0 +1,37 @@
+name: 0020_descriptor_rescue_clone_guarded_pilot
+extends: fastgs_big
+scorer: vfm_topology_scorer
+training_args:
+  iterations: 30000
+  densification_interval: 100
+  densify_until_iter: 15000
+  final_prune_enabled: true
+  final_prune_from_iter: 15000
+  final_prune_until_iter: 30000
+  final_prune_interval: 3000
+  vfm_enable: true
+  vfm_active_from_iter: 3000
+  vfm_active_until_iter: 12000
+  vfm_backend: dinov2_descriptor_cosine
+  vfm_cache_dir: output/0001/vfm_cache/bicycle_dinov2_vits14
+  vfm_dinov2_repo: output/0001/external/dinov2
+  vfm_dinov2_device: cuda
+  vfm_metric_map_mode: topk
+  vfm_metric_topk: 0.25
+  vfm_descriptor_token_smooth_kernel: 3
+  vfm_weight: 0.0
+  vfm_importance_weight: 1.0
+  vfm_importance_mode: vfm_only
+  vfm_use_albedo_sh0: true
+  densify_clone_enabled: true
+  densify_split_enabled: true
+  densify_prune_enabled: true
+  vfm_clone_or_rgb_enabled: true
+  vfm_clone_or_rgb_from_iter: 3000
+  vfm_clone_or_rgb_until_iter: 12000
+  vfm_clone_or_rgb_rgb_gate_ratio: 0.5
+  vfm_clone_or_rgb_extra_clone_ratio: 0.2
+experiment:
+  status: 0020_descriptor_rescue_clone_guarded_pilot
+  proposal: docs/experiments/0020_descriptor_rescue_clone_guarded_pilot/proposal.md
+  note: Guarded follow-up to 0019. Descriptor-only clone rescue is active only from 3K to 12K, must pass a weak RGB gate, and is capped to 20% of RGB clone candidates per densification step.

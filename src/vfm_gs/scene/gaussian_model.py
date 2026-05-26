@@ -863,6 +863,52 @@ class GaussianModel:
                 return False
         return True
 
+    def _vfm_descriptor_rescue_clone_mask(
+        self,
+        args,
+        importance_score,
+        rgb_importance_score,
+        descriptor_metric_mask,
+        rgb_metric_mask,
+        metric_threshold,
+        all_clones,
+    ):
+        descriptor_only_mask = torch.logical_and(descriptor_metric_mask, torch.logical_not(rgb_metric_mask))
+
+        rgb_gate_ratio = float(getattr(args, "vfm_clone_or_rgb_rgb_gate_ratio", 0.0) or 0.0)
+        if rgb_gate_ratio > 0.0:
+            rgb_gate = rgb_importance_score > (metric_threshold * rgb_gate_ratio)
+            descriptor_only_mask = torch.logical_and(descriptor_only_mask, rgb_gate)
+
+        extra_clone_ratio = float(getattr(args, "vfm_clone_or_rgb_extra_clone_ratio", 0.0) or 0.0)
+        if extra_clone_ratio <= 0.0:
+            return descriptor_only_mask
+
+        descriptor_clone_mask = torch.logical_and(descriptor_only_mask, all_clones)
+        descriptor_clone_indices = descriptor_clone_mask.nonzero(as_tuple=False).squeeze(1)
+        descriptor_clone_count = int(descriptor_clone_indices.numel())
+        if descriptor_clone_count <= 0:
+            return descriptor_only_mask
+
+        rgb_clone_count = int(torch.logical_and(rgb_metric_mask, all_clones).sum().item())
+        quota = int(math.ceil(float(rgb_clone_count) * extra_clone_ratio))
+        if quota <= 0:
+            descriptor_only_mask = descriptor_only_mask.clone()
+            descriptor_only_mask[descriptor_clone_indices] = False
+            return descriptor_only_mask
+        if descriptor_clone_count <= quota:
+            return descriptor_only_mask
+
+        selected = torch.topk(
+            importance_score[descriptor_clone_indices],
+            k=quota,
+            largest=True,
+            sorted=False,
+        ).indices
+        keep_clone_mask = torch.zeros_like(descriptor_only_mask, dtype=torch.bool)
+        keep_clone_mask[descriptor_clone_indices[selected]] = True
+        return torch.logical_and(descriptor_only_mask, torch.logical_or(torch.logical_not(all_clones), keep_clone_mask))
+
     def densify_and_prune_fastgs(self, max_screen_size, min_opacity, extent, radii, args, importance_score = None, pruning_score = None):
         
         ''' 
@@ -909,7 +955,16 @@ class GaussianModel:
                 )
             rgb_importance_score = rgb_importance_score.to(device=importance_score.device)
             rgb_metric_mask = rgb_importance_score > metric_threshold
-            clone_metric_mask = torch.logical_or(metric_mask, rgb_metric_mask)
+            descriptor_rescue_mask = self._vfm_descriptor_rescue_clone_mask(
+                args,
+                importance_score,
+                rgb_importance_score,
+                metric_mask,
+                rgb_metric_mask,
+                metric_threshold,
+                all_clones,
+            )
+            clone_metric_mask = torch.logical_or(rgb_metric_mask, descriptor_rescue_mask)
             split_metric_mask = rgb_metric_mask
 
             rgb_pruning_score = getattr(args, "vfm_rgb_pruning_score", None)

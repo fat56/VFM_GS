@@ -157,7 +157,7 @@ def row_for(
         "variant": args.variant_key,
         "method": args.method_name,
         "backend": "dinov2_descriptor_cosine",
-        "branch": "clone_rgb_or_descriptor_0_15k_split_prune_fastgs_30k",
+        "branch": args.branch_name,
         "iteration": iteration,
         "relative_to_15k": iteration - 15000,
         "stage": stage_name(iteration),
@@ -379,6 +379,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--variant-key", default="0019_descriptor_or_rgb_clone_baseline30_full9")
     parser.add_argument("--method-name", default=DEFAULT_METHOD)
     parser.add_argument("--run-name", default=DEFAULT_RUN_NAME)
+    parser.add_argument("--branch-name", default="clone_rgb_or_descriptor_0_15k_split_prune_fastgs_30k")
+    parser.add_argument("--log-prefix", default="0019")
     parser.add_argument("--densification-interval", type=int, default=100)
     parser.add_argument("--no-scene-overrides", action="store_true")
     return parser.parse_args()
@@ -402,7 +404,8 @@ def main() -> int:
         run_dir = args.output_root / scene / args.run_name
         log_dir = args.output_root / scene / "logs" / args.run_name
         print(
-            "[0019] {} descriptor-or-rgb clone eval {}".format(
+            "[{}] {} descriptor-or-rgb clone eval {}".format(
+                args.log_prefix,
                 scene,
                 ",".join(str(iteration) for iteration in EVAL_ITERATIONS),
             ),
