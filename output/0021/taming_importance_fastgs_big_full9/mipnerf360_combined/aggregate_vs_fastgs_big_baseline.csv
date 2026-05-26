@@ -1,0 +1,2 @@
+scene_count,avg_delta_psnr,avg_delta_ssim,avg_delta_lpips,avg_delta_gs_num,avg_delta_train_time_s
+9,0.045214335123697914,0.005170451270209419,-0.011812563571665022,426794.77777777775,39.612798195688825

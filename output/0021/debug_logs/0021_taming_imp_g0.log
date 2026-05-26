@@ -1,0 +1,6 @@
+[0021] GPU 0 scenes: garden bicycle flowers room
+[0021] garden taming-importance FastGS big train/render/metrics
+[0021] bicycle taming-importance FastGS big train/render/metrics
+[0021] flowers taming-importance FastGS big train/render/metrics
+[0021] room taming-importance FastGS big train/render/metrics
+Wrote output/0021/taming_importance_fastgs_big_full9/mip_g0/summary.csv

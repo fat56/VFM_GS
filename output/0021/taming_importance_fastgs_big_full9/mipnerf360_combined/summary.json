@@ -1,0 +1,101 @@
+[
+  {
+    "dataset": "mipnerf360",
+    "scene": "bicycle",
+    "method": "taming_importance_fastgs_prune_densify100",
+    "psnr": "25.40654754638672",
+    "ssim": "0.7704756855964661",
+    "lpips": "0.21691903471946716",
+    "gs_num": "2090511",
+    "train_time_s": "197.48064003965078",
+    "run_dir": "output/0021/taming_importance_fastgs_big_full9/mip_g0/bicycle/taming_importance_fastgs_prune_30k_r_auto"
+  },
+  {
+    "dataset": "mipnerf360",
+    "scene": "flowers",
+    "method": "taming_importance_fastgs_prune_densify100",
+    "psnr": "21.674055099487305",
+    "ssim": "0.6066481471061707",
+    "lpips": "0.33357107639312744",
+    "gs_num": "1481180",
+    "train_time_s": "173.30497805339579",
+    "run_dir": "output/0021/taming_importance_fastgs_big_full9/mip_g0/flowers/taming_importance_fastgs_prune_30k_r_auto"
+  },
+  {
+    "dataset": "mipnerf360",
+    "scene": "garden",
+    "method": "taming_importance_fastgs_prune_densify100",
+    "psnr": "27.664260864257812",
+    "ssim": "0.866539478302002",
+    "lpips": "0.10498525947332382",
+    "gs_num": "3580452",
+    "train_time_s": "356.0287116574038",
+    "run_dir": "output/0021/taming_importance_fastgs_big_full9/mip_g0/garden/taming_importance_fastgs_prune_30k_r_auto"
+  },
+  {
+    "dataset": "mipnerf360",
+    "scene": "stump",
+    "method": "taming_importance_fastgs_prune_densify100",
+    "psnr": "27.242694854736328",
+    "ssim": "0.7937726974487305",
+    "lpips": "0.22351253032684326",
+    "gs_num": "1476951",
+    "train_time_s": "162.77689593673153",
+    "run_dir": "output/0021/taming_importance_fastgs_big_full9/mip_g1/stump/taming_importance_fastgs_prune_30k_r_auto"
+  },
+  {
+    "dataset": "mipnerf360",
+    "scene": "treehill",
+    "method": "taming_importance_fastgs_prune_densify100",
+    "psnr": "22.90254783630371",
+    "ssim": "0.6426106691360474",
+    "lpips": "0.3514379858970642",
+    "gs_num": "1337254",
+    "train_time_s": "157.45196195717045",
+    "run_dir": "output/0021/taming_importance_fastgs_big_full9/mip_g1/treehill/taming_importance_fastgs_prune_30k_r_auto"
+  },
+  {
+    "dataset": "mipnerf360",
+    "scene": "room",
+    "method": "taming_importance_fastgs_prune_densify100",
+    "psnr": "32.20402145385742",
+    "ssim": "0.9335564970970154",
+    "lpips": "0.17822636663913727",
+    "gs_num": "821293",
+    "train_time_s": "139.4424589252575",
+    "run_dir": "output/0021/taming_importance_fastgs_big_full9/mip_g0/room/taming_importance_fastgs_prune_30k_r_auto"
+  },
+  {
+    "dataset": "mipnerf360",
+    "scene": "counter",
+    "method": "taming_importance_fastgs_prune_densify100",
+    "psnr": "29.612098693847656",
+    "ssim": "0.9206923842430115",
+    "lpips": "0.16907615959644318",
+    "gs_num": "637383",
+    "train_time_s": "143.3672778410192",
+    "run_dir": "output/0021/taming_importance_fastgs_big_full9/mip_g1/counter/taming_importance_fastgs_prune_30k_r_auto"
+  },
+  {
+    "dataset": "mipnerf360",
+    "scene": "kitchen",
+    "method": "taming_importance_fastgs_prune_densify100",
+    "psnr": "32.28151321411133",
+    "ssim": "0.9395187497138977",
+    "lpips": "0.10255216062068939",
+    "gs_num": "1434403",
+    "train_time_s": "265.0691892884365",
+    "run_dir": "output/0021/taming_importance_fastgs_big_full9/mip_g1/kitchen/taming_importance_fastgs_prune_30k_r_auto"
+  },
+  {
+    "dataset": "mipnerf360",
+    "scene": "bonsai",
+    "method": "taming_importance_fastgs_prune_densify100",
+    "psnr": "33.05031204223633",
+    "ssim": "0.955130398273468",
+    "lpips": "0.15431608259677887",
+    "gs_num": "1437801",
+    "train_time_s": "198.89679172310665",
+    "run_dir": "output/0021/taming_importance_fastgs_big_full9/mip_g1/bonsai/taming_importance_fastgs_prune_30k_r_auto"
+  }
+]

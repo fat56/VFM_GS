@@ -1,0 +1,11 @@
+[
+  {
+    "method": "taming_importance_fastgs_prune_densify100",
+    "scene_count": 9,
+    "avg_psnr": 28.004227956136067,
+    "avg_ssim": 0.8254383007685343,
+    "avg_lpips": 0.20384407291809717,
+    "avg_gs_num": 1588580.888888889,
+    "avg_train_time_s": 199.3132117135747
+  }
+]

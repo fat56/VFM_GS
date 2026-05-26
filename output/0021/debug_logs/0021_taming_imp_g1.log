@@ -1,0 +1,7 @@
+[0021] GPU 1 scenes: kitchen bonsai stump treehill counter
+[0021] kitchen taming-importance FastGS big train/render/metrics
+[0021] bonsai taming-importance FastGS big train/render/metrics
+[0021] stump taming-importance FastGS big train/render/metrics
+[0021] treehill taming-importance FastGS big train/render/metrics
+[0021] counter taming-importance FastGS big train/render/metrics
+Wrote output/0021/taming_importance_fastgs_big_full9/mip_g1/summary.csv

@@ -1,0 +1,10 @@
+[
+  {
+    "scene_count": 9,
+    "avg_delta_psnr": 0.045214335123697914,
+    "avg_delta_ssim": 0.005170451270209419,
+    "avg_delta_lpips": -0.011812563571665022,
+    "avg_delta_gs_num": 426794.77777777775,
+    "avg_delta_train_time_s": 39.612798195688825
+  }
+]
