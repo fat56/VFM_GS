@@ -185,6 +185,7 @@ class OptimizationParams(ParamGroup):
         self.taming_loss_importance = 10.0
         self.taming_radii_importance = 10.0
         self.taming_scale_importance = 25.0
+        self.densify_prune_score_source = "fastgs_pruning"
         self.target_gaussian_count = 0
         self.target_gaussian_staged = False
         self.target_gaussian_stage_margin = 1.2

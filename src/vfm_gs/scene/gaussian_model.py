@@ -1000,7 +1000,6 @@ class GaussianModel:
             prune_mask = torch.logical_or(torch.logical_or(prune_mask, big_points_vs), big_points_ws)
 
         if prune_enabled:
-            scores = 1 - pruning_score
             to_remove = torch.sum(prune_mask)
             remove_budget = int(0.5 * to_remove)
 
@@ -1012,9 +1011,28 @@ class GaussianModel:
                 remove_budget = min(remove_budget, protected_budget)
 
             if remove_budget:
+                prune_score_source = str(getattr(args, "densify_prune_score_source", "fastgs_pruning") or "fastgs_pruning")
+                if prune_score_source == "fastgs_pruning":
+                    scores = 1 - pruning_score
+                elif prune_score_source in ("importance_inverse", "taming_importance_inverse"):
+                    if importance_score is None:
+                        raise ValueError("densify_prune_score_source={} requires importance_score.".format(prune_score_source))
+                    scores = importance_score
+                else:
+                    raise ValueError(
+                        "Unsupported densify_prune_score_source {!r}. Available: fastgs_pruning, importance_inverse.".format(
+                            prune_score_source
+                        )
+                    )
                 n_init_points = self.get_xyz.shape[0]
                 padded_importance = torch.zeros((n_init_points), dtype=torch.float32)
-                padded_importance[:scores.shape[0]] = 1 / (1e-6 + scores.squeeze())
+                scores = torch.nan_to_num(
+                    scores.detach().reshape(-1).to(dtype=torch.float32, device=padded_importance.device),
+                    nan=0.0,
+                    posinf=1e6,
+                    neginf=0.0,
+                ).clamp_min(0.0)
+                padded_importance[:scores.shape[0]] = 1 / (1e-6 + scores)
                 selected_pts_mask = torch.zeros_like(padded_importance, dtype=bool, device="cuda")
                 sampled_indices = torch.multinomial(padded_importance, remove_budget, replacement=False)
                 selected_pts_mask[sampled_indices] = True

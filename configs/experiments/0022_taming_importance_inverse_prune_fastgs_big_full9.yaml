@@ -1,0 +1,33 @@
+name: 0022_taming_importance_inverse_prune_fastgs_big_full9
+extends: fastgs_big
+scorer: taming_importance_fastgs_prune
+training_args:
+  iterations: 30000
+  densification_interval: 100
+  densify_until_iter: 15000
+  final_prune_enabled: true
+  final_prune_from_iter: 15000
+  final_prune_until_iter: 30000
+  final_prune_interval: 3000
+  # Same Taming-style densification importance as 0021.
+  densify_metric_thresh: 5.0
+  taming_metric_loss_thresh: 0.1
+  taming_metric_topk: 0.0
+  taming_importance_output_median: 5.0
+  taming_view_importance: 50.0
+  taming_mse_importance: 50.0
+  taming_edge_importance: 50.0
+  taming_grad_importance: 25.0
+  taming_opacity_importance: 100.0
+  taming_depth_importance: 5.0
+  taming_loss_importance: 10.0
+  taming_radii_importance: 10.0
+  taming_scale_importance: 25.0
+  # 0022: use inverse Taming-style importance for densify-stage prune.
+  # High importance still gates clone/split; low importance is more likely to be
+  # removed among FastGS low-opacity / oversized prune candidates.
+  densify_prune_score_source: importance_inverse
+experiment:
+  status: 0022_taming_importance_inverse_prune_fastgs_big_full9
+  proposal: docs/experiments/0022_taming_importance_inverse_prune_fastgs_big_full9/proposal.md
+  note: FastGS big ablation that uses Taming-style importance for clone/split and inverse Taming-style importance for densify-stage prune, while keeping FastGS final-prune tail and scene overrides.
